@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
 from ifctester import ids
 
@@ -155,6 +155,95 @@ class TestRules(unittest.TestCase):
 
 
 
+
+    def test_angle_between_rule(self):
+        """Test AngleBetween rule with walls and doors"""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        # Select walls as source
+        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+        # Select doors as target
+        second_facet = ids.Entity(name="IFCDOOR")
+        second_select = SelectFacet()
+        second_select.applicability = [second_facet]
+
+        # Create AngleBetween rule to find perpendicular relationships (walls and doors)
+        # Use Wide method for direction, 90 degrees for perpendicular, 15 degrees tolerance
+        angle_between_rule = AngleBetween(
+            source=first_select,
+            target=second_select,
+            direction_method_for_source="Wide",
+            direction_method_for_target="Wide",
+            angle_difference=0.0,
+            angle_tolerance=1.0
+        )
+       
+        OneRuleFile.contains = [angle_between_rule]
+        OneRuleFile.run()
+
+        # Verify results
+        for result in angle_between_rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+
+        # Should find some walls and doors that are parrallels to that one walls.
+        self.assertEqual(len(angle_between_rule.result), 4)
+        
+
+    def test_angle_between_rule2(self):
+        """Test AngleBetween rule with walls and doors"""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        # Select walls as source
+        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+        # Select doors as target
+        second_facet = ids.Entity(name="IFCDOOR")
+        second_select = SelectFacet()
+        second_select.applicability = [second_facet]
+
+        # Create AngleBetween rule to find perpendicular relationships (walls and doors)
+        # Use Wide method for direction, 90 degrees for perpendicular, 15 degrees tolerance
+        angle_between_rule = AngleBetween(
+            source=first_select,
+            target=second_select,
+            direction_method_for_source="Wide",
+            direction_method_for_target="Wide",
+            angle_difference=90.0,
+            angle_tolerance=1.0
+        )
+       
+        OneRuleFile.contains = [angle_between_rule]
+        OneRuleFile.run()
+
+
+        # Verify results
+        for result in angle_between_rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+
+        # Should find some walls and doors that are parrallels to that one walls.
+        self.assertEqual(len(angle_between_rule.result), 6)
+        
+class TestRulesOBB(unittest.TestCase):
+    """
+    Made with AI
+    Test cases for Rules classes methods
+    """
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.ifc_path = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+        self.ifc_file = ifcopenshell.open(self.ifc_path)
+
+
     def test_below_rule(self):
         #@todo check below rule, it copy pasted only
         """Test Above rule, it's the same test than before but the other way around."""
@@ -258,8 +347,6 @@ class TestRules(unittest.TestCase):
         self.assertEqual(len(obb_above_rule.result), 14)
         #We should have get the same amount of result as OBB_Above(FurnishingElement,Slab), but the 3 tables are going threw the 2 finish layer.
 
-
-
     def test_obb_above_rule_2(self):
         """Test OBB_above rule, it's the inverse of OBB_Below, to cross check"""
 
@@ -285,83 +372,62 @@ class TestRules(unittest.TestCase):
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-    def test_angle_between_rule(self):
-        """Test AngleBetween rule with walls and doors"""
+
+
+    def test_display_custom_obb(self):
+        """Test custom obb check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path = [self.ifc_path]
+        OneRuleFile.list_ifc_path= [self.ifc_path]
 
-        # Select walls as source
-        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_facet = ids.Entity(name="IfcWallStandardCase")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        # Select doors as target
-        second_facet = ids.Entity(name="IFCDOOR")
+        second_facet = ids.Entity(name="IfcWindow")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        # Create AngleBetween rule to find perpendicular relationships (walls and doors)
-        # Use Wide method for direction, 90 degrees for perpendicular, 15 degrees tolerance
-        angle_between_rule = AngleBetween(
-            source=first_select,
-            target=second_select,
-            direction_method_for_source="Wide",
-            direction_method_for_target="Wide",
-            angle_difference=0.0,
-            angle_tolerance=1.0
-        )
-       
-        OneRuleFile.contains = [angle_between_rule]
-        OneRuleFile.run()
 
-        # Verify results
-        for result in angle_between_rule.result:
-            self.assertIsInstance(result, ClashResultTwoObjects)
 
-        # Should find some walls and doors that are parrallels to that one walls.
-        self.assertEqual(len(angle_between_rule.result), 4)
+        list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
+
+        obb_custom = OBB_Custom(first_select, second_select, list_of_modifications)
+
+        obb_custom._display_input()
+
+
         
 
-    def test_angle_between_rule2(self):
-        """Test AngleBetween rule with walls and doors"""
+
+    def test_custom_obb(self):
+        """Test custom obb check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path = [self.ifc_path]
+        OneRuleFile.list_ifc_path= [self.ifc_path]
 
-        # Select walls as source
-        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_facet = ids.Entity(name="IfcWallStandardCase")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        # Select doors as target
-        second_facet = ids.Entity(name="IFCDOOR")
+        second_facet = ids.Entity(name="IfcWindow")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        # Create AngleBetween rule to find perpendicular relationships (walls and doors)
-        # Use Wide method for direction, 90 degrees for perpendicular, 15 degrees tolerance
-        angle_between_rule = AngleBetween(
-            source=first_select,
-            target=second_select,
-            direction_method_for_source="Wide",
-            direction_method_for_target="Wide",
-            angle_difference=90.0,
-            angle_tolerance=1.0
-        )
-       
-        OneRuleFile.contains = [angle_between_rule]
+
+
+        list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
+
+        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications)
+        obb_above_rule._display_specific()
+        
+        OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
 
-
-        # Verify results
-        for result in angle_between_rule.result:
+        self.assertEqual(len(obb_above_rule.result), 34)
+        #We should find the same number as the above test rule. 
+        for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-
-        # Should find some walls and doors that are parrallels to that one walls.
-        self.assertEqual(len(angle_between_rule.result), 6)
-        
-
 
 
 if __name__ == '__main__':
