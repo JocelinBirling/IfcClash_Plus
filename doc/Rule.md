@@ -103,11 +103,16 @@ With every rule, we need to consider exceptions. Edge case are everywhere.
 There will always be exceptions, but we can at least reduce them.
 The idea is to give the same rule in exception as we can check. 
 
+
+
+
 ## Geometry Exception
 If we have a 2 objects Rule, that will produce a pair of two objects, we can reuse existing 2 objects rules to make futher check.
 
 ## Relation Exception
 IfcSystem Exception
+Same BuildingStorey Exception
+
 
 ## Example
 If we detect collision between two cable carrier, we must check if they are in the same IfcSystem. 
@@ -160,6 +165,19 @@ WORK IN PROGRESS
 
 # Folder of Rule
 WORK IN PROGRESS
+
+
+
+
+# Idea
+
+
+## Exception Before Launching
+We could run a gathering before that is rule is launched. 
+If two objects are in the same IfcSystem, then it's useless to check if they clash. Most of time, it's a model problem with very small edges overlaping (a model issue, not a real one)
+We could has well slice the check by building storey. It could help reduce the load (or useless if the tree is good).
+Noneless, it still usefullt to implemented a "by building storey", to avoid issues that would by right above an object threw the slab.
+
 
 
 

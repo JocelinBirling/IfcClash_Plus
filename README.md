@@ -17,17 +17,24 @@ The idea is to create a lego set of rule that can be used together.
     The idea is to reuse IDS Facet to select list of elements. I am pretty sure more and more people are starting to use it, so it will be easier for everyone with time.
 - Waterfall of Rule
     The result of a rule will produce a list of object. This list of object can be used in another rule. This can be used to expand the rule functionnality, and complexity.
+    With rule in waterfall, you can produce some complexe case.
 - Authorize exception
     In real life, there is edge case in everywhere. You can either select them by hand or reduce them. This aim to reduce the edge case to the bare minimum.
 - Categorize result
     The BCF can carry information like actor, or criticity. Sometime, these can be done with a script.
     - by actor
     - by criticity
+    - etc...
 - Regroup result by several way
     I want to expand the way to regroup result of clash.
 - Group rule in folder
+    You can gather rule together in a folder of rule. This folder can be activated or desactivated by a rule, or by an ids selection.
+    This can prevent from launching rule that are not coherent with the model. 
 
-
+- Relative or absolute result
+    The absolute or relative checking functionality allows users tod efine quantitative or relative quantities for clash detection result.
+    For absolute checking, it use a fixed threshold, a number of result, or the value of a property.
+    For relative checking, it compare the source and target element using some arithmetics (eg the number of source elements versus the number of target elements). This allows for dynamix validation, such as ensuring that the ratio or difference between two sets of elements meets the criteria.
 
 
 # Catalog of rule
@@ -66,6 +73,12 @@ There is a sheet for every rule, that present the rule, the parameters and the e
 | [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Two Objects | KO | KO | KO |
 
 #### Clearance with OBB
+
+Oriented Bouding Box (OBB) is smallest box that surround an object. Those check are fast and most of the time, they are precise enough to detect a problem.
+OBB has a 2nd advantages, it can be expanded or reduced easily. We can have obb that are expended around the top, or the side is reduced.
+
+The last benefits is to detect the front or back of an item. Most of time, it's not included in the model. You can not determine the front, the back, or the side of an object. For a door, you can have thing passing by the side, but not in the doorway (in the front or back). These method can help detect objects in front of a door.
+
 
 | **Règle** | **Type** | **Règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
