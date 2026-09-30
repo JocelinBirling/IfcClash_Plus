@@ -1579,5 +1579,209 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         if state == "Select":
             self.produce_select()
 
+class OBB_Custom(RuleCheckTwoObjects):
+    def __init__(self, source, target, tolerance):
+        super().__init__(source, target)
+        self.list_of_modifications: list[str] = tolerance
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+
+    def run(self, state="Final"):
+        self.tree = ifcopenshell.geom.tree()
+        self.select_source.run()
+        self.select_target.run()
+
+        # Create OBBs for source objects (these serve as detection zones)
+        source_geoms = []
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+                    entity = ifc_file.by_id(shape.data.id)
+
+
+                    for clash_obb in self._create_list_of_obb(geom):
+                        compound = clash_obb.to_TopoDS_Solid()
+                        source_geoms.append(
+                            {"entity": entity, "geom": compound, "obb": clash_obb}
+                        )
+
+                    if not iterator.next():
+                        break
+
+        # Get target geometries
+        target_geoms = []
+        for ifc_file in self.select_target.dict_elements.keys():
+            # self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE,True)
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_target.dict_elements[ifc_file],
+            )
+
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+                    entity = ifc_file.by_id(shape.data.id)
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    target_geoms.append({"entity": entity, "geom": geom, "obb": obb})
+
+                    if not iterator.next():
+                        break
+
+        # Check for clashes between source OBBs (detection zones) and target geometries
+        for source_data in source_geoms:
+            for target_data in target_geoms:
+                if source_data["obb"].IsOut(target_data["obb"]):
+                    continue
+
+                source_geom = source_data["geom"]
+                target_geom = target_data["geom"]
+
+                # Calculate distance between OBB and geometry
+                dist_tool = BRepExtrema_DistShapeShape()
+                dist_tool.LoadS1(source_geom)
+                dist_tool.LoadS2(target_geom)
+                dist_tool.Perform()
+                distance = dist_tool.Value()
+
+                # If they touch (distance <= tolerance) and target is above source, it's a clash
+                if distance <= 1e-6:
+                    result = ClashResultTwoObjects(
+                        source=source_data["entity"],
+                        target=target_data["entity"],
+                        state=False,
+                    )
+                    self.result.append(result)
+
+        if state == "Final":
+            self.manage_result()
+
+        if state == "Select":
+            self.produce_select()
+
+    def _display_input(self):
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        from OCC.Display.SimpleGui import init_display
+        self.display, self.start_display, add_menu, add_function = init_display()
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("USE_WORLD_COORDS", True)
+        # settings.set("use-python-opencascade", True)
+
+        # Check the extrem face of the source
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    for clash_obb in self._create_list_of_obb(geom):
+                        compound = clash_obb.to_TopoDS_Compound()
+                        ais_shape = AIS_Shape(compound)
+                        green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
+                        ais_shape.SetColor(green_color)
+                        ais_shape.SetTransparency(0.2)
+                        self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+
+        for ifc_file in self.select_target.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
+                    compound = clash_obb.to_TopoDS_Compound()
+                    ais_shape = AIS_Shape(compound)
+                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
+                    ais_shape.SetColor(green_color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+
+
+        self.display.FitAll()
+        self.start_display()
+
+    def _create_list_of_obb(self,geom):
+
+        #expand_sides
+        #detach_top_by_extrude
+        #detach_bottom_by_extrude
+        #extend_up
+        #extend_down
+        #NEW_OBB
+        obb = create_obb_from_TopoDs_Shape(geom)  # Why not use
+
+        list_of_obb=[]
+
+        for one_modification in self.list_of_modifications:
+
+            if "expand_sides" in one_modification:
+                value=one_modification.split(":")[1]
+                obb=obb.expand_sides(value)
+                continue
+
+            if "detach_top_by_extrude" in one_modification:
+                print("detach")
+                value=one_modification.split(":")[1]
+                obb=obb.detach_top_by_extrude(value)
+                continue
+
+            if "detach_bottom_by_extrude" in one_modification:
+                value=one_modification.split(":")[1]
+                obb=obb.detach_bottom_by_extrude(value)
+                continue
+
+            if "extend_up" in one_modification:
+                value=one_modification.split(":")[1]
+                obb=obb.extend_up(value)
+                continue
+
+            if "extend_down" in one_modification:
+                value=one_modification.split(":")[1]
+                obb=obb.extend_down(value)
+                continue
+            
+            if "NEW_OBB" in one_modification:
+                list_of_obb.append(obb)
+                obb = create_obb_from_TopoDs_Shape(geom)  
+            
+
+        list_of_obb.append(obb)
+
+        return list_of_obb
+
 
 # ===== Complex Rule

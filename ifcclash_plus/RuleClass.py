@@ -628,6 +628,7 @@ class RuleCheckTwoObjects(RuleCheck):
                     oneresult.actor.append(one_actor.classification_name)
 
     def run_exception(self):
+        #@todo include a relation exception, if on same ifcsystem, them can be excluded.
         for one_rule_result in self.result:
             for exception_rule in self.select_exception:
                 exception_rule.rule.select_source = one_rule_result.source

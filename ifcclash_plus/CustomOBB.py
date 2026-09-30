@@ -795,7 +795,6 @@ class Custom_OBB(Bnd_OBB):
 
         return top_OBB
 
-
     def extend_up(self, change: float) -> "Custom_OBB":
         """
         Étend l'OBB vers le haut dans la direction mondiale (0, 0, 1).
