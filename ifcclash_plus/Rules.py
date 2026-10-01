@@ -902,8 +902,7 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context: Select = context
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
-        #self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
-        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+
 
 
     def _display_context(self):
@@ -935,6 +934,28 @@ class Ray_Check(RuleCheckTwoObjects):
         for element in self.select_context.list_of_elements:
             add_to_display(element,geom_settings,grey)
 
+    def _get_elements_centers(self, select: Select, geom_settings):
+        """Compute the center of the bounding box of each selected element,
+        in world coordinates, as a dict {entity: (x, y, z)}"""
+        centers = {}
+        for ifc_file in select.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=select.dict_elements[ifc_file],
+            )
+
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    verts = np.array(shape.geometry.verts).reshape(-1, 3)
+                    entity = ifc_file.by_id(shape.id)
+                    centers[entity] = (verts.min(axis=0) + verts.max(axis=0)) / 2.0
+                    if not iterator.next():
+                        break
+        return centers
+
      
     def run(self):
         self.tree = ifcopenshell.geom.tree()
@@ -954,7 +975,21 @@ class Ray_Check(RuleCheckTwoObjects):
             self._display_input_generic()
             self._display_context()
 
+
         self.add_to_tree(self.select_context, "UB")
+
+        # The ray is cast between the centers of the objects, not between
+        # their placement origins: the origins often lie on the floor plane,
+        # where select_ray cannot detect the context faces grazed by the ray
+        # (faces coplanar with the ray, intersections on face edges).
+        center_settings = ifcopenshell.geom.settings()
+        center_settings.set(center_settings.USE_WORLD_COORDS, True)
+        source_centers = self._get_elements_centers(
+            self.select_source, center_settings
+        )
+        target_centers = self._get_elements_centers(
+            self.select_target, center_settings
+        )
 
         for source in self.select_source.list_of_elements:
             for target in self.select_target.list_of_elements:
@@ -962,14 +997,19 @@ class Ray_Check(RuleCheckTwoObjects):
                     # It's the same object
                     continue
 
-                source_position = clash_utils.get_XYZ_placement(source)
-                target_position = clash_utils.get_XYZ_placement(target)
-                source_array = np.array(source_position)
-                target_array = np.array(target_position)
+                if source not in source_centers or target not in target_centers:
+                    # One of the objects has no geometry
+                    continue
 
-                direction = target_array - source_array
-
+                source_position = tuple(
+                    float(x) for x in source_centers[source]
+                )
+                target_position = tuple(
+                    float(x) for x in target_centers[target]
+                )
+                direction = np.array(target_position) - np.array(source_position)
                 distance = np.linalg.norm(direction)
+
                 if distance == 0:
                     # It's the same object
                     continue
@@ -990,12 +1030,10 @@ class Ray_Check(RuleCheckTwoObjects):
 
                 # A ray_element has: distance, dot_product, instance,
                 # normal, position, ray_distance, style_index
-                sorted_results = sorted(results, key=lambda r: r.ray_distance,reverse=True)
-
                 # The clash appears when the source and the target are in
                 # direct view: no context object stands between them.
                 in_direct_view = True
-                for result in sorted_results:
+                for result in results:
                     result_file = ifcopenshell.file.from_pointer(
                         result.instance.file_pointer()
                     )
@@ -1011,10 +1049,9 @@ class Ray_Check(RuleCheckTwoObjects):
 
                 if in_direct_view:
                     self.result.append(
-                        ClashResultTwoObjects(
-                            source=source, target=target, state=True
-                        )
+                        ClashResultTwoObjects(source=source, target=target, state=True)
                     )
+
 
 
         if self.state=="Display_Input":

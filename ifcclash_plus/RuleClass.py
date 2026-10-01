@@ -902,7 +902,7 @@ class RuleCheckTwoObjects(RuleCheck):
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        neutral_color=color = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
+        neutral_color= Quantity_Color(0, 0, 0.5, Quantity_TOC_RGB)
         source_set= set()
 
         for clash in self.result:

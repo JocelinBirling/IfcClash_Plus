@@ -9,7 +9,7 @@ import ifcopenshell.util.representation
 from ifcopenshell.util.shape_builder import VectorType
 from math import radians, cos
 from ifcopenshell.geom import ShapeElementType, ShapeType
-from typing import Optional, Literal, Union, Dict, List
+from typing import Optional, Literal, Union, Dict, List, Tuple
 from OCC.Core.BRepExtrema import BRepExtrema_DistShapeShape
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakePolygon, BRepBuilderAPI_MakeFace
 from OCC.Core.gp import gp_Pnt, gp_XYZ

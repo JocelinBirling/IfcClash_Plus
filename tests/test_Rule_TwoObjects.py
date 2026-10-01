@@ -112,9 +112,7 @@ class TestRules(unittest.TestCase):
         second_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
-
-        # A Restriction with an enumeration selects both classes (union).
-        # The values must be uppercase.
+        
         context_facet = ids.Entity(
             name=ids.Restriction(
                 options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
@@ -125,10 +123,12 @@ class TestRules(unittest.TestCase):
 
 
 
-        rule = Ray_Check(first_select, second_select,context_select, 5,state="Display_Result") 
+        rule = Ray_Check(first_select, second_select,context_select, 5,state="Final") 
 
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 21)
 
 
 
