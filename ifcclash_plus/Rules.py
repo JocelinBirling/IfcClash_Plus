@@ -157,7 +157,6 @@ class TopOrBottomSurface(RuleCheckOneObject):
                     )["total_area"]
 
                     if self.surface_min < area < self.surface_max:
-                        print(entity, area)
                         result = ClashResultOneObject(source=entity, state=True)
                         self.result.append(result)
                     else:
@@ -1557,7 +1556,9 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     entity = ifc_file.by_id(shape.data.id)
 
                     # Create OBB for the source object (detection zone)
-                    obb = create_obb_from_TopoDs_Shape_via_pca(geom)
+                    obb = create_obb_from_TopoDs_Shape(geom) #It's the old way, but it can create face that are toward Z.
+                    #obb =create_obb_with_fixed_z(geom)
+
                     main_directions = obb.get_two_main_direction_OBB_shape(
                         self.direction_method
                     )
@@ -1648,7 +1649,8 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     shape = iterator.get()
                     geom = shape.geometry
 
-                    obb = create_obb_from_TopoDs_Shape_via_pca(geom)
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    #obb =create_obb_with_fixed_z(geom)
                     main_directions = obb.get_two_main_direction_OBB_shape(
                         self.direction_method
                     )
