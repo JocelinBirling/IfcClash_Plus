@@ -279,7 +279,7 @@ def create_obb_from_TopoDs_Shape(shape:TopoDS_Compound) -> "Custom_OBB":
         Bnd_OBB: L'OBB calculé pour la forme.
     """
 
-    mesh = BRepMesh_IncrementalMesh(shape, 0.1, False, 0.5)
+    mesh = BRepMesh_IncrementalMesh(shape, 0.01, False, 0.5)
     mesh.Perform()
 
     # Calculer directement l'OBB à partir de la forme avec une tolérance précise
@@ -1044,7 +1044,7 @@ class Custom_OBB(Bnd_OBB):
         return corners_in_dir
 
     def get_two_main_direction_OBB_shape(
-        self, wide_or_narrow: Literal["wide", "narrow"]
+        self, wide_or_narrow: Literal["wide", "narrow"],only_check_xy:bool =True
     ) -> tuple[gp_Dir, gp_Dir]:
         """
         Détermine les deux directions des faces larges (ou étroites) de l'OBB.
@@ -1063,13 +1063,37 @@ class Custom_OBB(Bnd_OBB):
 
         # Identifier les deux faces les plus larges ou étroites
         # On compare les dimensions pour déterminer les faces larges ou étroites
+        
+        #@todo What can happen when an object is tilted to 45 degres. No real Z can be found.
+        #@todo This function need to be improve for IfcSlab or tilted object, it's not working yet.
         dimensions = {"X": x_size, "Y": y_size, "Z": z_size}
+        if only_check_xy==True:
+
+            Z_absolute=gp_Dir(0,0,1)
+            angular_tolerance=0.1
+
+            z_direction=gp_Dir(self.ZDirection())
+            if Z_absolute.IsParallel(z_direction,angular_tolerance):
+                dimensions = {"X": x_size, "Y": y_size}
+
+            x_direction=gp_Dir(self.XDirection())
+            if Z_absolute.IsParallel(x_direction,angular_tolerance):
+                dimensions = {"Y": y_size, "Z": z_size}
+
+            y_direction=gp_Dir(self.YDirection())
+            if Z_absolute.IsParallel(y_direction,angular_tolerance):
+                dimensions = {"X": x_size, "Z": z_size}
+
+
+
+
+
 
         # Trouver les deux dimensions les plus grandes ou les plus petites
         sorted_dimensions = sorted(
             dimensions.items(),
             key=lambda item: item[1],
-            reverse=(wide_or_narrow == "narrow"),
+            reverse=(wide_or_narrow == "Narrow"),
         )
 
         # Les deux faces les plus larges ou étroites sont les deux premières dimensions
