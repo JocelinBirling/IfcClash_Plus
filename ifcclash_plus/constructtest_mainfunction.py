@@ -1,6 +1,6 @@
 import RuleClass
 from RuleClass import SelectFacet,SelectRule,RuleFile
-from Rules import Volume, Area, TopSurface,Intersection,Above,OBB_Above,Ray_Check,OBB_Below
+from Rules import Volume, Area, TopOrBottomSurface,Intersection,Above,OBB_Above,Ray_Check,OBB_Below
 from ifctester import ids
 from ifcopenshell import file
 import ifcopenshell

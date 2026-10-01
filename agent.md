@@ -75,7 +75,7 @@ RuleCheck         # Abstract base for all rules
 
 | Type | Purpose | State | Examples |
 |------|---------|-------|----------|
-| **One Object** | Validate single elements | Geometry/Property checks | Volume, Area, Orientation, TopSurface |
+| **One Object** | Validate single elements | Geometry/Property checks | Volume, Area, Orientation, TopOrBottomSurface |
 | **Two Objects** | Validate element pairs | Spatial relationships | Clearance, Intersection, Collision, Above, Below, OBB_Above |
 | **Complex** | Multi-set validation | Complex scenarios | FreeSpace, FindPath, EvacuationDistance |
 

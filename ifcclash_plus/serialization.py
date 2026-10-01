@@ -7,7 +7,11 @@ It handles the serialization of RuleFile, RuleFolder, SelectFacet, SelectRule, a
 
 import json
 import importlib
-from typing import Any, Dict, List, Union, Type
+from typing import Any, Dict, List, Union, Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from RuleClass import SelectFacet, SelectRule, RuleCheck, RuleFile, RuleFolder, Select
+
 from ifctester import ids
 from ifctester.facet import (
     Facet,
@@ -33,42 +37,36 @@ def serialize_facet(facet: Facet) -> Dict[str, Any]:
     if isinstance(facet, Entity):
         return {
             "type": "Entity",
-            "name": facet.name,
-            "ifc_version": facet.ifc_version
+            "name": facet.name
         }
     elif isinstance(facet, Property):
         return {
             "type": "Property",
             "property_set": facet.propertySet,
             "base_name": facet.baseName,
-            "value": facet.value,
-            "ifc_version": facet.ifc_version
+            "value": facet.value
         }
     elif isinstance(facet, Attribute):
         return {
             "type": "Attribute",
             "name": facet.name,
-            "value": facet.value,
-            "ifc_version": facet.ifc_version
+            "value": facet.value
         }
     elif isinstance(facet, Classification):
         return {
             "type": "Classification",
             "name": facet.name,
-            "value": facet.value,
-            "ifc_version": facet.ifc_version
+            "value": facet.value
         }
     elif isinstance(facet, PartOf):
         return {
             "type": "PartOf",
-            "name": facet.name,
-            "ifc_version": facet.ifc_version
+            "name": facet.name
         }
     elif isinstance(facet, Material):
         return {
             "type": "Material",
-            "name": facet.name,
-            "ifc_version": facet.ifc_version
+            "name": facet.name
         }
     else:
         raise ValueError(f"Unsupported facet type: {type(facet)}")
@@ -85,33 +83,29 @@ def deserialize_facet(facet_data: Dict[str, Any]) -> Facet:
         The deserialized Facet object
     """
     facet_type = facet_data.get("type")
-    ifc_version = facet_data.get("ifc_version", None)
     
     if facet_type == "Entity":
-        return Entity(name=facet_data["name"], ifc_version=ifc_version)
+        return Entity(name=facet_data["name"])
     elif facet_type == "Property":
         return Property(
             propertySet=facet_data["property_set"],
             baseName=facet_data["base_name"],
-            value=facet_data["value"],
-            ifc_version=ifc_version
+            value=facet_data["value"]
         )
     elif facet_type == "Attribute":
         return Attribute(
             name=facet_data["name"],
-            value=facet_data["value"],
-            ifc_version=ifc_version
+            value=facet_data["value"]
         )
     elif facet_type == "Classification":
         return Classification(
             name=facet_data["name"],
-            value=facet_data["value"],
-            ifc_version=ifc_version
+            value=facet_data["value"]
         )
     elif facet_type == "PartOf":
-        return PartOf(name=facet_data["name"], ifc_version=ifc_version)
+        return PartOf(name=facet_data["name"])
     elif facet_type == "Material":
-        return Material(name=facet_data["name"], ifc_version=ifc_version)
+        return Material(name=facet_data["name"])
     else:
         raise ValueError(f"Unknown facet type: {facet_type}")
 
@@ -128,8 +122,8 @@ def serialize_select_facet(select_facet: 'SelectFacet') -> Dict[str, Any]:
     """
     return {
         "type": "SelectFacet",
-        "classification_type": select_facet.type,
-        "classification_name": select_facet.classification_name,
+        "classification_type": getattr(select_facet, 'type', 'Facet'),
+        "classification_name": getattr(select_facet, 'classification_name', ''),
         "applicability": [serialize_facet(f) for f in select_facet.applicability]
     }
 
@@ -185,10 +179,18 @@ def serialize_rule_check(rule: 'RuleCheck') -> Dict[str, Any]:
     rule_type = type(rule).__name__
     
     # Common attributes
+    # Handle select_grouping which can be a string or SelectFacet
+    select_grouping_data = None
+    if hasattr(rule, 'select_grouping'):
+        if isinstance(rule.select_grouping, str):
+            select_grouping_data = rule.select_grouping
+        elif rule.select_grouping is not None:
+            select_grouping_data = serialize_select_facet(rule.select_grouping)
+    
     data = {
         "type": rule_type,
         "id": rule.id,
-        "select_grouping": serialize_select_facet(rule.select_grouping) if rule.select_grouping else None,
+        "select_grouping": select_grouping_data,
         "select_criticity": [serialize_select_facet(s) for s in rule.select_criticity],
         "select_actor": [serialize_select_facet(s) for s in rule.select_actor],
     }
@@ -200,10 +202,7 @@ def serialize_rule_check(rule: 'RuleCheck') -> Dict[str, Any]:
     elif rule_type == "Area":
         data["area_min"] = rule.volume_min  # Note: misnamed in original class
         data["area_max"] = rule.volume_max
-    elif rule_type == "TopSurface":
-        data["surface_min"] = rule.surface_min
-        data["surface_max"] = rule.surface_max
-    elif rule_type == "BottomSurface":
+    elif rule_type == "TopOrBottomSurface":
         data["surface_min"] = rule.surface_min
         data["surface_max"] = rule.surface_max
     elif rule_type == "LateralSurface":
@@ -224,6 +223,16 @@ def serialize_rule_check(rule: 'RuleCheck') -> Dict[str, Any]:
         data["obb_tolerance"] = getattr(rule, 'obb_tolerance', None)
     elif rule_type == "Collision":
         data["tolerance"] = rule.tolerance
+    
+    # Add source and target selects
+    if hasattr(rule, 'select_source') and rule.select_source is not None:
+        data["select_source"] = serialize_select(rule.select_source)
+    if hasattr(rule, 'select_target') and rule.select_target is not None:
+        data["select_target"] = serialize_select(rule.select_target)
+    
+    # Add exception selects for two-object rules
+    if hasattr(rule, 'select_exception'):
+        data["select_exception"] = [serialize_select(s) for s in rule.select_exception]
     
     return data
 
@@ -246,27 +255,15 @@ def deserialize_rule_check(data: Dict[str, Any], ifc_paths: List[str] = None) ->
         SelectRule
     )
     from Rules import (
-        Volume, Area, TopSurface, BottomSurface, LateralSurface,
+        Volume, Area, TopOrBottomSurface, LateralSurface,
         Intersection, Clearance, Above, Below, OBB_Above, Collision
     )
     
+    # Create aliases for TopSurface and BottomSurface
+    TopSurface = lambda source, surface_min, surface_max: TopOrBottomSurface(source, surface_min, surface_max, "Top")
+    BottomSurface = lambda source, surface_min, surface_max: TopOrBottomSurface(source, surface_min, surface_max, "Bottom")
+    
     rule_type = data["type"]
-    
-    # Get the rule class
-    rule_class = None
-    if rule_type in globals():
-        rule_class = globals()[rule_type]
-    else:
-        # Try to import from Rules module
-        try:
-            rules_module = importlib.import_module('Rules')
-            if hasattr(rules_module, rule_type):
-                rule_class = getattr(rules_module, rule_type)
-        except:
-            pass
-    
-    if rule_class is None:
-        raise ValueError(f"Unknown rule type: {rule_type}")
     
     # For now, we'll handle specific rule types
     # This is a simplified version - in practice, you'd need to handle each rule type
@@ -275,6 +272,22 @@ def deserialize_rule_check(data: Dict[str, Any], ifc_paths: List[str] = None) ->
         # Need source select
         source = deserialize_select(data.get("select_source"))
         return Volume(source, data["volume_min"], data["volume_max"])
+    
+    elif rule_type == "Area":
+        source = deserialize_select(data.get("select_source"))
+        return Area(source, data.get("area_min", 0), data.get("area_max", float('inf')))
+    
+    elif rule_type == "TopSurface":
+        source = deserialize_select(data.get("select_source"))
+        return TopSurface(source, data.get("surface_min", 0), data.get("surface_max", float('inf')))
+    
+    elif rule_type == "BottomSurface":
+        source = deserialize_select(data.get("select_source"))
+        return BottomSurface(source, data.get("surface_min", 0), data.get("surface_max", float('inf')))
+    
+    elif rule_type == "LateralSurface":
+        source = deserialize_select(data.get("select_source"))
+        return LateralSurface(source, data.get("surface_min", 0), data.get("surface_max", float('inf')), data.get("direction", 0))
     
     elif rule_type == "Intersection":
         source = deserialize_select(data.get("select_source"))
@@ -291,6 +304,21 @@ def deserialize_rule_check(data: Dict[str, Any], ifc_paths: List[str] = None) ->
         target = deserialize_select(data.get("select_target"))
         return Above(source, target, data.get("tolerance", 1.0), data.get("above_type", "Above_MaxToMax"))
     
+    elif rule_type == "Below":
+        source = deserialize_select(data.get("select_source"))
+        target = deserialize_select(data.get("select_target"))
+        return Below(source, target, data.get("tolerance", 1.0))
+    
+    elif rule_type == "OBB_Above":
+        source = deserialize_select(data.get("select_source"))
+        target = deserialize_select(data.get("select_target"))
+        return OBB_Above(source, target, data.get("tolerance", 0.001), data.get("obb_tolerance", None))
+    
+    elif rule_type == "Collision":
+        source = deserialize_select(data.get("select_source"))
+        target = deserialize_select(data.get("select_target"))
+        return Collision(source, target, data.get("tolerance", 0.001))
+    
     else:
         raise NotImplementedError(f"Deserialization for {rule_type} not yet implemented")
 
@@ -305,6 +333,9 @@ def serialize_select(select: 'Select') -> Dict[str, Any]:
     Returns:
         Dictionary representation
     """
+    if select is None:
+        return None
+    
     if hasattr(select, 'applicability'):
         # It's a SelectFacet
         return serialize_select_facet(select)
@@ -312,7 +343,7 @@ def serialize_select(select: 'Select') -> Dict[str, Any]:
         # It's a SelectRule
         return serialize_select_rule(select)
     else:
-        return {"type": "Select", "id": select.id}
+        return {"type": "Select", "id": getattr(select, 'id', None)}
 
 
 def deserialize_select(data: Dict[str, Any]) -> 'Select':

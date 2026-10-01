@@ -4,10 +4,14 @@
 # Expose main modules for easy importing
 from .Rules import (
     Volume, Area,  Intersection, Clearance, Above, 
-    OBB_Above, Ray_Check
+    OBB_Above, Ray_Check, TopOrBottomSurface
 )
 from .RuleClass import SelectFacet, SelectRule, RuleFile
 from .CustomOBB import Custom_OBB
+
+# Create aliases for TopSurface and BottomSurface for backward compatibility
+TopSurface = lambda source, surface_min, surface_max: TopOrBottomSurface(source, surface_min, surface_max, "Top")
+BottomSurface = lambda source, surface_min, surface_max: TopOrBottomSurface(source, surface_min, surface_max, "Bottom")
 
 # Expose serialization functions
 from .serialization import (
@@ -19,7 +23,8 @@ from .serialization import (
 )
 
 __all__ = [
-    'Volume', 'Area', 'TopSurface', 'Intersection', 'Clearance', 'Above',
+    'Volume', 'Area', 'TopOrBottomSurface', 'TopSurface', 'BottomSurface',
+    'Intersection', 'Clearance', 'Above',
     'OBB_Above', 'Ray_Check', 'SelectFacet', 'SelectRule', 'RuleFile',
     'Custom_OBB',
     # Serialization functions

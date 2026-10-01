@@ -1,0 +1,38 @@
+{
+    "ifc_paths": [
+        "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+    ],
+    "rules": [
+        {
+            "type": "Intersection",
+            "id": null,
+            "select_grouping": null,
+            "select_criticity": [],
+            "select_actor": [],
+            "tolerance": 0.01,
+            "select_source": {
+                "type": "SelectFacet",
+                "classification_type": "Facet",
+                "classification_name": "",
+                "applicability": [
+                    {
+                        "type": "Entity",
+                        "name": "IFCWALLSTANDARDCASE"
+                    }
+                ]
+            },
+            "select_target": {
+                "type": "SelectFacet",
+                "classification_type": "Facet",
+                "classification_name": "",
+                "applicability": [
+                    {
+                        "type": "Entity",
+                        "name": "IFCFURNISHINGELEMENT"
+                    }
+                ]
+            },
+            "select_exception": []
+        }
+    ]
+}

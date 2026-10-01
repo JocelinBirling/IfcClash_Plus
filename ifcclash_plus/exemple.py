@@ -1,9 +1,10 @@
 import RuleClass
 from RuleClass import SelectFacet, SelectRule
-from Rules import Volume, Area, TopSurface, Intersection, Clearance,Above
+from Rules import Volume, Area, TopOrBottomSurface, Intersection, Clearance,Above
 from ifctester import ids
 from ifcopenshell import file
 import ifcopenshell
+
 
 
 def IntersectionCheck():
@@ -388,4 +389,5 @@ if __name__ == "__main__":
     # Uncomment to test save/load functionality
     # save_and_load_configuration()
     # save_simple_configuration()
+    # manual_save_example()
 

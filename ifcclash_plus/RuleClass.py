@@ -210,8 +210,6 @@ class RuleCheck:
 
         self.grouped_result: list[GroupResult] = []
 
-        
-
     def add_to_tree(self, Select, type_of_tree):
         for ifc_file in Select.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
