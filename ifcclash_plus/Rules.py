@@ -1754,7 +1754,6 @@ class OBB_Custom(RuleCheckTwoObjects):
                 continue
 
             if "detach_top_by_extrude" in one_modification:
-                print("detach")
                 value=one_modification.split(":")[1]
                 obb=obb.detach_top_by_extrude(value)
                 continue

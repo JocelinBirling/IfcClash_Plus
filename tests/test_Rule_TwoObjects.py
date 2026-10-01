@@ -419,15 +419,18 @@ class TestRulesOBB(unittest.TestCase):
         list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
 
         obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications)
-        obb_above_rule._display_specific()
         
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
+
+        obb_above_rule.display_result()
 
         self.assertEqual(len(obb_above_rule.result), 34)
         #We should find the same number as the above test rule. 
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
+
+        
 
 
 if __name__ == '__main__':

@@ -255,6 +255,10 @@ class RuleCheck:
         print("Reuse Ifcopenshell")
 
 
+    def display_input(self):
+        #This function will display the clash zone that will be used by the rule.
+        pass
+
 class RuleCheckOneObject(RuleCheck):
     def __init__(self, source):
         super().__init__(source)

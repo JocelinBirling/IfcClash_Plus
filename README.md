@@ -105,6 +105,12 @@ The last benefits is to detect the front or back of an item. Most of time, it's 
 | [Alignement](doc/ComplexRules/Alignement) | Complex | NOK | KO | KO |
 
 
+
+# Install
+This project is using the following.
+IfcOpenShell
+
+
 # Progress
 The first step is to create new rule to expand possibilities. Those rule can be used in any template.
 
