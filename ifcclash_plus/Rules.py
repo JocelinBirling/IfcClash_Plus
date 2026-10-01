@@ -264,6 +264,61 @@ class ProjectedSurface(RuleCheckOneObject):
             self.produce_select()
 
 
+class ObbHigh(RuleCheckOneObject):
+    def __init__(self, source, lenght_min, lenght_max):
+        super().__init__(source)
+        self.type = "Projected"
+        self.lenght_max: float = lenght_max
+        self.lenght_min: float = lenght_min
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+
+    def run(self, state="Final"):  
+
+
+
+        self.tree = ifcopenshell.geom.tree()
+        self.select_source.run()
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+                    entity = ifc_file.by_id(shape.data.id)
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    corners=obb.get_corners()
+                    min_z=corners[0].Z()
+                    max_z=corners[0].Z()
+
+                    for corner in corners:
+                        min_z = min(min_z, corner.Z())
+                        max_z = max(max_z, corner.Z())
+                        
+                    value_to_check=max_z-min_z
+
+                    if self.lenght_min < value_to_check < self.lenght_max:
+                        result = ClashResultOneObject(source=entity, state=True)
+                        self.result.append(result)
+                    else:
+                        self.result_fail_source.append(entity)
+
+                    if not iterator.next():
+                        break
+
+        if state == "Final":
+            self.manage_result()
+        else:
+            self.produce_select()
+
+
 ORIENTATION_TYPE = Literal["Parrallel", "Perpendicular"]
 
 

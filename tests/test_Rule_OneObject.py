@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import Volume, Area,Orientation,TopOrBottomSurface,LateralSurface,ProjectedSurface
+from Rules import Volume, Area,Orientation,TopOrBottomSurface,LateralSurface,ProjectedSurface,ObbHigh
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject
 from ifctester import ids
 
@@ -171,6 +171,26 @@ class TestRules(unittest.TestCase):
             self.assertIsInstance(result, ClashResultOneObject)
         self.assertEqual(len(rule.result), 30) 
 
+
+    def test_obb_high_rule(self):
+        """Test TopSurface rule"""
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path= [self.ifc_path]
+
+        first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+
+        rule = ObbHigh(first_select,2,3)
+
+        OneRuleFile.contains=[rule]
+        OneRuleFile.run()
+
+        
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultOneObject)
+        self.assertEqual(len(rule.result), 25) 
 
 
 if __name__ == '__main__':

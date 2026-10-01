@@ -53,6 +53,7 @@ There is a sheet for every rule, that present the rule, the parameters and the e
 | [Lateral Surface](doc/1ObjectsRules/LateralSurface) | One Object | OK | KO | OK |
 | [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | One Object | OK | KO | OK |
 | [Orientation](doc/1ObjectsRules/Orientation) | One Object | OK | KO | OK |
+| [Object hight](doc/1ObjectsRules/ObbHigh) | One Object | OK | OK | OK |
 
 ### Two Object Rule
 
@@ -77,7 +78,7 @@ There is a sheet for every rule, that present the rule, the parameters and the e
 Oriented Bouding Box (OBB) is smallest box that surround an object. Those check are fast and most of the time, they are precise enough to detect a problem.
 OBB has a 2nd advantages, it can be expanded or reduced easily. We can have obb that are expended around the top, or the side is reduced.
 
-The last benefits is to detect the front or back of an item. Most of time, it's not included in the model. You can not determine the front, the back, or the side of an object. For a door, you can have thing passing by the side, but not in the doorway (in the front or back). These method can help detect objects in front of a door.
+The last benefits is to detect the front or back of an item. Most of time, the information is not included in the model. You can not determine the front, the back, or the side of an object. For a door, you can have thing passing by the side, but not in the doorway (in the front or back). These method can help detect objects in front of a door. The OBB is a cuboid, the function to modify it, or to calculate it are very simple.
 
 
 | **Règle** | **Type** | **Règle** | **Doc** | **Test** |
@@ -169,3 +170,32 @@ still WIP
 
 
 V0.4
+
+
+
+
+
+
+
+# TODO
+
+
+1. Exception for IfcSystem or same IfcBuildingStorey
+Before launching the rule, we could exclude object that have the same IfcSystem, or that are not in the same level.
+
+2. Finish the Grouping by
+
+3. Property extraction
+When we use the relative rule, we can extract value from objects in order to sum quantites.
+This was not tested properly.
+
+4. Create a system to dispatch result
+We could want to have the source object that failed, or pass the test only.
+
+
+5. Orientation Rule
+We could facilitate the orientation rule to check if it face the north or south, by simply introducing text.
+
+
+
+

@@ -45,7 +45,7 @@ class RuleFile:
 
         self.path_to_save: str = None
 
-    def run(self): #@todo improve this loading thing
+    def run(self): 
         self.load_file()
         self.update_file_info()
 
@@ -57,12 +57,10 @@ class RuleFile:
             rule_or_file.update_file_info(self.list_ifc_path, self.list_ifc_file)
 
     def load_file(self):
+        #@todo improve the load_file()
+        #This function is used to dispatch the list of ifc_file path to every rule.
         for path in self.list_ifc_path:
             self.list_ifc_file.append(ifcopenshell.open(path))
-
-    def to_xml(self, filepath="output.xml"):
-        print("to_xml() is not working")
-        # @todo to_xml function
 
 
 class RuleFolder:
