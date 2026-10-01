@@ -351,7 +351,13 @@ def create_RayCheck_clash():
     Source_Select2.applicability = [Source_Facet2]
 
     Source_Select3 = SelectFacet()
-    Source_Facet3 = ids.Entity(name="IFCWALLSTANDARDCASE")
+    # A Restriction with an enumeration selects both classes (union).
+    # The values must be uppercase.
+    Source_Facet3 = ids.Entity(
+        name=ids.Restriction(
+            options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
+        )
+    )
     Source_Select3.applicability = [Source_Facet3]
 
 

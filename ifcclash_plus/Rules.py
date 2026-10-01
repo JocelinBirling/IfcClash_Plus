@@ -902,7 +902,8 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context: Select = context
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
-        # self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
+        #self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
 
     def _display_context(self):
@@ -952,15 +953,15 @@ class Ray_Check(RuleCheckTwoObjects):
         if self.state=="Display_Input":
             self._display_input_generic()
             self._display_context()
-      
 
         self.add_to_tree(self.select_context, "UB")
 
-
-        context_set=set(self.select_context.list_of_elements)
-        target_set=set(self.select_target.list_of_elements)
         for source in self.select_source.list_of_elements:
             for target in self.select_target.list_of_elements:
+                if source == target:
+                    # It's the same object
+                    continue
+
                 source_position = clash_utils.get_XYZ_placement(source)
                 target_position = clash_utils.get_XYZ_placement(target)
                 source_array = np.array(source_position)
@@ -973,7 +974,10 @@ class Ray_Check(RuleCheckTwoObjects):
                     # It's the same object
                     continue
 
-                direction = tuple(direction.flatten())
+                if distance > self.max_ray_length:
+                    # The two objects are too far away from each other
+                    continue
+
                 direction = (
                     float(direction[0] / distance),
                     float(direction[1] / distance),
@@ -984,28 +988,33 @@ class Ray_Check(RuleCheckTwoObjects):
                     source_position, direction, length=distance
                 )
 
-                number = 0
-                for result in results:
-                    """
-                    distance: Any
-                    dot_product: Any
-                    instance: Any
-                    normal: Any
-                    position: Any
-                    ray_distance: Any
-                    style_index: Any
-                    """
-                    result_object = result.instance.file_.by_id(result.instance.id())
+                # A ray_element has: distance, dot_product, instance,
+                # normal, position, ray_distance, style_index
+                sorted_results = sorted(results, key=lambda r: r.ray_distance,reverse=True)
 
-                    if result_object == source:
+                # The clash appears when the source and the target are in
+                # direct view: no context object stands between them.
+                in_direct_view = True
+                for result in sorted_results:
+                    result_file = ifcopenshell.file.from_pointer(
+                        result.instance.file_pointer()
+                    )
+                    result_object = result_file.by_id(result.instance.id_)
+
+                    # The source and the target never block their own ray
+                    if result_object == source or result_object == target:
                         continue
 
-                    if result_object != source and result_object != target:
-                        break
+                    # A context object stands between the source and the target
+                    in_direct_view = False
+                    break
 
-                    if result_object == target:
-                        self.result.append(ClashResultTwoObjects(source=source["entity"],target=target["entity"],state=True,))
-                        break
+                if in_direct_view:
+                    self.result.append(
+                        ClashResultTwoObjects(
+                            source=source, target=target, state=True
+                        )
+                    )
 
 
         if self.state=="Display_Input":
@@ -1013,7 +1022,11 @@ class Ray_Check(RuleCheckTwoObjects):
             self.start_display()
             return 0        
         if self.state=="Display_Result":
-            self.display_result()
+            self._display_result_generic()
+            self._display_context()
+
+            self.display.FitAll()
+            self.start_display()
         if self.state == "Final":
             self.manage_result()
 

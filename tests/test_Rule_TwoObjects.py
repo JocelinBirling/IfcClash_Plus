@@ -113,7 +113,13 @@ class TestRules(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        context_facet = ids.Entity(name="IfcWallStandardCase")
+        # A Restriction with an enumeration selects both classes (union).
+        # The values must be uppercase.
+        context_facet = ids.Entity(
+            name=ids.Restriction(
+                options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
+            )
+        )
         context_select = SelectFacet()
         context_select.applicability = [context_facet]
 
