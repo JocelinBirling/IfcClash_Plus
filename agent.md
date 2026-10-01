@@ -292,6 +292,70 @@ door_wall_intersection.select_exception = [SelectRule(exception_rule)]
 
 ---
 
+## Environment Setup
+
+The project needs **PythonOCC** (Open CASCADE bindings) and **IfcOpenShell**.
+These two libraries do not come from the same package source, which is the
+main pitfall when building the environment:
+
+- `pythonocc-core` has no pip wheel: it must come from **conda-forge**
+  (it also installs `occt`). Use a `novtk` build to avoid the heavy
+  VTK/GUI dependencies.
+- `ifcopenshell`, `ifctester` and the other Python dependencies are **pip**
+  packages, and their wheels are built for one exact Python version. They
+  must be installed with the `pip` of the conda environment.
+
+### Creating the environment
+
+```bash
+# 1. Conda environment with Python and PythonOCC, from conda-forge
+conda create -c conda-forge -n ifcclash_plus python=3.14 "pythonocc-core=7.9.3=novtk*"
+conda activate ifcclash_plus
+
+# 2. IfcOpenShell and the Python dependencies (wheels matching this Python)
+pip install ifcopenshell==0.8.4.post1 ifctester==0.8.4 ifcpatch numpy shapely trimesh pytest
+
+# 3. The project itself, editable
+pip install -e .
+
+# 4. Check the installation
+python -c "import OCC, ifcopenshell, ifctester; print('environment OK')"
+```
+
+`requirements.txt` pins the exact versions of the working environment
+(it also contains optional web/UI dependencies such as Flask).
+
+### Running the tests
+
+Tests must be run from the repository root (the IFC model paths are relative):
+
+```bash
+python -m pytest tests/            # all tests
+python -m pytest tests/test_RuleFile.py -v
+python -m unittest tests.test_RuleFile.TestRuleFileWithSelectRule -v
+```
+
+### Pitfalls
+
+- `ImportError: IfcOpenShell not built for 'linux/64bit/pythonX'`:
+  the ifcopenshell wheel does not match the Python of the environment
+  (typical when reusing an environment created for another Python version).
+  Recreate the environment and reinstall with its own `pip`.
+- Never install pythonocc-core with pip: it does not exist as a wheel.
+- A plain `python -m venv` environment cannot work: there is no pip wheel
+  for PythonOCC.
+
+### Known working environment on this machine
+
+`/home/jocelin/Documents/07 - Programmation/IfcOpenshell/Test_IfcOpenshell/.conda`
+(Python 3.14.3, pythonocc-core 7.9.3-novtk, ifcopenshell 0.8.4.post1) —
+this is the interpreter used to run the test suite.
+
+Do not use:
+- `.venv/` (project): has ifcopenshell but no PythonOCC.
+- `~/miniconda3/envs/IfcClash_Plus`: has PythonOCC but an ifcopenshell wheel
+  built for a different Python.
+
 ## Testing
 
 ### Test Structure

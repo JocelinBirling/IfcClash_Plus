@@ -189,18 +189,19 @@ class SelectRule(Select):
         # 3 - Select target in the list
         # 4 - Select target not in the list
 
-    def run(self, state="Select", element="source", passed=True, in_results=True):
-        self.rule.run(state)
-        self.produce_select(element, passed, in_results)
+    def run(self, state="Select", element="source", passed=True):
+        # The run() of the rules takes no argument, the state is set on the rule.
+        self.rule.state = state
+        self.rule.run()
+        self.produce_select(element, passed)
 
-    def produce_select(self, element="source", passed=True, in_results=True):
+    def produce_select(self, element="source", passed=True):
         # element: "source" or "target"
-        # passed: True for results with status True, False for status False
-        # in_results: True to pick elements inside the results,
-        #              False to pick elements of the input selection that
-        #              went through the rule but produced no result.
+        # passed: True to pick elements of the results with status True,
+        #         False to pick elements of the input selection that
+        #         went through the rule but produced no result.
         self.dict_elements = self.rule.produce_select(
-            element=element, passed=passed, in_results=in_results
+            element=element, passed=passed
         )
 
     def update_file_info(self, files_path, files):
@@ -320,12 +321,11 @@ class RuleCheckOneObject(RuleCheck):
         super().__init__(state,source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
-    def produce_select(self, element="source", passed=True, in_results=True):
+    def produce_select(self, element="source", passed=True):
         # element: only "source" for a one object rule
-        # passed: True for results with status True, False for status False
-        # in_results: True to pick elements inside the results,
-        #              False to pick elements of the input selection that
-        #              went through the rule but produced no result.
+        # passed: True to pick elements of the results with status True,
+        #         False to pick elements of the input selection that
+        #         went through the rule but produced no result.
         if element != "source":
             raise ValueError(
                 f"element must be 'source' for a one object rule, got '{element}'"
@@ -333,7 +333,7 @@ class RuleCheckOneObject(RuleCheck):
 
         dict_return = {}
 
-        if in_results:
+        if passed:
             for oneresult in self.result:
                 if oneresult.status == passed:
                     the_element = getattr(oneresult, element)
@@ -347,11 +347,14 @@ class RuleCheckOneObject(RuleCheck):
             return dict_return
 
         # Elements of the input selection absent from the results
-        ids_in_results = set()
+        # The entity_instance equality is value based, so a set of elements
+        # works even if the file wrappers of the results are different
+        # from the ones of the selection.
+        elements_in_results = set()
         for oneresult in self.result:
             the_element = getattr(oneresult, element)
             if the_element is not None:
-                ids_in_results.add((the_element.file, the_element.id))
+                elements_in_results.add(the_element)
 
         for ifc_file, elements in self.select_source.dict_elements.items():
             if not elements:
@@ -359,7 +362,7 @@ class RuleCheckOneObject(RuleCheck):
             absent = [
                 one_element
                 for one_element in elements
-                if (one_element.file, one_element.id) not in ids_in_results
+                if one_element not in elements_in_results
             ]
             if absent:
                 dict_return[ifc_file] = absent
@@ -631,10 +634,9 @@ class RuleCheckTwoObjects(RuleCheck):
 
     def produce_select(self, element="source", passed=True):
         # element: "source" or "target"
-        # passed: True for results with status True, False for status False
-        # in_results: True to pick elements inside the results,
-        #              False to pick elements of the input selection that
-        #              went through the rule but produced no result.
+        # passed: True to pick elements of the results with status True,
+        #         False to pick elements of the input selection that
+        #         went through the rule but produced no result.
         if element not in ("source", "target"):
             raise ValueError(
                 f"element must be 'source' or 'target', got '{element}'"
@@ -659,11 +661,14 @@ class RuleCheckTwoObjects(RuleCheck):
         selection = (
             self.select_source if element == "source" else self.select_target
         )
-        ids_in_results = set()
+        # The entity_instance equality is value based, so a set of elements
+        # works even if the file wrappers of the results are different
+        # from the ones of the selection.
+        elements_in_results = set()
         for oneresult in self.result:
             the_element = getattr(oneresult, element)
             if the_element is not None:
-                ids_in_results.add((the_element.file, the_element.id))
+                elements_in_results.add(the_element)
 
         for ifc_file, elements in selection.dict_elements.items():
             if not elements:
@@ -671,7 +676,7 @@ class RuleCheckTwoObjects(RuleCheck):
             absent = [
                 one_element
                 for one_element in elements
-                if (one_element.file, one_element.id) not in ids_in_results
+                if one_element not in elements_in_results
             ]
             if absent:
                 dict_return[ifc_file] = absent

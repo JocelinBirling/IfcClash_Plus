@@ -424,7 +424,7 @@ class TestRulesOBB(unittest.TestCase):
 
         list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
 
-        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications,state="Display_Result")
+        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications,state="Final")
         
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()

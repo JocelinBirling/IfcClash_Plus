@@ -9,8 +9,8 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,Volume
-from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects,RuleFolder
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,Volume,Ray_Check
+from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects,RuleFolder,SelectRule
 from ifctester import ids
 import os
 
@@ -223,6 +223,175 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule_file.run()
 
         self.assertEqual(len(rule_file.contains[0].contains[0].result), 7)
+
+class TestRuleFileWithSelectRule(unittest.TestCase):
+    """
+    Test rules containing another selection rule (SelectRule) in their
+    source or target. Each test checks the four produce_select cases:
+    sources passed=True, sources passed=False, targets passed=True and
+    targets passed=False. The passed=True quantities are the same as the
+    result quantities of the rule unit tests in test_Rule_TwoObjects.py,
+    and for every case: elements in the results + elements absent from
+    the results = total size of the input selection.
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.ifc_path = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+
+    def _select_facet(self, entity_name):
+        facet = ids.Entity(name=entity_name)
+        select = SelectFacet()
+        select.applicability = [facet]
+        return select
+
+    def _select_rule(self, entity_name):
+        # A SelectRule containing a Volume rule with wide bounds:
+        # every element of the facet passes the rule, so the produced
+        # selection contains the same elements as the facet alone.
+        select_rule = SelectRule()
+        select_rule.rule = Volume(
+            source=self._select_facet(entity_name),
+            volume_min=0.0,
+            volume_max=1e12,
+        )
+        return select_rule
+
+    def _count_elements(self, select_dict):
+        return sum(len(elements) for elements in select_dict.values())
+
+    def _count_unique_elements(self, select_dict):
+        all_elements = []
+        for elements in select_dict.values():
+            all_elements = all_elements + elements
+        return len(set(all_elements))
+
+    def _count_selection(self, select):
+        return sum(len(elements) for elements in select.dict_elements.values())
+
+    def _assert_produce_select_quantities(
+        self, rule, source_true, source_false, target_true, target_false
+    ):
+        source_in_results = rule.produce_select(element="source", passed=True)
+        source_absent = rule.produce_select(element="source", passed=False)
+        target_in_results = rule.produce_select(element="target", passed=True)
+        target_absent = rule.produce_select(element="target", passed=False)
+
+        self.assertEqual(self._count_elements(source_in_results), source_true)
+        self.assertEqual(self._count_elements(source_absent), source_false)
+        self.assertEqual(self._count_elements(target_in_results), target_true)
+        self.assertEqual(self._count_elements(target_absent), target_false)
+
+        # Every element of the input selection is either in the results
+        # or absent from them.
+        self.assertEqual(
+            self._count_unique_elements(source_in_results)
+            + self._count_elements(source_absent),
+            self._count_selection(rule.select_source),
+        )
+        self.assertEqual(
+            self._count_unique_elements(target_in_results)
+            + self._count_elements(target_absent),
+            self._count_selection(rule.select_target),
+        )
+
+    def test_SelectRule_inside_Collision(self):
+        """Collision with both selects produced by a SelectRule.
+        Same quantity as test_collision_rule: 24 results, all passed.
+        Every door collides with a slab, so no source is absent."""
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        door_select_rule = self._select_rule("IFCDOOR")
+        slab_select_rule = self._select_rule("IFCSLAB")
+
+        rule = Collision(
+            source=door_select_rule, target=slab_select_rule, allow_touching=False
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 24)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+        self._assert_produce_select_quantities(rule, 24, 0, 24, 7)
+
+    def test_SelectRule_inside_Clearance(self):
+        """Clearance with the source produced by a SelectRule.
+        Same quantity as test_clearance_rule: 152 results, all passed."""
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        wall_select_rule = self._select_rule("IFCWALLSTANDARDCASE")
+        furnishing_select = self._select_facet("IFCFURNISHINGELEMENT")
+
+        rule = Clearance(
+            source=wall_select_rule, target=furnishing_select, clearance=0.5
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 152)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+        self._assert_produce_select_quantities(rule, 152, 14, 152, 14)
+
+    def test_SelectRule_inside_Intersection(self):
+        """Intersection with the source produced by a SelectRule.
+        Same quantity as test_intersection_rule: 1 result, all passed."""
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        wall_select_rule = self._select_rule("IFCWALLSTANDARDCASE")
+        furnishing_select = self._select_facet("IFCFURNISHINGELEMENT")
+
+        rule = Intersection(
+            source=wall_select_rule, target=furnishing_select, tolerance=0.01
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 1)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+        self._assert_produce_select_quantities(rule, 1, 55, 1, 60)
+
+    def test_SelectRule_inside_Ray_Check(self):
+        """Ray_Check with the source produced by a SelectRule.
+        Same quantity as test_ray_check_rule: 21 results, all passed."""
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        door_select_rule = self._select_rule("IFCDOOR")
+        furnishing_select = self._select_facet("IFCFURNISHINGELEMENT")
+
+        context_facet = ids.Entity(
+            name=ids.Restriction(
+                options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
+            )
+        )
+        context_select = SelectFacet()
+        context_select.applicability = [context_facet]
+
+        rule = Ray_Check(
+            source=door_select_rule,
+            target=furnishing_select,
+            context=context_select,
+            max_ray_length=5,
+            state="Final",
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 21)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+        self._assert_produce_select_quantities(rule, 21, 1, 21, 44)
+
 
 class TestRuleFileProperties(unittest.TestCase):
     """Test RuleFile properties and attributes."""
