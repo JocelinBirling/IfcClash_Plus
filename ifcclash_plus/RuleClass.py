@@ -679,84 +679,7 @@ class RuleCheckTwoObjects(RuleCheck):
         if self.run_abs_or_rel() is None:
             self.run_grouping()
 
-    def _display_generic(self):
-        from OCC.Display.SimpleGui import init_display
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-        self.select_source.run()
-        self.select_target.run()
-
-        self.display, self.start_display, add_menu, add_function = init_display()
-
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-        settings.set("use-python-opencascade", True)
-
-        # Check the extrem face of the source
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-
-                    ais_shape=AIS_Shape(geom)
-                    red_color = Quantity_Color(1.0, 0.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(red_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-
-                    if not iterator.next():
-                        break
-
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-
-                    ais_shape=AIS_Shape(geom)
-                    blue_color = Quantity_Color(0.0, 0.0, 1.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(blue_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-
-                    if not iterator.next():
-                        break
-
-    def _start_display(self):
-        self.display.FitAll()
-        self.start_display()
-
-    def _display_specific(self):
-        pass
-
-    def display(self):
-        self._display_generic()
-        self._display_specific()
-        self._start_display()
-
-
-    def display_result(self):
-
+    def _display_result_generic(self):
         # Imports for center calculation and edge display
         from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
         from OCC.Core.Bnd import Bnd_Box
@@ -809,7 +732,7 @@ class RuleCheckTwoObjects(RuleCheck):
             
             display.Context.Display(ais_edge, True)
 
-        display, start_display, add_menu, add_function = init_display()
+        self.display, self.start_display, add_menu, add_function = init_display()
 
 
         geom_settings = ifcopenshell.geom.settings()
@@ -819,50 +742,85 @@ class RuleCheckTwoObjects(RuleCheck):
         source_set= set()
 
         for clash in self.result:
-            display=add_to_display(display,clash.target,geom_settings,neutral_color)
+            self.display=add_to_display(self.display,clash.target,geom_settings,neutral_color)
             source_set.add(clash.source)
 
         dict_of_source_color={}
         for source in source_set:
             random_color=get_random_color()
             dict_of_source_color[source]=random_color
-            display=add_to_display(display,source,geom_settings,random_color)
-
-
+            self.display=add_to_display(self.display,source,geom_settings,random_color)
 
         # Display edges between centers of clashing pairs
         for clash in self.result:
             center_source = get_entity_center(clash.source, geom_settings)
             center_target = get_entity_center(clash.target, geom_settings)
-            display_edge(display, center_source, center_target,dict_of_source_color[clash.source])
-
-
-        display.FitAll()
-        start_display()
+            display_edge(self.display, center_source, center_target,dict_of_source_color[clash.source])
 
 
 
-        """
-                geom_settings = ifcopenshell.geom.settings()
+    def _display_result_specific(self):
+        pass
+
+    def display_result(self):
+
+        self._display_result_generic()
+        self._display_result_specific()
+
+        self.display.FitAll()
+        self.start_display()
+
+    def _display_input_generic(self):
+
+        # Imports for center calculation and edge display
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib
+        from OCC.Core.gp import gp_Pnt
+
+        def add_to_display(display,entity,geom_settings,color):
+            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
+            geom=shape.geometry
+
+            ais_shape=AIS_Shape(geom)
+
+            ais_shape.SetColor(color)
+            ais_shape.SetTransparency(0.9)
+            display.Context.Display(ais_shape, True)
+            return display
+
+        self.display, self.start_display, add_menu, add_function = init_display()
+
+
+        geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        source_set=set()
-        target_set=set()
-
-        for result in self.result:
-            source_set.add(result.source)
-            target_set.add(result.target)
-
-        display=add_to_display_random_color(display,source_set,geom_settings)
-        display=add_to_display_random_color(display,target_set,geom_settings)
-        
-        
-        """
+        blue_color= Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
+        green_color= Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
 
 
+        for ifc_file in self.select_source.dict_elements.keys():
+
+            list_of_elements=self.select_source.dict_elements[ifc_file]
+            for element in list_of_elements:
+                print(element)
+                self.display=add_to_display(self.display,element,geom_settings,blue_color)
+
+        for ifc_file in self.select_target.dict_elements.keys():
+            list_of_elements=self.select_target.dict_elements[ifc_file]
+            for element in list_of_elements:
+                self.display=add_to_display(self.display,element,geom_settings,green_color)
 
 
+    def _display_input_specific(self):
+        pass
 
+    def display_input(self):
+        self._display_input_generic()
+        self._display_input_specific()
+
+        self.display.FitAll()
+        self.start_display()
 
 
 

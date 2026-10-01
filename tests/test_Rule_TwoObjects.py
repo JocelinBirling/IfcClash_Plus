@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
 from ifctester import ids
 
@@ -362,7 +362,7 @@ class TestRulesOBB(unittest.TestCase):
         second_select.applicability = [second_facet]
 
         obb_above_rule = OBB_Above(first_select, second_select, 0.1)
-        obb_above_rule._display_specific()
+        obb_above_rule._display_result_specific()
         
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
@@ -371,35 +371,7 @@ class TestRulesOBB(unittest.TestCase):
         #We should find the same number as the above test rule. 
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-
-
-
-    def test_display_custom_obb(self):
-        """Test custom obb check"""
-
-        OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
-
-        first_facet = ids.Entity(name="IfcWallStandardCase")
-        first_select = SelectFacet()
-        first_select.applicability = [first_facet]
-
-        second_facet = ids.Entity(name="IfcWindow")
-        second_select = SelectFacet()
-        second_select.applicability = [second_facet]
-
-
-
-        list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
-
-        obb_custom = OBB_Custom(first_select, second_select, list_of_modifications)
-
-        obb_custom._display_input()
-
-
-        
-
-
+     
     def test_custom_obb(self):
         """Test custom obb check"""
 
@@ -430,7 +402,31 @@ class TestRulesOBB(unittest.TestCase):
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
+    def test_front_back_obb(self):
+        """Test custom obb check"""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path= [self.ifc_path]
+
+        first_facet = ids.Entity(name="IfcDoor")
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+        second_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
+        second_select = SelectFacet()
+        second_select.applicability = [second_facet]
+
+
+
+        rule = OBB_Front_And_Back(first_select, second_select,1.0,"Wide")
         
+        OneRuleFile.contains=[rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 0)
+        #We should find the same number as the above test rule. 
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
 
 
 if __name__ == '__main__':

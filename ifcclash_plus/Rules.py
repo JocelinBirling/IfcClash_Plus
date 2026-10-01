@@ -560,7 +560,7 @@ class AngleBetween(RuleCheckTwoObjects):
         if state == "Select":
             self.produce_select()
 
-    def _display_specific(self):
+    def _display_result_specific(self):
         from OCC.Core.AIS import AIS_Shape
         from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
 
@@ -1327,7 +1327,6 @@ class Below(RuleCheckTwoObjects):
 
         return dict_to_return
 
-
 class Template(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance=0.1):
         super().__init__(source, target)
@@ -1341,7 +1340,6 @@ class Template(RuleCheckTwoObjects):
 
         if state == "Select":
             self.produce_select()
-
 
 class OBB_Above(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance):
@@ -1435,40 +1433,7 @@ class OBB_Above(RuleCheckTwoObjects):
         if state == "Select":
             self.produce_select()
 
-    def _display_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-        # settings.set("use-python-opencascade", True)
-
-        # Check the extrem face of the source
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Compound()
-                    ais_shape = AIS_Shape(compound)
-                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(green_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
-
+ 
 
 class OBB_Below(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance):
@@ -1481,7 +1446,6 @@ class OBB_Below(RuleCheckTwoObjects):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-        print()
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1563,41 +1527,6 @@ class OBB_Below(RuleCheckTwoObjects):
         if state == "Select":
             self.produce_select()
 
-    def _display_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-        # settings.set("use-python-opencascade", True)
-
-        # Check the extrem face of the source
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Compound()
-                    ais_shape = AIS_Shape(compound)
-                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(green_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
-
-
 class OBB_Front_And_Back(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance, method: DIRECTION_METHOD):
         super().__init__(source, target)
@@ -1636,11 +1565,11 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         main_directions[0], self.tolerance
                     )
                     clash_obb_2 = obb.detach_side_by_extrude(
-                        main_directions[0], self.tolerance
+                        main_directions[1], self.tolerance
                     )
 
-                    compound_1 = clash_obb_1.to_compound()
-                    compound_2 = clash_obb_2.to_compound()
+                    compound_1 = clash_obb_1.to_TopoDS_Solid()
+                    compound_2 = clash_obb_2.to_TopoDS_Solid()
                     source_obbs.append({"entity": entity, "geom": compound_1})
                     source_obbs.append({"entity": entity, "geom": compound_2})
 
@@ -1696,6 +1625,57 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
 
         if state == "Select":
             self.produce_select()
+
+    def _display_input_specific(self):
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("USE_WORLD_COORDS", True)
+
+        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+            color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    obb = create_obb_from_TopoDs_Shape_via_pca(geom)
+                    main_directions = obb.get_two_main_direction_OBB_shape(
+                        self.direction_method
+                    )
+                    clash_obb_1 = obb.detach_side_by_extrude(
+                        main_directions[0], self.tolerance
+                    )
+                    clash_obb_2 = obb.detach_side_by_extrude(
+                        main_directions[1], self.tolerance
+                    )
+
+                    compound_1 = clash_obb_1.to_TopoDS_Solid()
+                    compound_2 = clash_obb_2.to_TopoDS_Solid()
+
+                    ais_shape = AIS_Shape(compound_1)
+                    ais_shape.SetColor(color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    ais_shape = AIS_Shape(compound_2)
+                    ais_shape.SetColor(color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+
 
 class OBB_Custom(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance):
@@ -1788,18 +1768,16 @@ class OBB_Custom(RuleCheckTwoObjects):
         if state == "Select":
             self.produce_select()
 
-    def _display_input(self):
+    def _display_input_specific(self):
         from OCC.Core.AIS import AIS_Shape
         from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
 
-        from OCC.Display.SimpleGui import init_display
-        self.display, self.start_display, add_menu, add_function = init_display()
-
         settings = ifcopenshell.geom.settings()
         settings.set("USE_WORLD_COORDS", True)
-        # settings.set("use-python-opencascade", True)
 
-        # Check the extrem face of the source
+        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
                 self.geom_settings,
@@ -1816,41 +1794,13 @@ class OBB_Custom(RuleCheckTwoObjects):
                     for clash_obb in self._create_list_of_obb(geom):
                         compound = clash_obb.to_TopoDS_Compound()
                         ais_shape = AIS_Shape(compound)
-                        green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                        ais_shape.SetColor(green_color)
+                        ais_shape.SetColor(color)
                         ais_shape.SetTransparency(0.2)
                         self.display.Context.Display(ais_shape, True)
 
                     if not iterator.next():
                         break
 
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Compound()
-                    ais_shape = AIS_Shape(compound)
-                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(green_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
-
-
-        self.display.FitAll()
-        self.start_display()
 
     def _create_list_of_obb(self,geom):
 
