@@ -182,13 +182,13 @@ import multiprocessing
 
 class NewRule(RuleCheckOneObject):
     def __init__(self, source, param1, param2):
-        super().__init__(source)
+        super().__init__(state,source)
         self.type = "NewRule"
         self.param1 = param1
         self.param2 = param2
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
 
@@ -214,7 +214,7 @@ class NewRule(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
@@ -227,12 +227,12 @@ from RuleClass import RuleCheckTwoObjects, ClashResultTwoObjects
 
 class NewTwoObjectRule(RuleCheckTwoObjects):
     def __init__(self, source, target, tolerance=0.1):
-        super().__init__(source, target)
+        super().__init__(state,source, target)
         self.type = "NewTwoObjectRule"
         self.tolerance = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
@@ -255,7 +255,7 @@ class NewTwoObjectRule(RuleCheckTwoObjects):
             # Create ClashResultTwoObjects
             pass
 
-        if state == "Final":
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()

@@ -362,7 +362,6 @@ class TestRulesOBB(unittest.TestCase):
         second_select.applicability = [second_facet]
 
         obb_above_rule = OBB_Above(first_select, second_select, 0.1)
-        obb_above_rule._display_result_specific()
         
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
@@ -395,7 +394,6 @@ class TestRulesOBB(unittest.TestCase):
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
 
-        obb_above_rule.display_result()
 
         self.assertEqual(len(obb_above_rule.result), 34)
         #We should find the same number as the above test rule. 

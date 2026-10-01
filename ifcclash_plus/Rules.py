@@ -35,16 +35,20 @@ DIRECTION_METHOD = Literal["Wide", "Narrow"]
 class Volume(RuleCheckOneObject):
     from ifcopenshell.util.shape import get_volume
 
-    def __init__(self, source, volume_min, volume_max):
-        super().__init__(source)
+    def __init__(self, source, volume_min, volume_max,state="Final"):
+        super().__init__(state,source)
         self.type = "Volume"
         self.volume_max: float = volume_max
         self.volume_min: float = volume_min
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -68,7 +72,15 @@ class Volume(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+        
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
@@ -77,16 +89,20 @@ class Volume(RuleCheckOneObject):
 class Area(RuleCheckOneObject):
     from ifcopenshell.util.shape import get_area
 
-    def __init__(self, source, volume_min, volume_max):
-        super().__init__(source)
+    def __init__(self, source, volume_min, volume_max,state="Final"):
+        super().__init__(state,source)
         self.type = "Area"
         self.volume_max: float = volume_max
         self.volume_min: float = volume_min
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -112,7 +128,14 @@ class Area(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
@@ -122,15 +145,15 @@ TOP_OR_BOT = Literal["Top", "Bottom"]
 
 
 class TopOrBottomSurface(RuleCheckOneObject):
-    def __init__(self, source, surface_min, surface_max, top_or_bot: TOP_OR_BOT):
-        super().__init__(source)
+    def __init__(self, source, surface_min, surface_max, top_or_bot: TOP_OR_BOT,state="Final"):
+        super().__init__(state,source)
         self.type = top_or_bot + "Surface"
         self.surface_max: float = surface_max
         self.surface_min: float = surface_min
         self.top_or_bot_method: TOP_OR_BOT = top_or_bot
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         if self.top_or_bot_method == "Top":
             direction = (0.0, 0.0, 1)
         if self.top_or_bot_method == "Bottom":
@@ -138,6 +161,10 @@ class TopOrBottomSurface(RuleCheckOneObject):
 
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -152,9 +179,15 @@ class TopOrBottomSurface(RuleCheckOneObject):
                     shape = iterator.get()
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.id)
-                    area = clash_utils.get_extreme_faces_with_area(
+                    result = clash_utils.get_extreme_faces_with_area(
                         geom, direction=direction
-                    )["total_area"]
+                    )
+
+                    area=result["total_area"]
+
+                    if self.state=="Display_Input":
+                        for face in result["extrem_faces"]:
+                            self._add_face_to_display(face,(1,0,0))
 
                     if self.surface_min < area < self.surface_max:
                         result = ClashResultOneObject(source=entity, state=True)
@@ -165,25 +198,36 @@ class TopOrBottomSurface(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
 
 
 class LateralSurface(RuleCheckOneObject):
-    def __init__(self, source, surface_min, surface_max, direction):
-        super().__init__(source)
+    def __init__(self, source, surface_min, surface_max, direction,state="Final"):
+        super().__init__(state,source)
         self.type = "LateralSurface"
         self.surface_max: float = surface_max
         self.surface_min: float = surface_min
         self.direction: float = direction
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):  # @todo Check if the result is trustworthy
-
+    def run(self):  # @todo Check if the result is trustworthy
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -211,25 +255,37 @@ class LateralSurface(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
 
 
 class ProjectedSurface(RuleCheckOneObject):
-    def __init__(self, source, surface_min, surface_max, direction):
-        super().__init__(source)
+    def __init__(self, source, surface_min, surface_max, direction,state="Final"):
+        super().__init__(state,source)
         self.type = "Projected"
         self.surface_max: float = surface_max
         self.surface_min: float = surface_min
         self.direction: float = direction
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):  # @todo Check if the result is trustworthy
-
+    def run(self):  # @todo Check if the result is trustworthy
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
+
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -257,27 +313,36 @@ class ProjectedSurface(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
 
 
 class ObbHigh(RuleCheckOneObject):
-    def __init__(self, source, length_min, length_max):
-        super().__init__(source)
+    def __init__(self, source, length_min, length_max,state="Final"):
+        super().__init__(state,source)
         self.type = "ObbHigh"
         self.length_max: float = length_max
         self.length_min: float = length_min
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):  
-
-
-
+    def run(self):  
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -303,6 +368,11 @@ class ObbHigh(RuleCheckOneObject):
                         
                     value_to_check=max_z-min_z
 
+                    if self.state=="Display_Input":
+                        self._add_obb_to_display(obb,(1,0,0))
+                        
+
+
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)
                         self.result.append(result)
@@ -312,14 +382,22 @@ class ObbHigh(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
 
 class ObbLength(RuleCheckOneObject):
-    def __init__(self, source, length_min, length_max,method: DIRECTION_METHOD):
-        super().__init__(source)
+    def __init__(self, source, length_min, length_max,method: DIRECTION_METHOD,state="Final"):
+        super().__init__(state,source)
         self.type = "ObbLength"
         self.length_max: float = length_max
         self.length_min: float = length_min
@@ -327,10 +405,13 @@ class ObbLength(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):  
-
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -346,6 +427,9 @@ class ObbLength(RuleCheckOneObject):
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.data.id)
                     obb = create_obb_from_TopoDs_Shape(geom)
+
+                    if self.state=="Display_Input":
+                        self._add_obb_to_display(obb,(1,0,0))
 
                     x_size = obb.XHSize() * 2
                     y_size = obb.YHSize() * 2
@@ -375,7 +459,16 @@ class ObbLength(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
@@ -392,9 +485,10 @@ class Orientation(RuleCheckOneObject):
         orientation_type: ORIENTATION_TYPE,
         direction_method: DIRECTION_METHOD,
         angular_tolerance: float = 0.1,
+        state="Final"
     ):
         # @todo We can set an East, North, etc orientation to check
-        super().__init__(source)
+        super().__init__(state,source)
         self.type = "Orientation"
         self.orientation: tuple[float, float, float] = orientation
         self.orientation_type: ORIENTATION_TYPE = orientation_type
@@ -403,9 +497,11 @@ class Orientation(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
 
         self.select_source.run()
+        if self.state=="Display_Input":
+            self._display_input_generic()
 
         occ_orientation = gp_Dir(
             self.orientation[0], self.orientation[1], self.orientation[2]
@@ -433,6 +529,10 @@ class Orientation(RuleCheckOneObject):
                         dir1, self.angular_tolerance
                     )
 
+                    if self.state=="Display_Input":
+                        self._add_gp_Dir_to_display(geom,dir1,(1,0,0))
+                        self._add_gp_Dir_to_display(geom,occ_orientation,(0,1,0))
+
                     if self.direction_method == "Parrallel":
                         check_direction = is_parrallel
                     elif self.direction_method == "Perpendicular":
@@ -447,7 +547,15 @@ class Orientation(RuleCheckOneObject):
                     if not iterator.next():
                         break
 
-        if state == "Final":
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
         else:
             self.produce_select()
@@ -465,8 +573,8 @@ class AngleBetween(RuleCheckTwoObjects):
         direction_method_for_target: DIRECTION_METHOD,
         angle_difference: float,
         angle_tolerance: float,
-    ):
-        super().__init__(source, target)
+        state="Final"):
+        super().__init__(state,source, target)
         self.type = "AngleBetween"
         self.direction_method_for_source: DIRECTION_METHOD = direction_method_for_source
         self.direction_method_for_target: DIRECTION_METHOD = direction_method_for_target
@@ -493,10 +601,13 @@ class AngleBetween(RuleCheckTwoObjects):
 
         return angle_diff <= self.angle_tolerance
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
 
         # Collect source objects with their main directions
         source_objects = []
@@ -516,6 +627,9 @@ class AngleBetween(RuleCheckTwoObjects):
                         geom, self.direction_method_for_source
                     )
                     source_objects.append({"entity": entity, "direction": direction})
+                    if self.state=="Display_Input":
+                        self._add_gp_Dir_to_display(geom,direction,(1,0,0))
+
                     if not iterator.next():
                         break
 
@@ -537,6 +651,8 @@ class AngleBetween(RuleCheckTwoObjects):
                         geom, self.direction_method_for_target
                     )
                     target_objects.append({"entity": entity, "direction": direction})
+                    if self.state=="Display_Input":
+                        self._add_gp_Dir_to_display(geom,direction,(1,0,0))
                     if not iterator.next():
                         break
 
@@ -553,91 +669,40 @@ class AngleBetween(RuleCheckTwoObjects):
                     )
                     self.result.append(result)
 
-        if state == "Final":
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+        if self.state=="Display_Result":
+            self.display_result()
+
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
-    def _display_result_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-        # settings.set("use-python-opencascade", True)
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    direction = self._get_object_main_direction(
-                        geom, self.direction_method_for_source
-                    )
-                    polygon = create_makepolygon_with_dir(
-                        (direction.X(), direction.Y(), direction.Z())
-                    )
-                    ais_shape = AIS_Shape(polygon)
-                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(green_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
-
-        # Collect target objects with their main directions
-        target_objects = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    direction = self._get_object_main_direction(
-                        geom, self.direction_method_for_target
-                    )
-                    polygon = create_makepolygon_with_dir(
-                        (direction.X(), direction.Y(), direction.Z())
-                    )
-                    ais_shape = AIS_Shape(polygon)
-                    green_color = Quantity_Color(0.0, 1.0, 0.0, Quantity_TOC_RGB)
-                    ais_shape.SetColor(green_color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
 class Intersection(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance=0.1):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance=0.1,state="Final"):
+        super().__init__(state,source, target)
         self.type = "Intersection"
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
 
         source_elements = []
         target_elements = []
 
-        if state == "Final" or state == "Select":
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
+
+        if self.state == "Final" or self.state == "Select":
             self.select_source.run()
             self.select_target.run()
 
@@ -654,7 +719,7 @@ class Intersection(RuleCheckTwoObjects):
                 for element in list:
                     target_elements.append(element)
 
-        if state == "Exception":
+        if self.state == "Exception":
             self.add_OneObject_to_tree(self.select_source, "BVH")
             self.add_OneObject_to_tree(self.select_target, "BVH")
             source_elements.append(self.select_source)
@@ -692,28 +757,38 @@ class Intersection(RuleCheckTwoObjects):
             )
 
         self.result = list_result
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        if self.state=="Display_Result":
+            self.display_result()
 
-        if state == "Final":
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
 
 class Clearance(RuleCheckTwoObjects):
     # @todo create a max distance for clearance
-    def __init__(self, source, target, clearance=0.05):
-        super().__init__(source, target)
+    def __init__(self, source, target, clearance=0.05,state="Final"):
+        super().__init__(state,source, target)
 
         self.type = "Clearance"
         self.geom_settings = ifcopenshell.geom.settings()
         self.clearance: float = clearance
         self.check_all: bool = False
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
@@ -751,25 +826,35 @@ class Clearance(RuleCheckTwoObjects):
                     source=source_object, target=target_object, state=True
                 )
             )
-
-        if state == "Final":
+        
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0        
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
 
 class Collision(RuleCheckTwoObjects):
-    def __init__(self, source, target, allow_touching=False):
-        super().__init__(source, target)
+    def __init__(self, source, target, allow_touching=False,state="Final"):
+        super().__init__(state,source, target)
         self.type = "Collision"
         self.allow_touching = False
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
@@ -806,26 +891,30 @@ class Collision(RuleCheckTwoObjects):
                 )
             )
 
-        if state == "Final":
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
 
 class Ray_Check(RuleCheckTwoObjects):
-    def __init__(self, source, target, context, max_ray_length):
-        super().__init__(source, target)
+    def __init__(self, source, target, context, max_ray_length,state="Final"):
+        super().__init__(state,source, target)
         self.type = "RayCheck"
         self.select_context: Select = context
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
         # self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         # Watch out, we need to manually store the file info in the contect. It's not done when the RuleFile begin.
         # @todo improve this in order to update every select in every rule
@@ -954,17 +1043,21 @@ BELOW_TYPE = Literal[
 
 
 class Above(RuleCheckTwoObjects):
-    def __init__(self, source, target, above_type: ABOVE_TYPE, tolerance=0.1):
-        super().__init__(source, target)
+    def __init__(self, source, target, above_type: ABOVE_TYPE, tolerance=0.1,state="Final"):
+        super().__init__(state,source, target)
         self.type = above_type
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         sources_data = []
         targets_data = []
@@ -1002,6 +1095,9 @@ class Above(RuleCheckTwoObjects):
                             shape=geom, direction=source_direction
                         )
                     )
+                    if self.state=="Display_Input":
+                        for face in extrem_faces["visible_faces"]:
+                            self._add_face_to_display(face,(1,0,0))
                     
 
                     dict = {
@@ -1035,6 +1131,10 @@ class Above(RuleCheckTwoObjects):
                             shape=geom, direction=target_direction
                         )
                     )
+
+                    if self.state=="Display_Input":
+                        for face in extrem_faces["visible_faces"]:
+                            self._add_face_to_display(face,(1,0,0))
                     
                     dict = {
                         "entity": entity,
@@ -1045,7 +1145,11 @@ class Above(RuleCheckTwoObjects):
 
                     if not iterator.next():
                         break
-
+        
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
         # Check if part of extrem faces are close to each other
         for source in sources_data:
             flag_is_above=False
@@ -1097,11 +1201,13 @@ class Above(RuleCheckTwoObjects):
                             break
                         
 
+        if self.state=="Display_Result":
+            self.display_result()
 
-        if state == "Final":
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
 
@@ -1144,17 +1250,21 @@ class Above(RuleCheckTwoObjects):
         return dict_to_return
 
 class Below(RuleCheckTwoObjects):
-    def __init__(self, source, target, below_type: BELOW_TYPE, tolerance=0.1):
-        super().__init__(source, target)
+    def __init__(self, source, target, below_type: BELOW_TYPE, tolerance=0.1,state="Final"):
+        super().__init__(state,source, target)
         self.type = below_type
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         sources_data = []
         targets_data = []
@@ -1192,6 +1302,9 @@ class Below(RuleCheckTwoObjects):
                             shape=geom, direction=source_direction
                         )
                     )
+                    if self.state=="Display_Input":
+                        for face in extrem_faces["visible_faces"]:
+                            self._add_face_to_display(face,(1,0,0))
                     
 
                     dict = {
@@ -1225,6 +1338,9 @@ class Below(RuleCheckTwoObjects):
                             shape=geom, direction=target_direction
                         )
                     )
+                    if self.state=="Display_Input":
+                        for face in extrem_faces["visible_faces"]:
+                            self._add_face_to_display(face,(1,0,0))
                     
                     dict = {
                         "entity": entity,
@@ -1235,6 +1351,12 @@ class Below(RuleCheckTwoObjects):
 
                     if not iterator.next():
                         break
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
 
         # Check if part of extrem faces are close to each other
         for source in sources_data:
@@ -1280,13 +1402,13 @@ class Below(RuleCheckTwoObjects):
                             break
                         
 
-
-        if state == "Final":
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
-
 
     def _check_distance(self,list_of_source_face,list_of_target_face):
         dict_to_return={"is_below":None,"list_of_point_on_target":[]}
@@ -1326,31 +1448,82 @@ class Below(RuleCheckTwoObjects):
 
         return dict_to_return
 
+    def _display_input_specific(self):
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("USE_WORLD_COORDS", True)
+
+        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+            color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
+                    compound = clash_obb.to_TopoDS_Solid()
+
+                    ais_shape = AIS_Shape(compound)
+                    ais_shape.SetColor(color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+  
 class Template(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance=0.1):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance=0.1,state="Final"):
+        super().__init__(state,source, target)
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings(USE_WORLD_COORDS=False)
 
-    def run(self, state="Final"):
+    def run(self):
 
-        if state == "Final":
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
+
+
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
 class OBB_Above(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance,state="Final"):
+        super().__init__(state,source, target)
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1371,6 +1544,10 @@ class OBB_Above(RuleCheckTwoObjects):
                     # Create OBB for the source object (detection zone)
                     obb = create_obb_from_TopoDs_Shape(geom)  # Why not use
                     clash_obb = obb.detach_top_by_extrude(self.tolerance)
+
+                    if self.state=="Display_Input":
+                        self._add_obb_to_display(clash_obb)
+                    
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
                         {"entity": entity, "geom": compound, "obb": clash_obb}
@@ -1378,7 +1555,11 @@ class OBB_Above(RuleCheckTwoObjects):
 
                     if not iterator.next():
                         break
-
+        
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
@@ -1425,26 +1606,64 @@ class OBB_Above(RuleCheckTwoObjects):
                         state=False,
                     )
                     self.result.append(result)
-
-        if state == "Final":
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
- 
+    def _display_input_specific(self):
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
 
+        settings = ifcopenshell.geom.settings()
+        settings.set("USE_WORLD_COORDS", True)
+
+        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+            color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
+                    compound = clash_obb.to_TopoDS_Solid()
+
+                    ais_shape = AIS_Shape(compound)
+                    ais_shape.SetColor(color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+ 
 class OBB_Below(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance,state="Final"):
+        super().__init__(state,source, target)
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1465,6 +1684,11 @@ class OBB_Below(RuleCheckTwoObjects):
                     # Create OBB for the source object (detection zone)
                     obb = create_obb_from_TopoDs_Shape(geom)
                     clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
+
+                    if self.state=="Display_Input":
+                        self._add_obb_to_display(clash_obb)
+
+
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
                         {"entity": entity, "geom": compound, "obb": clash_obb}
@@ -1472,7 +1696,10 @@ class OBB_Below(RuleCheckTwoObjects):
 
                     if not iterator.next():
                         break
-
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
@@ -1519,25 +1746,66 @@ class OBB_Below(RuleCheckTwoObjects):
                         state=False,
                     )
                     self.result.append(result)
-
-        if state == "Final":
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
+    def _display_input_specific(self):
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("USE_WORLD_COORDS", True)
+
+        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=self.select_source.dict_elements[ifc_file],
+            )
+            color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    geom = shape.geometry
+
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
+                    compound = clash_obb.to_TopoDS_Solid()
+
+                    ais_shape = AIS_Shape(compound)
+                    ais_shape.SetColor(color)
+                    ais_shape.SetTransparency(0.2)
+                    self.display.Context.Display(ais_shape, True)
+
+                    if not iterator.next():
+                        break
+
+
 class OBB_Front_And_Back(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance, method: DIRECTION_METHOD):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance, method: DIRECTION_METHOD,state="Final"):
+        super().__init__(state,source, target)
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.direction_method = method
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+
 
         # Create OBBs for source objects (these serve as detection zones)
         source_obbs = []
@@ -1560,7 +1828,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     #obb =create_obb_with_fixed_z(geom)
 
                     main_directions = obb.get_two_main_direction_OBB_shape(
-                        self.direction_method
+                        self.direction_method,True
                     )
 
                     clash_obb_1 = obb.detach_side_by_extrude(
@@ -1570,6 +1838,11 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         main_directions[1], self.tolerance
                     )
 
+                    if self.state=="Display_Input":
+                            color=(1,0,0)
+                            self._add_obb_to_display(clash_obb_1,color)
+                            self._add_obb_to_display(clash_obb_2,color)
+
                     compound_1 = clash_obb_1.to_TopoDS_Solid()
                     compound_2 = clash_obb_2.to_TopoDS_Solid()
                     source_obbs.append({"entity": entity, "geom": compound_1,"obb":clash_obb_1})
@@ -1578,6 +1851,11 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     if not iterator.next():
                         break
 
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
@@ -1620,10 +1898,13 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     )
                     self.result.append(result)
 
-        if state == "Final":
+
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
     def _display_input_specific(self):
@@ -1679,16 +1960,20 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
 
 
 class OBB_Custom(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance):
-        super().__init__(source, target)
+    def __init__(self, source, target, tolerance,state="Final"):
+        super().__init__(state,source, target)
         self.list_of_modifications: list[str] = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self, state="Final"):
+    def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+ 
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1712,6 +1997,11 @@ class OBB_Custom(RuleCheckTwoObjects):
                         source_geoms.append(
                             {"entity": entity, "geom": compound, "obb": clash_obb}
                         )
+                        
+                        if self.state=="Display_Input":
+                            color=(1,0,0)
+                            self._add_obb_to_display(clash_obb,color)
+
 
                     if not iterator.next():
                         break
@@ -1738,6 +2028,12 @@ class OBB_Custom(RuleCheckTwoObjects):
                     if not iterator.next():
                         break
 
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+
         # Check for clashes between source OBBs (detection zones) and target geometries
         for source_data in source_geoms:
             for target_data in target_geoms:
@@ -1762,45 +2058,14 @@ class OBB_Custom(RuleCheckTwoObjects):
                         state=False,
                     )
                     self.result.append(result)
-
-        if state == "Final":
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
             self.manage_result()
 
-        if state == "Select":
+        if self.state == "Select":
             self.produce_select()
 
-    def _display_input_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-
-        color= Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    for clash_obb in self._create_list_of_obb(geom):
-                        compound = clash_obb.to_TopoDS_Compound()
-                        ais_shape = AIS_Shape(compound)
-                        ais_shape.SetColor(color)
-                        ais_shape.SetTransparency(0.2)
-                        self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
     def _create_list_of_obb(self,geom):

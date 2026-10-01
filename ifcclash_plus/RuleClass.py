@@ -35,6 +35,29 @@ from OCC.Core.AIS import AIS_Shape
 from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
 from OCC.Display.SimpleGui import init_display
 
+from OCC.Core.BRepExtrema import BRepExtrema_DistShapeShape
+from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakePolygon, BRepBuilderAPI_MakeFace
+from OCC.Core.gp import gp_Pnt, gp_XYZ
+from OCC.Core.Bnd import Bnd_Box
+from OCC.Core.TopoDS import TopoDS_Compound, TopoDS_Face
+from OCC.Core.TopExp import TopExp_Explorer
+from OCC.Core.TopAbs import TopAbs_FACE
+from OCC.Core.BRep import BRep_Tool
+from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
+from OCC.Core.BRep import BRep_Builder
+from OCC.Core.TopoDS import TopoDS_Compound, TopoDS_Shell, topods
+from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
+from OCC.Core.TopAbs import TopAbs_SHELL
+import math
+from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
+from OCC.Core.BRepGProp import BRepGProp_Face
+from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeEdge
+from OCC.Core.TopoDS import TopoDS_Shell, TopoDS_Face
+from OCC.Core.BRep import BRep_Builder
+from OCC.Core.BRepCheck import BRepCheck_Analyzer
+from OCC.Core.TopoDS import TopoDS_Shape
+from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+from OCC.Core.BRepBndLib import brepbndlib
 
 class RuleFile:
     def __init__(self):
@@ -122,7 +145,6 @@ class Select:
         for onefile in self.list_ifc_file:
             self.list_of_elements = self.dict_elements[onefile] + self.list_of_elements
 
-
 class SelectFacet(Select):
     def __init__(self, ClassificationType="Facet"):
         super().__init__()
@@ -190,8 +212,9 @@ class SelectRule(Select):
 
 @abstractmethod
 class RuleCheck:
-    def __init__(self, source):
+    def __init__(self, state,source):
         self.id: str = None
+        self.state:str = state
         self.type: str = None
 
         self.tree: list = None
@@ -250,14 +273,52 @@ class RuleCheck:
     def to_bcf():
         print("Reuse Ifcopenshell")
 
+    def _add_obb_to_display(self,geom,color):
+        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+        compound = geom.to_TopoDS_Compound()
+        ais_shape = AIS_Shape(compound)
+        ais_shape.SetColor(the_color)
+        ais_shape.SetTransparency(0.2)
+        self.display.Context.Display(ais_shape, True)
 
-    def display_input(self):
-        #This function will display the clash zone that will be used by the rule.
-        pass
+    def _add_face_to_display(self,geom,color):
+        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+        ais_shape = AIS_Shape(geom)
+        ais_shape.SetColor(the_color)
+        ais_shape.SetTransparency(0.2)
+        self.display.Context.Display(ais_shape, True)
+
+    def _add_gp_Dir_to_display(self,geom,dir,color):
+
+        def edge_from_point_dir(point, direction, length):
+            """Arête partant de `point`, dans `direction`, de longueur `length`."""
+            end = point.Translated(gp_Vec(direction).Multiplied(length))
+            return BRepBuilderAPI_MakeEdge(point, end).Edge()        
+        bbox = Bnd_Box()
+        brepbndlib.Add(geom, bbox)
+        
+        corner_min = bbox.CornerMin()
+        corner_max = bbox.CornerMax()
+        
+        center = gp_Pnt(
+            (corner_min.X() + corner_max.X()) / 2.0,
+            (corner_min.Y() + corner_max.Y()) / 2.0,
+            (corner_min.Z() + corner_max.Z()) / 2.0
+        )
+
+        vector_to_print=edge_from_point_dir(center,dir,0.5)
+
+
+
+        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+        ais_shape = AIS_Shape(vector_to_print)
+        ais_shape.SetColor(the_color)
+        ais_shape.SetTransparency(0.2)
+        self.display.Context.Display(ais_shape, True)
 
 class RuleCheckOneObject(RuleCheck):
-    def __init__(self, source):
-        super().__init__(source)
+    def __init__(self,state, source):
+        super().__init__(state,source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
     def produce_select(self):
@@ -422,9 +483,116 @@ class RuleCheckOneObject(RuleCheck):
             one_select_actor.update_file_info(files_path, files)
 
 
+    def _display_input_generic(self):
+        def add_to_display(self,entity,geom_settings,color):
+            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
+            geom=shape.geometry
+
+            ais_shape=AIS_Shape(geom)
+
+            ais_shape.SetColor(color)
+            ais_shape.SetTransparency(0.9)
+            self.display.Context.Display(ais_shape, True)
+
+
+        self.display, self.start_display, add_menu, add_function = init_display()
+
+
+        geom_settings = ifcopenshell.geom.settings()
+        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        blue_color= Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
+
+
+        for ifc_file in self.select_source.dict_elements.keys():
+
+            list_of_elements=self.select_source.dict_elements[ifc_file]
+            for element in list_of_elements:
+                add_to_display(self,element,geom_settings,blue_color)
+
+    def _display_result_generic(self):
+        # Imports for center calculation and edge display
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib
+        from OCC.Core.gp import gp_Pnt
+
+        def add_to_display(display,entity,geom_settings,color):
+            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
+            geom=shape.geometry
+
+            ais_shape=AIS_Shape(geom)
+
+            ais_shape.SetColor(color)
+            ais_shape.SetTransparency(0.9)
+            display.Context.Display(ais_shape, True)
+            return display
+
+        def get_random_color():
+            R=random.randrange(1,255,1)/256
+            V=random.randrange(1,255,1)/256
+            B=random.randrange(1,255,1)/256
+            color = Quantity_Color(R, V, B, Quantity_TOC_RGB)
+            return color
+
+        def get_entity_center(entity, geom_settings):
+            """Calculate the center of an IFC entity's bounding box"""
+            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
+            geom = shape.geometry
+            
+            bbox = Bnd_Box()
+            brepbndlib.Add(geom, bbox)
+            
+            corner_min = bbox.CornerMin()
+            corner_max = bbox.CornerMax()
+            
+            center = gp_Pnt(
+                (corner_min.X() + corner_max.X()) / 2.0,
+                (corner_min.Y() + corner_max.Y()) / 2.0,
+                (corner_min.Z() + corner_max.Z()) / 2.0
+            )
+            return center
+
+        def display_edge(display, p1, p2,edge_color):
+            """Display an edge between two gp_Pnt points"""
+            edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
+            ais_edge = AIS_Shape(edge)
+            
+            ais_edge.SetColor(edge_color)
+            ais_edge.SetTransparency(0.0)
+            
+            display.Context.Display(ais_edge, True)
+
+        self.display, self.start_display, add_menu, add_function = init_display()
+
+
+        geom_settings = ifcopenshell.geom.settings()
+        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        neutral_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+        for clash in self.result:
+            self.display=add_to_display(self.display,clash.source,geom_settings,neutral_color)
+
+
+
+
+    def _display_result_specific(self):
+        pass
+
+
+    def display_result(self):
+
+        self._display_result_generic()
+        self._display_result_specific()
+
+        self.display.FitAll()
+        self.start_display()
+
+
 class RuleCheckTwoObjects(RuleCheck):
-    def __init__(self, source, target):
-        super().__init__(source)
+    def __init__(self,state, source, target):
+        super().__init__(state,source)
         self.select_target: Select = target
         self.select_exception: list[SelectRule] = []
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
@@ -774,7 +942,7 @@ class RuleCheckTwoObjects(RuleCheck):
         from OCC.Core.BRepBndLib import brepbndlib
         from OCC.Core.gp import gp_Pnt
 
-        def add_to_display(display,entity,geom_settings,color):
+        def add_to_display(self,entity,geom_settings,color):
             shape=ifcopenshell.geom.create_shape(geom_settings,entity)
             geom=shape.geometry
 
@@ -782,8 +950,8 @@ class RuleCheckTwoObjects(RuleCheck):
 
             ais_shape.SetColor(color)
             ais_shape.SetTransparency(0.9)
-            display.Context.Display(ais_shape, True)
-            return display
+            self.display.Context.Display(ais_shape, True)
+
 
         self.display, self.start_display, add_menu, add_function = init_display()
 
@@ -799,23 +967,16 @@ class RuleCheckTwoObjects(RuleCheck):
 
             list_of_elements=self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                self.display=add_to_display(self.display,element,geom_settings,blue_color)
+                add_to_display(self,element,geom_settings,blue_color)
 
         for ifc_file in self.select_target.dict_elements.keys():
             list_of_elements=self.select_target.dict_elements[ifc_file]
             for element in list_of_elements:
-                self.display=add_to_display(self.display,element,geom_settings,green_color)
+                add_to_display(self,element,geom_settings,green_color)
 
 
     def _display_input_specific(self):
         pass
-
-    def display_input(self):
-        self._display_input_generic()
-        self._display_input_specific()
-
-        self.display.FitAll()
-        self.start_display()
 
 
 
