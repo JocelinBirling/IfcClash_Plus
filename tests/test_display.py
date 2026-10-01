@@ -76,7 +76,7 @@ class Test_Input_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path= [self.ifc_path]
 
-        first_facet = ids.Entity(name="IfcDoor")
+        first_facet = ids.Entity(name="IFCSLAB")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
@@ -86,7 +86,7 @@ class Test_Input_Display(unittest.TestCase):
 
 
 
-        rule = OBB_Front_And_Back(first_select, second_select,0.1,"Wide")
+        rule = OBB_Front_And_Back(first_select, second_select,1.0,"Wide")
         
         OneRuleFile.contains=[rule]
         OneRuleFile.run()

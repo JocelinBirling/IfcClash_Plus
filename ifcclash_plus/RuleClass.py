@@ -298,7 +298,6 @@ class RuleCheckOneObject(RuleCheck):
                     prop=self.select_grouping.baseName,
                 )
                 unique_value = str(unique_value)
-                print(unique_value)
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_source(result)
@@ -315,7 +314,6 @@ class RuleCheckOneObject(RuleCheck):
                 unique_value = result.source.get_info()
                 unique_value = unique_value[self.select_grouping.name]
                 unique_value = str(unique_value)
-                print(unique_value)
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_source(result)
@@ -478,7 +476,7 @@ class RuleCheckTwoObjects(RuleCheck):
                     prop=self.select_grouping.baseName,
                 )
                 unique_value = str(unique_value)
-                print(unique_value)
+
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_source(result)
@@ -493,7 +491,6 @@ class RuleCheckTwoObjects(RuleCheck):
                     prop=self.select_grouping.baseName,
                 )
                 unique_value = str(unique_value)
-                print(unique_value)
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_target(result)
@@ -511,7 +508,6 @@ class RuleCheckTwoObjects(RuleCheck):
                 unique_value = result.source.get_info()
                 unique_value = unique_value[self.select_grouping.name]
                 unique_value = str(unique_value)
-                print(unique_value)
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_source(result)
@@ -523,7 +519,7 @@ class RuleCheckTwoObjects(RuleCheck):
                 unique_value = result.target.get_info()
                 unique_value = unique_value[self.select_grouping.name]
                 unique_value = str(unique_value)
-                print(unique_value)
+
                 if unique_value not in group_dict:
                     thegroupresult = GroupResult()
                     thegroupresult.add_target(result)
@@ -803,7 +799,6 @@ class RuleCheckTwoObjects(RuleCheck):
 
             list_of_elements=self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                print(element)
                 self.display=add_to_display(self.display,element,geom_settings,blue_color)
 
         for ifc_file in self.select_target.dict_elements.keys():
