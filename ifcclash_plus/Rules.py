@@ -1561,6 +1561,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     main_directions = obb.get_two_main_direction_OBB_shape(
                         self.direction_method
                     )
+
                     clash_obb_1 = obb.detach_side_by_extrude(
                         main_directions[0], self.tolerance
                     )
@@ -1570,8 +1571,8 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
 
                     compound_1 = clash_obb_1.to_TopoDS_Solid()
                     compound_2 = clash_obb_2.to_TopoDS_Solid()
-                    source_obbs.append({"entity": entity, "geom": compound_1})
-                    source_obbs.append({"entity": entity, "geom": compound_2})
+                    source_obbs.append({"entity": entity, "geom": compound_1,"obb":clash_obb_1})
+                    source_obbs.append({"entity": entity, "geom": compound_2,"obb":clash_obb_2})
 
                     if not iterator.next():
                         break
@@ -1579,7 +1580,6 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
-            # self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE,True)
             iterator = ifcopenshell.geom.iterator(
                 self.geom_settings,
                 ifc_file,
@@ -1592,8 +1592,8 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     shape = iterator.get()
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.data.id)
-
-                    target_geoms.append({"entity": entity, "geom": geom})
+                    obb = create_obb_from_TopoDs_Shape(geom)
+                    target_geoms.append({"entity": entity, "geom": geom,"obb":obb})
 
                     if not iterator.next():
                         break
@@ -1601,13 +1601,12 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         # Check for clashes between source OBBs (detection zones) and target geometries
         for source_data in source_obbs:
             for target_data in target_geoms:
-                source_geom = source_data["geom"]
-                target_geom = target_data["geom"]
-
+                if source_data["obb"].IsOut(target_data["obb"]):
+                    continue
                 # Calculate distance between OBB and geometry
                 dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_geom)
-                dist_tool.LoadS2(target_geom)
+                dist_tool.LoadS1(source_data["geom"])
+                dist_tool.LoadS2(target_data["geom"])
                 dist_tool.Perform()
                 distance = dist_tool.Value()
 

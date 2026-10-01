@@ -86,7 +86,7 @@ class Test_Input_Display(unittest.TestCase):
 
 
 
-        rule = OBB_Front_And_Back(first_select, second_select,1.0,"Wide")
+        rule = OBB_Front_And_Back(first_select, second_select,0.1,"Wide")
         
         OneRuleFile.contains=[rule]
         OneRuleFile.run()

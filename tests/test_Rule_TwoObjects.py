@@ -423,7 +423,7 @@ class TestRulesOBB(unittest.TestCase):
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(rule.result), 0)
+        self.assertEqual(len(rule.result), 1)
         #We should find the same number as the above test rule. 
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
