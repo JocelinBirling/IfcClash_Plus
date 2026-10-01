@@ -198,5 +198,11 @@ We could want to have the source object that failed, or pass the test only.
 We could facilitate the orientation rule to check if it face the north or south, by simply introducing text.
 
 
+6. Determine main side in OBB
+When we try to find the main side of an OBB, the Z face is taken into account.
+For a slab, it could be usefull. 
+For a wall, it could get to error. When a wall is higher than longer, it can cause inacuracy.
+
+
 
 

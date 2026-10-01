@@ -44,6 +44,11 @@ The object A does not cover at all object B.
 # OOBB
 For the bouding box, we can define prefined word. 
 
+OBB Z should be always pointing to up.
+It depends of the use case. 
+For a beam, or a wall, it's fine.
+For a rafter, it's a flaw. The tilt of the object need to be taken in account to calculte his length.
+
 ## Sides Face
 For the side faces, we can define. We will always look at the face by the normals. The right and left will be dependant on the normals direction.
 Top and bottom is obvious.

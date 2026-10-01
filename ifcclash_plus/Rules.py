@@ -267,7 +267,7 @@ class ProjectedSurface(RuleCheckOneObject):
 class ObbHigh(RuleCheckOneObject):
     def __init__(self, source, length_min, length_max):
         super().__init__(source)
-        self.type = "Projected"
+        self.type = "ObbHigh"
         self.length_max: float = length_max
         self.length_min: float = length_min
         self.geom_settings = ifcopenshell.geom.settings()
@@ -319,17 +319,16 @@ class ObbHigh(RuleCheckOneObject):
             self.produce_select()
 
 class ObbLength(RuleCheckOneObject):
-    def __init__(self, source, length_min, length_max):
+    def __init__(self, source, length_min, length_max,method: DIRECTION_METHOD):
         super().__init__(source)
-        self.type = "Projected"
+        self.type = "ObbLength"
         self.length_max: float = length_max
         self.length_min: float = length_min
+        self.direction_method = method
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self, state="Final"):  
-
-
 
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
@@ -348,15 +347,25 @@ class ObbLength(RuleCheckOneObject):
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.data.id)
                     obb = create_obb_from_TopoDs_Shape(geom)
-                    corners=obb.get_corners()
-                    min_z=corners[0].Z()
-                    max_z=corners[0].Z()
 
-                    for corner in corners:
-                        min_z = min(min_z, corner.Z())
-                        max_z = max(max_z, corner.Z())
-                        
-                    value_to_check=max_z-min_z
+                    x_size = obb.XHSize() * 2
+                    y_size = obb.YHSize() * 2
+                    z_size = obb.ZHSize() * 2
+
+                    # Identifier les deux faces les plus larges ou étroites
+                    # On compare les dimensions pour déterminer les faces larges ou étroites
+                    #dimensions = {"X": x_size, "Y": y_size, "Z": z_size}
+                    dimensions = {"X": x_size, "Y": y_size} #I don't wan to get the high of the object. But i am not sure that Z is the height. @todo check that Z is always the height of an object.
+
+                    # Trouver les deux dimensions les plus grandes ou les plus petites
+                    sorted_dimensions = sorted(
+                        dimensions.items(),
+                        key=lambda item: item[1],
+                        reverse=(self.direction_method == "wide"),
+                    )
+
+                    # Les deux faces les plus larges ou étroites sont les deux premières dimensions
+                    value_to_check = sorted_dimensions[0][1]
 
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)

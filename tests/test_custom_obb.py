@@ -184,6 +184,15 @@ class TestCustomOBB(unittest.TestCase):
         distance = self.obb._test_separating_axis(axis, self.obb, gp_Vec(0, 0, 0))
         self.assertLess(distance, 0)  # Should indicate overlap
 
+    def test_get_two_main_direction_OBB_shape(self):
+        """Check if the dectection"""
+        
+        from OCC.Core.gp import gp_Vec
+
+        #We should check that Z is not taken in account if the object if big.
+        
+        self.assertLess(0, 0)  # Should indicate overlap
+
 
 if __name__ == '__main__':
     unittest.main()
