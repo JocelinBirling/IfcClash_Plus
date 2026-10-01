@@ -54,6 +54,7 @@ There is a sheet for every rule, that present the rule, the parameters and the e
 | [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | One Object | OK | KO | OK |
 | [Orientation](doc/1ObjectsRules/Orientation) | One Object | OK | KO | OK |
 | [Object hight](doc/1ObjectsRules/ObbHigh) | One Object | OK | OK | OK |
+| [Object length](doc/1ObjectsRules/ObbLength) | One Object | OK | OK | OK |
 
 ### Two Object Rule
 
