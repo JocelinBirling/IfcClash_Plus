@@ -694,6 +694,8 @@ class Intersection(RuleCheckTwoObjects):
 
     def run(self):
         self.tree = ifcopenshell.geom.tree()
+        self.select_source.run()
+        self.select_target.run()
 
         source_elements = []
         target_elements = []
@@ -701,29 +703,18 @@ class Intersection(RuleCheckTwoObjects):
         if self.state=="Display_Input":
             self._display_input_generic()
 
+        self.add_to_tree(self.select_source, "BVH")
+        self.add_to_tree(self.select_target, "BVH")
 
-        if self.state == "Final" or self.state == "Select":
-            self.select_source.run()
-            self.select_target.run()
+        for file in self.select_source.dict_elements.keys():
+            list = self.select_source.dict_elements[file]
+            for element in list:
+                source_elements.append(element)
 
-            self.add_to_tree(self.select_source, "BVH")
-            self.add_to_tree(self.select_target, "BVH")
-
-            for file in self.select_source.dict_elements.keys():
-                list = self.select_source.dict_elements[file]
-                for element in list:
-                    source_elements.append(element)
-
-            for file in self.select_target.dict_elements.keys():
-                list = self.select_target.dict_elements[file]
-                for element in list:
-                    target_elements.append(element)
-
-        if self.state == "Exception":
-            self.add_OneObject_to_tree(self.select_source, "BVH")
-            self.add_OneObject_to_tree(self.select_target, "BVH")
-            source_elements.append(self.select_source)
-            target_elements.append(self.select_target)
+        for file in self.select_target.dict_elements.keys():
+            list = self.select_target.dict_elements[file]
+            for element in list:
+                target_elements.append(element)
 
         temp_result = self.tree.clash_intersection_many(
             source_elements,
@@ -891,6 +882,12 @@ class Collision(RuleCheckTwoObjects):
                 )
             )
 
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0        
+        if self.state=="Display_Result":
+            self.display_result()
         if self.state == "Final":
             self.manage_result()
 
@@ -907,29 +904,61 @@ class Ray_Check(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         # self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
 
+
+    def _display_context(self):
+
+        # Imports for center calculation and edge display
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib
+        from OCC.Core.gp import gp_Pnt
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+        from OCC.Display.SimpleGui import init_display
+
+        def add_to_display(entity,geom_settings,color):
+            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
+            geom=shape.geometry
+
+            ais_shape=AIS_Shape(geom)
+
+            ais_shape.SetColor(color)
+            ais_shape.SetTransparency(0.9)
+            self.display.Context.Display(ais_shape, True)
+
+        geom_settings = ifcopenshell.geom.settings()
+        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        grey= Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
+
+        for element in self.select_context.list_of_elements:
+            add_to_display(element,geom_settings,grey)
+
+     
     def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
 
-        if self.state=="Display_Input":
-            self._display_input_generic()
-
-
-        # Watch out, we need to manually store the file info in the contect. It's not done when the RuleFile begin.
-        # @todo improve this in order to update every select in every rule
-        self.select_context.list_ifc_path = self.select_source.list_ifc_path
-        self.select_context.list_ifc_file = self.select_source.list_ifc_file
+        self.select_context.list_ifc_path=self.select_source.list_ifc_path
+        self.select_context.list_ifc_file=self.select_source.list_ifc_file
         self.select_context.run()
-
-        self.add_to_tree(self.select_context, "UB")
-        # self.add_to_tree(self.select_source, "UB")
-        # self.add_to_tree(self.select_target, "UB")
 
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
         self.select_context.create_list_of_element()
 
+
+        if self.state=="Display_Input":
+            self._display_input_generic()
+            self._display_context()
+      
+
+        self.add_to_tree(self.select_context, "UB")
+
+
+        context_set=set(self.select_context.list_of_elements)
+        target_set=set(self.select_target.list_of_elements)
         for source in self.select_source.list_of_elements:
             for target in self.select_target.list_of_elements:
                 source_position = clash_utils.get_XYZ_placement(source)
@@ -967,70 +996,33 @@ class Ray_Check(RuleCheckTwoObjects):
                     style_index: Any
                     """
                     result_object = result.instance.file_.by_id(result.instance.id())
-                    # the ray is not working properly. Something is off.
 
-                    # The clash will append when we can detect two object that are in direct view.
+                    if result_object == source:
+                        continue
 
-                    # print(result_object,target)
+                    if result_object != source and result_object != target:
+                        break
+
                     if result_object == target:
-                        print(target)
+                        self.result.append(ClashResultTwoObjects(source=source["entity"],target=target["entity"],state=True,))
+                        break
 
-        # self.tree.select_ray()
-        # @todo Finish Ray Check
-        print("Not working, must be defined")
 
-    def Coherence_Check(self):
-        # @todo delete this function, but keep the logic of raycheck.
+        if self.state=="Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0        
+        if self.state=="Display_Result":
+            self.display_result()
+        if self.state == "Final":
+            self.manage_result()
 
-        # I do not respect the parameter consistency, Select should contains a list of object, but here it's only one element.
+        if self.state == "Select":
+            self.produce_select()
 
-        self.tree = ifcopenshell.geom.tree()
-        # self.geom_settings=ifcopenshell.geom.settings(USE_WORLD_COORDS=True)
-        self.Select_Context_Element.run()
 
-        self.add_OneObject_to_tree(self.Select_Source, "UB")
-        self.add_OneObject_to_tree(self.Select_Target, "UB")
 
-        self.add_to_tree(self.Select_Context_Element, "UB")
 
-        source_position = clash_utils.get_XYZ_placement(self.Select_Source)
-        target_position = clash_utils.get_XYZ_placement(self.Select_Target)
-        source_array = np.array(source_position)
-        target_array = np.array(target_position)
-
-        direction = target_array - source_array
-        distance = np.linalg.norm(direction)
-        direction = tuple(direction.flatten())
-        direction = (
-            float(direction[0] / distance),
-            float(direction[1] / distance),
-            float(direction[2] / distance),
-        )
-
-        results = self.tree.select_ray(source_position, direction, length=distance)
-        """
-        distance: Any
-        dot_product: Any
-        instance: Any
-        normal: Any
-        position: Any
-        ray_distance: Any
-        style_index: Any
-        """
-
-        for result in results:
-            Object = result.instance.file_.by_id(result.instance.id())
-
-            if Object == self.Select_Source:
-                continue
-
-            if Object == self.Select_Target:
-                print("OK")
-                return True
-
-            if Object != self.Select_Target:
-                print("Error", Object)
-                return False
 
 
 ABOVE_TYPE = Literal[

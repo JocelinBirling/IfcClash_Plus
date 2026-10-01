@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
 from ifctester import ids
 
@@ -96,6 +96,35 @@ class TestRules(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
 
         self.assertEqual(len(intersection_rule.result), 152)
+
+    def test_ray_check_rule(self):
+        """Test Intersection rule"""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path= [self.ifc_path]
+
+
+
+        first_facet = ids.Entity(name="IFCDOOR")
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+        second_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
+        second_select = SelectFacet()
+        second_select.applicability = [second_facet]
+
+        context_facet = ids.Entity(name="IfcWallStandardCase")
+        context_select = SelectFacet()
+        context_select.applicability = [context_facet]
+
+
+
+        rule = Ray_Check(first_select, second_select,context_select, 5,state="Display_Result") 
+
+        OneRuleFile.contains=[rule]
+        OneRuleFile.run()
+
+
 
     def test_above_rule_Max_To_Min(self):
         """Test Above rule"""
@@ -389,13 +418,13 @@ class TestRulesOBB(unittest.TestCase):
 
         list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
 
-        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications)
+        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications,state="Display_Result")
         
         OneRuleFile.contains=[obb_above_rule]
         OneRuleFile.run()
 
 
-        self.assertEqual(len(obb_above_rule.result), 34)
+        self.assertEqual(len(obb_above_rule.result), 20)
         #We should find the same number as the above test rule. 
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)

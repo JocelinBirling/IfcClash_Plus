@@ -484,7 +484,7 @@ class RuleCheckOneObject(RuleCheck):
 
 
     def _display_input_generic(self):
-        def add_to_display(self,entity,geom_settings,color):
+        def add_to_display(entity,geom_settings,color):
             shape=ifcopenshell.geom.create_shape(geom_settings,entity)
             geom=shape.geometry
 
@@ -508,7 +508,7 @@ class RuleCheckOneObject(RuleCheck):
 
             list_of_elements=self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(self,element,geom_settings,blue_color)
+                add_to_display(element,geom_settings,blue_color)
 
     def _display_result_generic(self):
         # Imports for center calculation and edge display
@@ -942,7 +942,7 @@ class RuleCheckTwoObjects(RuleCheck):
         from OCC.Core.BRepBndLib import brepbndlib
         from OCC.Core.gp import gp_Pnt
 
-        def add_to_display(self,entity,geom_settings,color):
+        def add_to_display(entity,geom_settings,color):
             shape=ifcopenshell.geom.create_shape(geom_settings,entity)
             geom=shape.geometry
 
@@ -967,12 +967,16 @@ class RuleCheckTwoObjects(RuleCheck):
 
             list_of_elements=self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(self,element,geom_settings,blue_color)
+                add_to_display(element,geom_settings,blue_color)
 
         for ifc_file in self.select_target.dict_elements.keys():
             list_of_elements=self.select_target.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(self,element,geom_settings,green_color)
+                add_to_display(element,geom_settings,green_color)
+
+
+
+
 
 
     def _display_input_specific(self):

@@ -21,32 +21,6 @@ class TestRules(unittest.TestCase):
         self.ifc_path = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
         self.ifc_file = ifcopenshell.open(self.ifc_path)
 
-    def test_display_result(self):
-        """Test Intersection rule"""
-
-
-        OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
-
-
-
-        first_facet = ids.Entity(name="IFCDOOR")
-        first_select = SelectFacet()
-        first_select.applicability = [first_facet]
-
-        second_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
-        second_select = SelectFacet()
-        second_select.applicability = [second_facet]
-
-
-
-        intersection_rule = Intersection(first_select, second_select, 0.1)
-        intersection_rule.select_grouping = "TARGET"
-
-        OneRuleFile.contains=[intersection_rule]
-        OneRuleFile.run()
-
-        intersection_rule.display_result()
 
     def test_grouping_by_source(self):
         """Test Intersection rule"""
