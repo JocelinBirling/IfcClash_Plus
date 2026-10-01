@@ -189,20 +189,19 @@ class SelectRule(Select):
         # 3 - Select target in the list
         # 4 - Select target not in the list
 
-    def run(self, state="Select"):
+    def run(self, state="Select", element="source", passed=True, in_results=True):
         self.rule.run(state)
-        self.produce_select()
+        self.produce_select(element, passed, in_results)
 
-    def produce_select(self):
-        self.dict_elements = {}
-        for result in self.rule.result:
-            if result.source.file in self.dict_elements.keys():
-                if self.dict_elements[result.source.file] is None:
-                    self.dict_elements[result.source.file] = [result.source]
-                else:
-                    self.dict_elements[result.source.file].append(result.source)
-            else:
-                self.dict_elements[result.source.file] = [result.source]
+    def produce_select(self, element="source", passed=True, in_results=True):
+        # element: "source" or "target"
+        # passed: True for results with status True, False for status False
+        # in_results: True to pick elements inside the results,
+        #              False to pick elements of the input selection that
+        #              went through the rule but produced no result.
+        self.dict_elements = self.rule.produce_select(
+            element=element, passed=passed, in_results=in_results
+        )
 
     def update_file_info(self, files_path, files):
         self.list_ifc_path = files_path
@@ -224,7 +223,7 @@ class RuleCheck:
         self.result_fail_source: list[ifcopenshell.entity_instance] = []
 
         self.select_source: Select = source
-        self.select_grouping: SelectFacet = None #@todo Add the string possibility
+        self.select_grouping: SelectFacet | str = None
         self.select_criticity: list[SelectFacet] = []
         self.select_actor: list[SelectFacet] = []
         self.abs_or_rel_check: AbsoluteOrRelativeChecking = None
@@ -321,20 +320,53 @@ class RuleCheckOneObject(RuleCheck):
         super().__init__(state,source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
-    def produce_select(self):
+    def produce_select(self, element="source", passed=True, in_results=True):
+        # element: only "source" for a one object rule
+        # passed: True for results with status True, False for status False
+        # in_results: True to pick elements inside the results,
+        #              False to pick elements of the input selection that
+        #              went through the rule but produced no result.
+        if element != "source":
+            raise ValueError(
+                f"element must be 'source' for a one object rule, got '{element}'"
+            )
+
         dict_return = {}
+
+        if in_results:
+            for oneresult in self.result:
+                if oneresult.status == passed:
+                    the_element = getattr(oneresult, element)
+                    if the_element is None:
+                        continue
+                    if the_element.file in dict_return:
+                        dict_return[the_element.file].append(the_element)
+                    else:
+                        dict_return[the_element.file] = [the_element]
+
+            return dict_return
+
+        # Elements of the input selection absent from the results
+        ids_in_results = set()
         for oneresult in self.result:
-            if oneresult.status:  # we gave back the True value of result.
-                if oneresult.source.file in dict_return:
-                    dict_return[oneresult.source.file].append(oneresult.source)
-                else:
-                    dict_return[oneresult.source.file] = [oneresult.source]
+            the_element = getattr(oneresult, element)
+            if the_element is not None:
+                ids_in_results.add((the_element.file, the_element.id))
+
+        for ifc_file, elements in self.select_source.dict_elements.items():
+            if not elements:
+                continue
+            absent = [
+                one_element
+                for one_element in elements
+                if (one_element.file, one_element.id) not in ids_in_results
+            ]
+            if absent:
+                dict_return[ifc_file] = absent
 
         return dict_return
 
     def run_grouping(self):
-        # @todo Should i stick to ids for these selection, it may be a bad idea
-        # grouping by source and select is not relevant here
 
         def grouping_by_entity(self):
             group_dict = {}
@@ -597,15 +629,52 @@ class RuleCheckTwoObjects(RuleCheck):
         self.select_exception: list[SelectRule] = []
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
 
-    def produce_select(self):
-        # @todo pass the fail or success element.
+    def produce_select(self, element="source", passed=True):
+        # element: "source" or "target"
+        # passed: True for results with status True, False for status False
+        # in_results: True to pick elements inside the results,
+        #              False to pick elements of the input selection that
+        #              went through the rule but produced no result.
+        if element not in ("source", "target"):
+            raise ValueError(
+                f"element must be 'source' or 'target', got '{element}'"
+            )
+
         dict_return = {}
+
+        if passed:
+            for oneresult in self.result:
+                if oneresult.status == passed:
+                    the_element = getattr(oneresult, element)
+                    if the_element is None:
+                        continue
+                    if the_element.file in dict_return:
+                        dict_return[the_element.file].append(the_element)
+                    else:
+                        dict_return[the_element.file] = [the_element]
+
+            return dict_return
+
+        # Elements of the input selection absent from the results
+        selection = (
+            self.select_source if element == "source" else self.select_target
+        )
+        ids_in_results = set()
         for oneresult in self.result:
-            if oneresult.status:  # we gave back the True value of result.
-                if oneresult.source.file in dict_return:
-                    dict_return[oneresult.source.file].append(oneresult.source)
-                else:
-                    dict_return[oneresult.source.file] = [oneresult.source]
+            the_element = getattr(oneresult, element)
+            if the_element is not None:
+                ids_in_results.add((the_element.file, the_element.id))
+
+        for ifc_file, elements in selection.dict_elements.items():
+            if not elements:
+                continue
+            absent = [
+                one_element
+                for one_element in elements
+                if (one_element.file, one_element.id) not in ids_in_results
+            ]
+            if absent:
+                dict_return[ifc_file] = absent
 
         return dict_return
 
