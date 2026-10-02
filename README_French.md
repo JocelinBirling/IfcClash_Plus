@@ -204,7 +204,7 @@ L'une d'elles est intéressante, car elle crée une OBB dont l'axe Z est bloqué
 
 - Ajout d'une fonction d'affichage
 Cette fonction doit aider à visualiser ce qui doit se passer dans la règle. Elle affichera la boite OBB, là où le clash devrait apparaitre.
-Elle montrera les objets qui sont 
+
 
 - OBB haut et bas
 Cette règle vérifie si quelque chose se trouve au-dessus ou en dessous d'un objet. Elle crée une nouvelle OBB au-dessus (ou en dessous) de l'objet et vérifie si quelque chose entre en clash avec elle.
