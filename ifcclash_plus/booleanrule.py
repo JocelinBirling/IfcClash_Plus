@@ -27,6 +27,14 @@ A rule is converted into a boolean according to a mode:
 - "equals": True if the number of results is exactly value.
 
 The modes comparing to a quantity require the value parameter.
+
+A leaf can also evaluate a single ClashResultTwoObjects with
+evaluate_result: the rule of the leaf is created empty (without source
+and without target) and, for each result given, the source and the
+target of the rule become the elements of the result. The rule runs on
+this pair and the leaf returns True if the exception applies to this
+pair. This is the mechanism to evaluate an exception rule result by
+result.
 """
 
 from abc import abstractmethod
@@ -74,8 +82,38 @@ class BooleanLeaf(BooleanRule):
         self.value=value
 
     def evaluate(self) -> bool:
-        number_of_results = len(self.rule.result)
+        return self._evaluate_number_of_results(len(self.rule.result))
 
+    def evaluate_result(self, result) -> bool:
+        """Evaluate the rule on the pair of elements of a result.
+
+        The rule of the leaf is created empty, without source and
+        without target: for the given ClashResultTwoObjects, the source
+        and the target of the rule become the elements of the result.
+        The rule runs on this pair and the leaf returns True if the
+        exception applies to this pair, False otherwise.
+        """
+        # Deferred import: RuleClass imports this module
+        from RuleClass import Select
+
+        source_select = Select()
+        source_select.dict_elements = {result.source.file: [result.source]}
+        source_select.list_ifc_file = [result.source.file]
+        self.rule.select_source = source_select
+
+        if hasattr(self.rule, "select_target") and result.target is not None:
+            target_select = Select()
+            target_select.dict_elements = {result.target.file: [result.target]}
+            target_select.list_ifc_file = [result.target.file]
+            self.rule.select_target = target_select
+
+        # The rule is run on this pair only, its previous results are dropped
+        self.rule.result = []
+        self.rule.run()
+
+        return self._evaluate_number_of_results(len(self.rule.result))
+
+    def _evaluate_number_of_results(self, number_of_results: int) -> bool:
         if self.mode == "have_result":
             return number_of_results > 0
 
