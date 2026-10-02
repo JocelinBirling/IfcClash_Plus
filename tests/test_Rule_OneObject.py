@@ -79,7 +79,6 @@ class TestRules(unittest.TestCase):
 
         self.assertEqual(len(top_surface_rule.result), 8)
         for result in top_surface_rule.result:
-            print(result.source)
             self.assertIsInstance(result, ClashResultOneObject)
 
     def test_bottom_surface_rule(self):
@@ -99,7 +98,6 @@ class TestRules(unittest.TestCase):
 
         self.assertEqual(len(top_surface_rule.result), 8) 
         for result in top_surface_rule.result:
-            print(result.source)
             self.assertIsInstance(result, ClashResultOneObject)
 
     def test_lateral_rule(self):
@@ -120,7 +118,6 @@ class TestRules(unittest.TestCase):
 
         
         for result in top_surface_rule.result:
-            print(result.source)
             self.assertIsInstance(result, ClashResultOneObject)
 
         self.assertEqual(len(top_surface_rule.result), 5) 
@@ -142,7 +139,6 @@ class TestRules(unittest.TestCase):
 
         
         for result in top_surface_rule.result:
-            print(result.source)
             self.assertIsInstance(result, ClashResultOneObject)
 
         self.assertEqual(len(top_surface_rule.result), 11) 
@@ -167,7 +163,6 @@ class TestRules(unittest.TestCase):
 
         
         for result in rule.result:
-            print(result.source)
             self.assertIsInstance(result, ClashResultOneObject)
         self.assertEqual(len(rule.result), 30) 
 

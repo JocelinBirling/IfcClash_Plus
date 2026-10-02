@@ -177,13 +177,18 @@ class SelectFacet(Select):
     def run(self):
         self.initialize_dict()
 
+        # The facets other than Entity need a list of elements to filter
+        FACETS_REQUIRING_ELEMENTS = (
+            Attribute, Property, Classification, PartOf, Material
+        )
+
         result = []
         for onefile in self.list_ifc_file:
             for one_applicability in self.applicability:
                 if self.dict_elements[onefile] is None:
                     if isinstance(
-                        one_applicability, Attribute
-                    ):  # Attribute need to have a list where Entity doesn't need to
+                        one_applicability, FACETS_REQUIRING_ELEMENTS
+                    ):
                         result = one_applicability.filter(
                             onefile, onefile.by_type("IfcProduct")
                         )
@@ -207,32 +212,24 @@ class SelectRule(Select):
 
         self.type: str = "Rule"
         self.rule: RuleCheck
-        self.action_type: str = 1
+        self.element_to_pass: str = "source" #by default, can be changed
+        self.element_state_to_pass: bool = True # by defaut 
 
-        # can be
-        # 1 - Select source in the list => Only one implemented
-        # 2 - Select source not in the list
-        # 3 - Select target in the list
-        # 4 - Select target not in the list
 
-    def run(self, state="Select", element="source", passed=True):
-        # element: "source" or "target", only for a two objects rule
-        # passed: True to pick elements of the results with status True,
-        #         False to pick elements of the input selection that
-        #         went through the rule but produced no result.
+    def run(self, state="Select"):
+        # element_to_pass: "source" or "target", only for a two objects rule
+        # element_state_to_pass: True to pick elements of the results with
+        #     status True, False to pick elements of the input selection
+        #     that went through the rule but produced no result.
+        # The SelectRule holds the data of the selection and gives it to
+        # the rule before calling produce_select, which takes no parameter.
         # The run() of the rules takes no argument, the state is set on the rule.
-        from RuleClass import RuleCheckOneObject
-
         self.rule.state = state
         self.rule.run()
 
-        if isinstance(self.rule, RuleCheckOneObject):
-            # A one object rule only has source elements
-            self.dict_elements = self.rule.produce_select(passed=passed)
-        else:
-            self.dict_elements = self.rule.produce_select(
-                element=element, passed=passed
-            )
+        self.rule.element_to_pass = self.element_to_pass
+        self.rule.element_state_to_pass = self.element_state_to_pass
+        self.dict_elements = self.rule.produce_select()
 
     def update_file_info(self, files_path, files):
         self.list_ifc_path = files_path
@@ -258,6 +255,11 @@ class RuleCheck:
         self.select_criticity: list[SelectFacet] = []
         self.select_actor: list[SelectFacet] = []
         self.abs_or_rel_check: AbsoluteOrRelativeChecking = None
+
+        # Configuration of produce_select, given by a SelectRule before
+        # the call. element_to_pass is only used by a two objects rule.
+        self.element_to_pass: str = "source"
+        self.element_state_to_pass: bool = True
 
         self.grouped_result: list[GroupResult] = []
 
@@ -351,20 +353,26 @@ class RuleCheckOneObject(RuleCheck):
         super().__init__(state, source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
-    def produce_select(self, passed=True):
-        # passed: True to pick elements of the results with status True,
-        #         False to pick elements of the input selection that
-        #         went through the rule but produced no result.
+    def produce_select(self):
+        # element_state_to_pass: True to pick elements of the results
+        #     with status True, False to pick elements of the input
+        #     selection that went through the rule but produced no result.
         # A one object rule only has source elements.
+        # An element appearing in several results is returned only once.
         dict_return = {}
 
-        if passed:
+        if self.element_state_to_pass:
+            elements_already_added = set()
             for oneresult in self.result:
                 if oneresult.status:
-                    if oneresult.source.file in dict_return:
-                        dict_return[oneresult.source.file].append(oneresult.source)
+                    the_element = oneresult.source
+                    if the_element in elements_already_added:
+                        continue
+                    elements_already_added.add(the_element)
+                    if the_element.file in dict_return:
+                        dict_return[the_element.file].append(the_element)
                     else:
-                        dict_return[oneresult.source.file] = [oneresult.source]
+                        dict_return[the_element.file] = [the_element]
 
             return dict_return
 
@@ -644,22 +652,29 @@ class RuleCheckTwoObjects(RuleCheck):
         self.select_exception: list[SelectRule] = []
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
 
-    def produce_select(self, element="source", passed=True):
-        # element: "source" or "target"
-        # passed: True to pick elements of the results with status True,
-        #         False to pick elements of the input selection that
-        #         went through the rule but produced no result.
-        if element not in ("source", "target"):
-            raise ValueError(f"element must be 'source' or 'target', got '{element}'")
+    def produce_select(self):
+        # element_to_pass: "source" or "target"
+        # element_state_to_pass: True to pick elements of the results
+        #     with status True, False to pick elements of the input
+        #     selection that went through the rule but produced no result.
+        # An element appearing in several results is returned only once.
+        if self.element_to_pass not in ("source", "target"):
+            raise ValueError(
+                f"element_to_pass must be 'source' or 'target', got '{self.element_to_pass}'"
+            )
 
         dict_return = {}
 
-        if passed:
+        if self.element_state_to_pass:
+            elements_already_added = set()
             for oneresult in self.result:
-                if oneresult.status == passed:
-                    the_element = getattr(oneresult, element)
+                if oneresult.status:
+                    the_element = getattr(oneresult, self.element_to_pass)
                     if the_element is None:
                         continue
+                    if the_element in elements_already_added:
+                        continue
+                    elements_already_added.add(the_element)
                     if the_element.file in dict_return:
                         dict_return[the_element.file].append(the_element)
                     else:
@@ -668,13 +683,15 @@ class RuleCheckTwoObjects(RuleCheck):
             return dict_return
 
         # Elements of the input selection absent from the results
-        selection = self.select_source if element == "source" else self.select_target
+        selection = (
+            self.select_source if self.element_to_pass == "source" else self.select_target
+        )
         # The entity_instance equality is value based, so a set of elements
         # works even if the file wrappers of the results are different
         # from the ones of the selection.
         elements_in_results = set()
         for oneresult in self.result:
-            the_element = getattr(oneresult, element)
+            the_element = getattr(oneresult, self.element_to_pass)
             if the_element is not None:
                 elements_in_results.add(the_element)
 

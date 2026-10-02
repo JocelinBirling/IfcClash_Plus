@@ -97,6 +97,18 @@ Group by Gravity
 Group with clustering
 
 
+# Boolean Rule
+A boolean rule can be set. It will use classic rule and produce a True or False result.
+It have several mode to detect a True or False
+have_result
+have_no_result etc...
+
+It usefull in the activation rule, or the exception rule to produce a value.
+
+# Activation of a Rule
+WORK IN PROGRESS
+
+
 # Exceptions
 "Exception that proves the rule"
 With every rule, we need to consider exceptions. Edge case are everywhere.
@@ -117,6 +129,11 @@ Same BuildingStorey Exception
 ## Example
 If we detect collision between two cable carrier, we must check if they are in the same IfcSystem. 
 If they are, that's probably only a modeling problem, not a real world issue.
+
+
+
+
+
 
 # Absolute Or Relative Check (Must Rule)
 It will always start by a grouping of all result. 
@@ -157,10 +174,6 @@ These an be reused in a BCF later.
 ## Criticity
 We can automaticaly attribute a criticity to each object based on an IDS specification.
 These an be reused in a BCF later. 
-
-# Activation of a Rule
-WORK IN PROGRESS
-
 
 
 # Folder of Rule
