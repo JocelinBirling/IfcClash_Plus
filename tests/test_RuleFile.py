@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, './ifcclash_plus')
 from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,Volume,Ray_Check
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects,RuleFolder,SelectRule
+from booleanrule import BooleanLeaf
 from ifctester import ids
 import os
 
@@ -187,7 +188,8 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule2 = Collision(source=first_select, target=second_select, allow_touching=False)
 
         folder.contains=[rule2]
-        folder.activation_rule=rule1
+        # activation_rule only accepts a SelectFacet or a BooleanRule
+        folder.activation_rule=BooleanLeaf(rule1)
         
         rule_file.contains = [folder]
         

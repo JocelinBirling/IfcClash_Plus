@@ -1593,7 +1593,7 @@ class OBB_Above(RuleCheckTwoObjects):
                     result = ClashResultTwoObjects(
                         source=source_data["entity"],
                         target=target_data["entity"],
-                        state=False,
+                        state=True,
                     )
                     self.result.append(result)
         if self.state == "Display_Result":
@@ -1730,7 +1730,7 @@ class OBB_Below(RuleCheckTwoObjects):
                     result = ClashResultTwoObjects(
                         source=source_data["entity"],
                         target=target_data["entity"],
-                        state=False,
+                        state=True,
                     )
                     self.result.append(result)
         if self.state == "Display_Result":
@@ -1887,7 +1887,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     result = ClashResultTwoObjects(
                         source=source_data["entity"],
                         target=target_data["entity"],
-                        state=False,
+                        state=True,
                     )
                     self.result.append(result)
 
@@ -2042,7 +2042,7 @@ class OBB_Custom(RuleCheckTwoObjects):
                     result = ClashResultTwoObjects(
                         source=source_data["entity"],
                         target=target_data["entity"],
-                        state=False,
+                        state=True,
                     )
                     self.result.append(result)
         if self.state == "Display_Result":

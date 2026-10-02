@@ -17,6 +17,8 @@ from typing import Literal, TypedDict, Union
 
 from abc import abstractmethod
 
+from booleanrule import BooleanRule
+
 from ifctester.facet import Entity, Attribute
 import ifcopenshell.geom
 import time
@@ -93,7 +95,7 @@ class RuleFile:
 class RuleFolder:
     def __init__(self):
         self.id: str = "AZE"
-        self.activation_rule: Select = None
+        self.activation_rule: SelectFacet | BooleanRule = None
         self.activation_case: str = "ALLTRUE"
         self.contains: list = []  # Union of folder or Rule
 
@@ -101,18 +103,25 @@ class RuleFolder:
 
         if self.activation_rule is None:
             return True
+
         if type(self.activation_rule) is SelectFacet:
             self.activation_rule.run()
             self.activation_rule.create_list_of_element()
             number_of_elements = len(self.activation_rule.list_of_elements)
-            if number_of_elements > 0:
-                return True
-        else:  # For the case with a SelectRule
-            self.activation_rule.run()
-            number_of_elements = len(self.activation_rule.result)
-            if number_of_elements > 0:
-                return True
-        return False
+            return number_of_elements > 0
+
+        if isinstance(self.activation_rule, BooleanRule):
+            # The rules referenced by the boolean tree are run first,
+            # then the tree is evaluated.
+            for one_rule in self.activation_rule.rules():
+                one_rule.state = "Final"
+                one_rule.run()
+            return self.activation_rule.evaluate()
+
+        raise TypeError(
+            "activation_rule must be a SelectFacet or a BooleanRule, "
+            f"got {type(self.activation_rule)}"
+        )
 
     def run(self):
         if self.check_Activation_Rule():
@@ -122,6 +131,16 @@ class RuleFolder:
             return False
 
     def update_file_info(self, files_path, files):
+        # The activation rule also needs the files to be able to run,
+        # even when it is not shared with a rule of the folder.
+        # An activation_rule of another type is rejected at run,
+        # in check_Activation_Rule.
+        if isinstance(self.activation_rule, BooleanRule):
+            for one_rule in self.activation_rule.rules():
+                one_rule.update_file_info(files_path, files)
+        elif type(self.activation_rule) is SelectFacet:
+            self.activation_rule.update_file_info(files_path, files)
+
         for rule_or_file in self.contains:
             rule_or_file.update_file_info(files_path, files)
 
