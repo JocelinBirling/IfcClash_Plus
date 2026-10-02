@@ -189,6 +189,7 @@ class TestCustomOBB(unittest.TestCase):
         
         from OCC.Core.gp import gp_Vec
 
+        #@todo get a test for get_two_main_direction
         #We should check that Z is not taken in account if the object if big.
         
         self.assertLess(0, 0)  # Should indicate overlap
