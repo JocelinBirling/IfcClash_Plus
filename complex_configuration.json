@@ -6,6 +6,7 @@
         {
             "type": "Intersection",
             "id": null,
+            "state": "Final",
             "select_grouping": null,
             "select_criticity": [],
             "select_actor": [],
@@ -31,8 +32,7 @@
                         "name": "IFCFURNISHINGELEMENT"
                     }
                 ]
-            },
-            "select_exception": []
+            }
         }
     ]
 }

@@ -282,7 +282,7 @@ class RuleCheck:
             self.produce_select()
 
     def run_exception(self):
-        def exception_same_ifcsystem(self, result) -> bool:
+        def exception_same_ifcsystem(result) -> bool:
             """Return True when the source and the target of a result belong
             to the same IfcSystem.
 
@@ -295,8 +295,8 @@ class RuleCheck:
             if source is None or target is None:
                 return False
 
-            source_systems = self._get_ifcsystem_set(source)
-            target_systems = self._get_ifcsystem_set(target)
+            source_systems = _get_ifcsystem_set(source)
+            target_systems = _get_ifcsystem_set(target)
 
             return len(source_systems & target_systems) > 0
 
@@ -1185,7 +1185,7 @@ class AbsoluteOrRelativeChecking:
 
 class AbsoluteChecking(AbsoluteOrRelativeChecking):
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
-        super().__init__(self, type)
+        super().__init__(type)
         self.type = type
 
         self.focus: str = "source"  # source or target
@@ -1230,7 +1230,7 @@ class AbsoluteChecking(AbsoluteOrRelativeChecking):
 
 class RelativeChecking(AbsoluteOrRelativeChecking):
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
-        super().__init__(self, type)
+        super().__init__(type)
         self.type = type
         self.source_operation: str = ""
         self.operation: str = ""
