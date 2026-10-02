@@ -29,8 +29,7 @@ from ifcopenshell.util.element import get_pset
 import random
 
 
-
-#For displaying
+# For displaying
 from OCC.Core.AIS import AIS_Shape
 from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
 from OCC.Display.SimpleGui import init_display
@@ -51,13 +50,18 @@ from OCC.Core.TopAbs import TopAbs_SHELL
 import math
 from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
 from OCC.Core.BRepGProp import BRepGProp_Face
-from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeEdge
+from OCC.Core.BRepBuilderAPI import (
+    BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_MakeWire,
+    BRepBuilderAPI_MakeEdge,
+)
 from OCC.Core.TopoDS import TopoDS_Shell, TopoDS_Face
 from OCC.Core.BRep import BRep_Builder
 from OCC.Core.BRepCheck import BRepCheck_Analyzer
 from OCC.Core.TopoDS import TopoDS_Shape
 from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
 from OCC.Core.BRepBndLib import brepbndlib
+
 
 class RuleFile:
     def __init__(self):
@@ -68,7 +72,7 @@ class RuleFile:
 
         self.path_to_save: str = None
 
-    def run(self): 
+    def run(self):
         self.load_file()
         self.update_file_info()
 
@@ -80,8 +84,8 @@ class RuleFile:
             rule_or_file.update_file_info(self.list_ifc_path, self.list_ifc_file)
 
     def load_file(self):
-        #@todo improve the load_file()
-        #This function is used to dispatch the list of ifc_file path to every rule.
+        # @todo improve the load_file()
+        # This function is used to dispatch the list of ifc_file path to every rule.
         for path in self.list_ifc_path:
             self.list_ifc_file.append(ifcopenshell.open(path))
 
@@ -100,17 +104,15 @@ class RuleFolder:
         if type(self.activation_rule) is SelectFacet:
             self.activation_rule.run()
             self.activation_rule.create_list_of_element()
-            number_of_elements=len(self.activation_rule.list_of_elements)
-            if number_of_elements>0:
+            number_of_elements = len(self.activation_rule.list_of_elements)
+            if number_of_elements > 0:
                 return True
-        else: #For the case with a SelectRule
+        else:  # For the case with a SelectRule
             self.activation_rule.run()
-            number_of_elements=len(self.activation_rule.result)
-            if number_of_elements>0:
-                return True     
+            number_of_elements = len(self.activation_rule.result)
+            if number_of_elements > 0:
+                return True
         return False
-
-
 
     def run(self):
         if self.check_Activation_Rule():
@@ -145,6 +147,7 @@ class Select:
         for onefile in self.list_ifc_file:
             self.list_of_elements = self.dict_elements[onefile] + self.list_of_elements
 
+
 class SelectFacet(Select):
     def __init__(self, ClassificationType="Facet"):
         super().__init__()
@@ -155,12 +158,16 @@ class SelectFacet(Select):
     def run(self):
         self.initialize_dict()
 
-        result=[]
+        result = []
         for onefile in self.list_ifc_file:
             for one_applicability in self.applicability:
                 if self.dict_elements[onefile] is None:
-                    if isinstance(one_applicability,Attribute): #Attribute need to have a list where Entity doesn't need to
-                        result = one_applicability.filter(onefile,onefile.by_type("IfcProduct"))
+                    if isinstance(
+                        one_applicability, Attribute
+                    ):  # Attribute need to have a list where Entity doesn't need to
+                        result = one_applicability.filter(
+                            onefile, onefile.by_type("IfcProduct")
+                        )
                     else:
                         result = one_applicability.filter(onefile)
                     self.dict_elements[onefile] = result
@@ -216,9 +223,9 @@ class SelectRule(Select):
 
 @abstractmethod
 class RuleCheck:
-    def __init__(self, state,source):
+    def __init__(self, state, source):
         self.id: str = None
-        self.state:str = state
+        self.state: str = state
         self.type: str = None
 
         self.tree: list = None
@@ -243,7 +250,7 @@ class RuleCheck:
                 multiprocessing.cpu_count(),
                 include=Select.dict_elements[ifc_file],
             )
- 
+
             if iterator.initialize():
                 while True:
                     if type_of_tree == "BVH":
@@ -277,52 +284,52 @@ class RuleCheck:
     def to_bcf():
         print("Reuse Ifcopenshell")
 
-    def _add_obb_to_display(self,geom,color):
-        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+    def _add_obb_to_display(self, geom, color):
+        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
         compound = geom.to_TopoDS_Compound()
         ais_shape = AIS_Shape(compound)
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
         self.display.Context.Display(ais_shape, True)
 
-    def _add_face_to_display(self,geom,color):
-        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+    def _add_face_to_display(self, geom, color):
+        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
         ais_shape = AIS_Shape(geom)
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
         self.display.Context.Display(ais_shape, True)
 
-    def _add_gp_Dir_to_display(self,geom,dir,color):
+    def _add_gp_Dir_to_display(self, geom, dir, color):
 
         def edge_from_point_dir(point, direction, length):
             """Arête partant de `point`, dans `direction`, de longueur `length`."""
             end = point.Translated(gp_Vec(direction).Multiplied(length))
-            return BRepBuilderAPI_MakeEdge(point, end).Edge()        
+            return BRepBuilderAPI_MakeEdge(point, end).Edge()
+
         bbox = Bnd_Box()
         brepbndlib.Add(geom, bbox)
-        
+
         corner_min = bbox.CornerMin()
         corner_max = bbox.CornerMax()
-        
+
         center = gp_Pnt(
             (corner_min.X() + corner_max.X()) / 2.0,
             (corner_min.Y() + corner_max.Y()) / 2.0,
-            (corner_min.Z() + corner_max.Z()) / 2.0
+            (corner_min.Z() + corner_max.Z()) / 2.0,
         )
 
-        vector_to_print=edge_from_point_dir(center,dir,0.5)
+        vector_to_print = edge_from_point_dir(center, dir, 0.5)
 
-
-
-        the_color= Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
+        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
         ais_shape = AIS_Shape(vector_to_print)
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
         self.display.Context.Display(ais_shape, True)
 
+
 class RuleCheckOneObject(RuleCheck):
-    def __init__(self,state, source):
-        super().__init__(state,source)
+    def __init__(self, state, source):
+        super().__init__(state, source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
     def produce_select(self, passed=True):
@@ -511,33 +518,28 @@ class RuleCheckOneObject(RuleCheck):
         for one_select_actor in self.select_actor:
             one_select_actor.update_file_info(files_path, files)
 
-
     def _display_input_generic(self):
-        def add_to_display(entity,geom_settings,color):
-            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
-            geom=shape.geometry
+        def add_to_display(entity, geom_settings, color):
+            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
+            geom = shape.geometry
 
-            ais_shape=AIS_Shape(geom)
+            ais_shape = AIS_Shape(geom)
 
             ais_shape.SetColor(color)
             ais_shape.SetTransparency(0.9)
             self.display.Context.Display(ais_shape, True)
 
-
         self.display, self.start_display, add_menu, add_function = init_display()
-
 
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        blue_color= Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
-
+        blue_color = Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
 
         for ifc_file in self.select_source.dict_elements.keys():
-
-            list_of_elements=self.select_source.dict_elements[ifc_file]
+            list_of_elements = self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(element,geom_settings,blue_color)
+                add_to_display(element, geom_settings, blue_color)
 
     def _display_result_generic(self):
         # Imports for center calculation and edge display
@@ -546,11 +548,11 @@ class RuleCheckOneObject(RuleCheck):
         from OCC.Core.BRepBndLib import brepbndlib
         from OCC.Core.gp import gp_Pnt
 
-        def add_to_display(display,entity,geom_settings,color):
-            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
-            geom=shape.geometry
+        def add_to_display(display, entity, geom_settings, color):
+            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
+            geom = shape.geometry
 
-            ais_shape=AIS_Shape(geom)
+            ais_shape = AIS_Shape(geom)
 
             ais_shape.SetColor(color)
             ais_shape.SetTransparency(0.9)
@@ -558,9 +560,9 @@ class RuleCheckOneObject(RuleCheck):
             return display
 
         def get_random_color():
-            R=random.randrange(1,255,1)/256
-            V=random.randrange(1,255,1)/256
-            B=random.randrange(1,255,1)/256
+            R = random.randrange(1, 255, 1) / 256
+            V = random.randrange(1, 255, 1) / 256
+            B = random.randrange(1, 255, 1) / 256
             color = Quantity_Color(R, V, B, Quantity_TOC_RGB)
             return color
 
@@ -568,32 +570,31 @@ class RuleCheckOneObject(RuleCheck):
             """Calculate the center of an IFC entity's bounding box"""
             shape = ifcopenshell.geom.create_shape(geom_settings, entity)
             geom = shape.geometry
-            
+
             bbox = Bnd_Box()
             brepbndlib.Add(geom, bbox)
-            
+
             corner_min = bbox.CornerMin()
             corner_max = bbox.CornerMax()
-            
+
             center = gp_Pnt(
                 (corner_min.X() + corner_max.X()) / 2.0,
                 (corner_min.Y() + corner_max.Y()) / 2.0,
-                (corner_min.Z() + corner_max.Z()) / 2.0
+                (corner_min.Z() + corner_max.Z()) / 2.0,
             )
             return center
 
-        def display_edge(display, p1, p2,edge_color):
+        def display_edge(display, p1, p2, edge_color):
             """Display an edge between two gp_Pnt points"""
             edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
             ais_edge = AIS_Shape(edge)
-            
+
             ais_edge.SetColor(edge_color)
             ais_edge.SetTransparency(0.0)
-            
+
             display.Context.Display(ais_edge, True)
 
         self.display, self.start_display, add_menu, add_function = init_display()
-
 
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
@@ -601,14 +602,12 @@ class RuleCheckOneObject(RuleCheck):
         neutral_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
 
         for clash in self.result:
-            self.display=add_to_display(self.display,clash.source,geom_settings,neutral_color)
-
-
-
+            self.display = add_to_display(
+                self.display, clash.source, geom_settings, neutral_color
+            )
 
     def _display_result_specific(self):
         pass
-
 
     def display_result(self):
 
@@ -620,8 +619,8 @@ class RuleCheckOneObject(RuleCheck):
 
 
 class RuleCheckTwoObjects(RuleCheck):
-    def __init__(self,state, source, target):
-        super().__init__(state,source)
+    def __init__(self, state, source, target):
+        super().__init__(state, source)
         self.select_target: Select = target
         self.select_exception: list[SelectRule] = []
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
@@ -632,9 +631,7 @@ class RuleCheckTwoObjects(RuleCheck):
         #         False to pick elements of the input selection that
         #         went through the rule but produced no result.
         if element not in ("source", "target"):
-            raise ValueError(
-                f"element must be 'source' or 'target', got '{element}'"
-            )
+            raise ValueError(f"element must be 'source' or 'target', got '{element}'")
 
         dict_return = {}
 
@@ -652,9 +649,7 @@ class RuleCheckTwoObjects(RuleCheck):
             return dict_return
 
         # Elements of the input selection absent from the results
-        selection = (
-            self.select_source if element == "source" else self.select_target
-        )
+        selection = self.select_source if element == "source" else self.select_target
         # The entity_instance equality is value based, so a set of elements
         # works even if the file wrappers of the results are different
         # from the ones of the selection.
@@ -825,7 +820,7 @@ class RuleCheckTwoObjects(RuleCheck):
 
         if isinstance(self.select_grouping, Classification):
             grouping_by_classification(self)
-        
+
         if self.select_grouping == "SOURCE" or self.select_grouping == "TARGET":
             grouping_by_object(self)
 
@@ -860,7 +855,7 @@ class RuleCheckTwoObjects(RuleCheck):
                     oneresult.actor.append(one_actor.classification_name)
 
     def run_exception(self):
-        #@todo include a relation exception, if on same ifcsystem, them can be excluded.
+        # @todo include a relation exception, if on same ifcsystem, them can be excluded.
         for one_rule_result in self.result:
             for exception_rule in self.select_exception:
                 exception_rule.rule.select_source = one_rule_result.source
@@ -918,11 +913,11 @@ class RuleCheckTwoObjects(RuleCheck):
         from OCC.Core.BRepBndLib import brepbndlib
         from OCC.Core.gp import gp_Pnt
 
-        def add_to_display(display,entity,geom_settings,color):
-            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
-            geom=shape.geometry
+        def add_to_display(display, entity, geom_settings, color):
+            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
+            geom = shape.geometry
 
-            ais_shape=AIS_Shape(geom)
+            ais_shape = AIS_Shape(geom)
 
             ais_shape.SetColor(color)
             ais_shape.SetTransparency(0.9)
@@ -930,9 +925,9 @@ class RuleCheckTwoObjects(RuleCheck):
             return display
 
         def get_random_color():
-            R=random.randrange(1,255,1)/256
-            V=random.randrange(1,255,1)/256
-            B=random.randrange(1,255,1)/256
+            R = random.randrange(1, 255, 1) / 256
+            V = random.randrange(1, 255, 1) / 256
+            B = random.randrange(1, 255, 1) / 256
             color = Quantity_Color(R, V, B, Quantity_TOC_RGB)
             return color
 
@@ -940,56 +935,62 @@ class RuleCheckTwoObjects(RuleCheck):
             """Calculate the center of an IFC entity's bounding box"""
             shape = ifcopenshell.geom.create_shape(geom_settings, entity)
             geom = shape.geometry
-            
+
             bbox = Bnd_Box()
             brepbndlib.Add(geom, bbox)
-            
+
             corner_min = bbox.CornerMin()
             corner_max = bbox.CornerMax()
-            
+
             center = gp_Pnt(
                 (corner_min.X() + corner_max.X()) / 2.0,
                 (corner_min.Y() + corner_max.Y()) / 2.0,
-                (corner_min.Z() + corner_max.Z()) / 2.0
+                (corner_min.Z() + corner_max.Z()) / 2.0,
             )
             return center
 
-        def display_edge(display, p1, p2,edge_color):
+        def display_edge(display, p1, p2, edge_color):
             """Display an edge between two gp_Pnt points"""
             edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
             ais_edge = AIS_Shape(edge)
-            
+
             ais_edge.SetColor(edge_color)
             ais_edge.SetTransparency(0.0)
-            
+
             display.Context.Display(ais_edge, True)
 
         self.display, self.start_display, add_menu, add_function = init_display()
 
-
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        neutral_color= Quantity_Color(0, 0, 0.5, Quantity_TOC_RGB)
-        source_set= set()
+        neutral_color = Quantity_Color(0, 0, 0.5, Quantity_TOC_RGB)
+        source_set = set()
 
         for clash in self.result:
-            self.display=add_to_display(self.display,clash.target,geom_settings,neutral_color)
+            self.display = add_to_display(
+                self.display, clash.target, geom_settings, neutral_color
+            )
             source_set.add(clash.source)
 
-        dict_of_source_color={}
+        dict_of_source_color = {}
         for source in source_set:
-            random_color=get_random_color()
-            dict_of_source_color[source]=random_color
-            self.display=add_to_display(self.display,source,geom_settings,random_color)
+            random_color = get_random_color()
+            dict_of_source_color[source] = random_color
+            self.display = add_to_display(
+                self.display, source, geom_settings, random_color
+            )
 
         # Display edges between centers of clashing pairs
         for clash in self.result:
             center_source = get_entity_center(clash.source, geom_settings)
             center_target = get_entity_center(clash.target, geom_settings)
-            display_edge(self.display, center_source, center_target,dict_of_source_color[clash.source])
-
-
+            display_edge(
+                self.display,
+                center_source,
+                center_target,
+                dict_of_source_color[clash.source],
+            )
 
     def _display_result_specific(self):
         pass
@@ -1010,47 +1011,36 @@ class RuleCheckTwoObjects(RuleCheck):
         from OCC.Core.BRepBndLib import brepbndlib
         from OCC.Core.gp import gp_Pnt
 
-        def add_to_display(entity,geom_settings,color):
-            shape=ifcopenshell.geom.create_shape(geom_settings,entity)
-            geom=shape.geometry
+        def add_to_display(entity, geom_settings, color):
+            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
+            geom = shape.geometry
 
-            ais_shape=AIS_Shape(geom)
+            ais_shape = AIS_Shape(geom)
 
             ais_shape.SetColor(color)
             ais_shape.SetTransparency(0.9)
             self.display.Context.Display(ais_shape, True)
 
-
         self.display, self.start_display, add_menu, add_function = init_display()
-
 
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        blue_color= Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
-        green_color= Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
-
+        blue_color = Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
+        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
 
         for ifc_file in self.select_source.dict_elements.keys():
-
-            list_of_elements=self.select_source.dict_elements[ifc_file]
+            list_of_elements = self.select_source.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(element,geom_settings,blue_color)
+                add_to_display(element, geom_settings, blue_color)
 
         for ifc_file in self.select_target.dict_elements.keys():
-            list_of_elements=self.select_target.dict_elements[ifc_file]
+            list_of_elements = self.select_target.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(element,geom_settings,green_color)
-
-
-
-
-
+                add_to_display(element, geom_settings, green_color)
 
     def _display_input_specific(self):
         pass
-
-
 
 
 class RuleCheckComplex(RuleCheck):
