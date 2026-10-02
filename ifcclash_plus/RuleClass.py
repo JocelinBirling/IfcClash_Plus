@@ -240,8 +240,8 @@ class SelectRule(Select):
 @abstractmethod
 class RuleCheck:
 
-    EXCEPTION_METHOD = Literal[
-    "Same_IfcSystem", "Same_Building", "Same_Storey", "Same_Space"]
+    # The relation exceptions, usable as select_exception
+    EXCEPTION_METHOD = ("Same_IfcSystem", "Same_Building", "Same_Storey", "Same_Space")
 
     def __init__(self, state, source):
         self.id: str = None
@@ -282,10 +282,42 @@ class RuleCheck:
             self.produce_select()
 
     def run_exception(self):
+        def exception_same_ifcsystem(self, result) -> bool:
+            """Return True when the source and the target of a result belong
+            to the same IfcSystem.
 
-        def exception_same_ifcsystem(self,result)->bool:
-            ...
-            #@todo do exception for same ifcsystem
+            This is a relation exception: two objects of the same system
+            are allowed to be in clash, the result can be excluded.
+            """
+            source = result.source
+            target = result.target
+
+            if source is None or target is None:
+                return False
+
+            source_systems = self._get_ifcsystem_set(source)
+            target_systems = self._get_ifcsystem_set(target)
+
+            return len(source_systems & target_systems) > 0
+
+        @staticmethod
+        def _get_ifcsystem_set(element):
+            """The IfcSystems containing the element.
+
+            An element belongs to an IfcSystem through an
+            IfcRelAssignsToGroup relationship, reachable with the inverse
+            attribute HasAssignments of the element.
+            """
+            systems = set()
+
+            for assignment in element.HasAssignments:
+                if assignment.is_a("IfcRelAssignsToGroup"):
+                    group = assignment.RelatingGroup
+                    if group is not None and group.is_a("IfcSystem"):
+                        systems.add(group)
+            return systems
+
+
         def exception_same_building(self,result)->bool:
             ...
             #@todo do exception for same building, with 2 objects, it's tricky...
@@ -308,20 +340,22 @@ class RuleCheck:
                 if self.select_exception.evaluate_result(one_result):
                     one_result.status = False
         
-        if self.select_exception in self.EXCEPTION_METHOD:
+        if self.select_exception in self.EXCEPTION_METHOD and isinstance(self,RuleCheckTwoObjects):
             if self.select_exception=="Same_IfcSystem":
                 for one_result in self.result:
-                    if self.exception_same_ifcsystem():
+                    if exception_same_ifcsystem(one_result):
                         one_result.status = False
             
             if self.select_exception=="Same_Building":
-                self.exception_same_building()
+                exception_same_building()
             
             if self.select_exception=="Same_Storey":
-                self.exception_same_storey()
+                exception_same_storey()
             
             if self.select_exception=="Same_Space":
-                self.exception_same_space()          
+                exception_same_space()          
+
+
 
 
 
