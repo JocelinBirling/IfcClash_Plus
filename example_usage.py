@@ -26,7 +26,7 @@ def main():
     Source_Facet2 = ids.Entity(name="IFCSLAB")
     Source_Select2.applicability = [Source_Facet2]
 
-    rule=OBB_Above(Source_Select,Source_Select2,0.85)
+    rule=OBB_Above(Source_Select,Source_Select2,0.85,state="Display_Result")
 
 
     OneRuleFile.contains=[rule]
