@@ -271,13 +271,20 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
     def _count_selection(self, select):
         return sum(len(elements) for elements in select.dict_elements.values())
 
+    def _produce_select(self, rule, element, passed):
+        """produce_select takes no parameter: the configuration is set
+        on the rule (as a SelectRule does), then the method is called."""
+        rule.element_to_pass = element
+        rule.element_state_to_pass = passed
+        return rule.produce_select()
+
     def _assert_produce_select_quantities(
         self, rule, source_true, source_false, target_true, target_false
     ):
-        source_in_results = rule.produce_select(element="source", passed=True)
-        source_absent = rule.produce_select(element="source", passed=False)
-        target_in_results = rule.produce_select(element="target", passed=True)
-        target_absent = rule.produce_select(element="target", passed=False)
+        source_in_results = self._produce_select(rule, "source", True)
+        source_absent = self._produce_select(rule, "source", False)
+        target_in_results = self._produce_select(rule, "target", True)
+        target_absent = self._produce_select(rule, "target", False)
 
         self.assertEqual(self._count_elements(source_in_results), source_true)
         self.assertEqual(self._count_elements(source_absent), source_false)
@@ -317,7 +324,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
         self.assertEqual(len(rule.result), 24)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-        self._assert_produce_select_quantities(rule, 24, 0, 24, 7)
+        # The 24 collisions involve 14 doors and 14 slabs, each returned once
+        self._assert_produce_select_quantities(rule, 14, 0, 14, 7)
 
     def test_SelectRule_inside_Clearance(self):
         """Clearance with the source produced by a SelectRule.
@@ -338,7 +346,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
         self.assertEqual(len(rule.result), 152)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-        self._assert_produce_select_quantities(rule, 152, 14, 152, 14)
+        # The 152 clearances involve 42 walls and 47 furnishing elements
+        self._assert_produce_select_quantities(rule, 42, 14, 47, 14)
 
     def test_SelectRule_inside_Intersection(self):
         """Intersection with the source produced by a SelectRule.
@@ -392,7 +401,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
         self.assertEqual(len(rule.result), 21)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-        self._assert_produce_select_quantities(rule, 21, 1, 21, 44)
+        # The 21 ray checks involve 13 doors and 17 furnishing elements
+        self._assert_produce_select_quantities(rule, 13, 1, 17, 44)
 
 
 class TestRuleFileProperties(unittest.TestCase):
