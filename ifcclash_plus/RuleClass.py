@@ -17,7 +17,7 @@ from typing import Literal, TypedDict, Union
 
 from abc import abstractmethod
 
-from booleanrule import BooleanRule
+from booleanrule import BooleanRule,BooleanLeaf
 
 from ifctester.facet import Entity, Attribute
 import ifcopenshell.geom
@@ -239,6 +239,10 @@ class SelectRule(Select):
 
 @abstractmethod
 class RuleCheck:
+
+    EXCEPTION_METHOD = Literal[
+    "Same_IfcSystem", "Same_Building", "Same_Storey", "Same_Space"]
+
     def __init__(self, state, source):
         self.id: str = None
         self.state: str = state
@@ -249,6 +253,8 @@ class RuleCheck:
         self.result: list[ClashResult] = []
 
         self.result_fail_source: list[ifcopenshell.entity_instance] = []
+
+        self.select_exception: BooleanLeaf|str|None = None
 
         self.select_source: Select = source
         self.select_grouping: SelectFacet | str = None
@@ -262,6 +268,62 @@ class RuleCheck:
         self.element_state_to_pass: bool = True
 
         self.grouped_result: list[GroupResult] = []
+
+    def end_rule_action(self):
+        self.run_exception()
+
+        #@todo Verify if we can refactor Display_Input in this function.
+
+        if self.state == "Display_Result":
+            self.display_result()
+        if self.state == "Final":
+            self.manage_result()
+        if self.state == "Select":
+            self.produce_select()
+
+    def run_exception(self):
+
+        def exception_same_ifcsystem(self,result)->bool:
+            ...
+            #@todo do exception for same ifcsystem
+        def exception_same_building(self,result)->bool:
+            ...
+            #@todo do exception for same building, with 2 objects, it's tricky...
+        def exception_same_storey(self,result)->bool:
+            ...
+            #@todo do exception for same storey, with 2 objects, it's tricky...
+        def exception_same_space(self,result)->bool:
+            ...
+            #@todo do exception for same space, with 2 objects, it's tricky...
+
+
+        # The exception is a BooleanLeaf evaluated result by result: the
+        # rule of the leaf runs on the pair of elements of the result
+        # and the result is invalidated when the exception applies.
+        if self.select_exception==None:
+            return
+        
+        if isinstance(self.select_exception, BooleanLeaf):
+            for one_result in self.result:
+                if self.select_exception.evaluate_result(one_result):
+                    one_result.status = False
+        
+        if self.select_exception in self.EXCEPTION_METHOD:
+            if self.select_exception=="Same_IfcSystem":
+                for one_result in self.result:
+                    if self.exception_same_ifcsystem():
+                        one_result.status = False
+            
+            if self.select_exception=="Same_Building":
+                self.exception_same_building()
+            
+            if self.select_exception=="Same_Storey":
+                self.exception_same_storey()
+            
+            if self.select_exception=="Same_Space":
+                self.exception_same_space()          
+
+
 
     def add_to_tree(self, Select, type_of_tree):
         for ifc_file in Select.dict_elements.keys():
@@ -346,6 +408,8 @@ class RuleCheck:
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
         self.display.Context.Display(ais_shape, True)
+
+
 
 
 class RuleCheckOneObject(RuleCheck):
@@ -649,7 +713,6 @@ class RuleCheckTwoObjects(RuleCheck):
     def __init__(self, state, source, target):
         super().__init__(state, source)
         self.select_target: Select = target
-        self.select_exception: list[SelectRule] = []
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
 
     def produce_select(self):
@@ -890,25 +953,6 @@ class RuleCheckTwoObjects(RuleCheck):
                 if oneresult.target in one_actor.list_of_elements:
                     oneresult.actor.append(one_actor.classification_name)
 
-    def run_exception(self):
-        # @todo include a relation exception, if on same ifcsystem, them can be excluded.
-        for one_rule_result in self.result:
-            for exception_rule in self.select_exception:
-                exception_rule.rule.select_source = one_rule_result.source
-                exception_rule.rule.select_target = one_rule_result.target
-
-                exception_rule.rule.run(state="Exception")
-
-                if exception_rule.rule.result == []:
-                    one_rule_result.state = False
-                    break
-                else:
-                    if exception_rule.rule.result[0].status:
-                        continue
-                    else:
-                        one_rule_result.state = False
-                        break
-
     def run_abs_or_rel(self):
         if self.abs_or_rel_check is None:
             return None
@@ -929,12 +973,10 @@ class RuleCheckTwoObjects(RuleCheck):
         for one_select_actor in self.select_actor:
             one_select_actor.update_file_info(files_path, files)
 
-        for one_select_exception in self.select_exception:
-            one_select_exception.update_file_info(files_path, files)
+        # select_exception is a BooleanLeaf: its rule receives the
+        # elements of the pairs at the evaluation, it needs no file.
 
     def manage_result(self):
-        self.run_exception()
-
         self.run_criticity()
         self.run_actor()
 

@@ -8,7 +8,7 @@ from OCC.Core.gp import gp_Pnt, gp_Dir, gp_Vec
 from CustomOBB import Custom_OBB
 
 
-class test_exception_rule(unittest.TestCase):
+class test_exception_relation(unittest.TestCase):
     """
 
     Test cases for Custom_OBB class methods"""
@@ -49,6 +49,12 @@ class test_exception_rule(unittest.TestCase):
         self.assertIsInstance(distance, float)
         self.assertGreaterEqual(distance, 0)
         """
+
+class test_exception_rule(unittest.TestCase):
+    """
+
+    Test cases for Custom_OBB class methods"""
+    
 
 
 

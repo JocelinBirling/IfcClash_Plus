@@ -75,13 +75,7 @@ class Volume(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 class Area(RuleCheckOneObject):
@@ -126,13 +120,7 @@ class Area(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 TOP_OR_BOT = Literal["Top", "Bottom"]
@@ -197,13 +185,7 @@ class TopOrBottomSurface(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 class LateralSurface(RuleCheckOneObject):
@@ -252,12 +234,7 @@ class LateralSurface(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 class ProjectedSurface(RuleCheckOneObject):
@@ -306,13 +283,7 @@ class ProjectedSurface(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 class ObbHigh(RuleCheckOneObject):
@@ -371,13 +342,7 @@ class ObbHigh(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 class ObbLength(RuleCheckOneObject):
@@ -452,13 +417,7 @@ class ObbLength(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 ORIENTATION_TYPE = Literal["Parrallel", "Perpendicular"]
@@ -538,13 +497,7 @@ class Orientation(RuleCheckOneObject):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        self.end_rule_action()
 
 
 # ===== Two Objects Rule
@@ -661,14 +614,7 @@ class AngleBetween(RuleCheckTwoObjects):
             self.start_display()
             return 0
 
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 class Intersection(RuleCheckTwoObjects):
@@ -738,14 +684,7 @@ class Intersection(RuleCheckTwoObjects):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 class Clearance(RuleCheckTwoObjects):
@@ -807,13 +746,7 @@ class Clearance(RuleCheckTwoObjects):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 class Collision(RuleCheckTwoObjects):
@@ -870,13 +803,7 @@ class Collision(RuleCheckTwoObjects):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 class Ray_Check(RuleCheckTwoObjects):
@@ -886,6 +813,14 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context: Select = context
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
+
+    def display_result(self):
+        # Ray_Check also displays its context elements
+        self._display_result_generic()
+        self._display_context()
+
+        self.display.FitAll()
+        self.start_display()
 
     def _display_context(self):
 
@@ -1027,17 +962,7 @@ class Ray_Check(RuleCheckTwoObjects):
             self.display.FitAll()
             self.start_display()
             return 0
-        if self.state == "Display_Result":
-            self._display_result_generic()
-            self._display_context()
-
-            self.display.FitAll()
-            self.start_display()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 ABOVE_TYPE = Literal[
@@ -1204,14 +1129,7 @@ class Above(RuleCheckTwoObjects):
                             )
                             break
 
-        if self.state == "Display_Result":
-            self.display_result()
-
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _check_distance(self, list_of_source_face, list_of_target_face):
         dict_to_return = {"is_above": None, "list_of_point_on_target": []}
@@ -1398,13 +1316,7 @@ class Below(RuleCheckTwoObjects):
                             )
                             break
 
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _check_distance(self, list_of_source_face, list_of_target_face):
         dict_to_return = {"is_below": None, "list_of_point_on_target": []}
@@ -1491,13 +1403,7 @@ class Template(RuleCheckTwoObjects):
             self.start_display()
             return 0
 
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
 
 class OBB_Above(RuleCheckTwoObjects):
@@ -1596,13 +1502,7 @@ class OBB_Above(RuleCheckTwoObjects):
                         state=True,
                     )
                     self.result.append(result)
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _display_input_specific(self):
         from OCC.Core.AIS import AIS_Shape
@@ -1733,13 +1633,7 @@ class OBB_Below(RuleCheckTwoObjects):
                         state=True,
                     )
                     self.result.append(result)
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _display_input_specific(self):
         from OCC.Core.AIS import AIS_Shape
@@ -1891,13 +1785,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     )
                     self.result.append(result)
 
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _display_input_specific(self):
         from OCC.Core.AIS import AIS_Shape
@@ -2045,13 +1933,7 @@ class OBB_Custom(RuleCheckTwoObjects):
                         state=True,
                     )
                     self.result.append(result)
-        if self.state == "Display_Result":
-            self.display_result()
-        if self.state == "Final":
-            self.manage_result()
-
-        if self.state == "Select":
-            self.produce_select()
+        self.end_rule_action()
 
     def _create_list_of_obb(self, geom):
 
