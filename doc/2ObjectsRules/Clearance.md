@@ -1,26 +1,20 @@
 # Description
 
-This rule check that the angle between two objects.
+This rule aims to detect objects that are too close to each other based on a minimum clearance distance.
 
-The direction of the objects can be obtains with two differents methods.
-
-
-
+It will check the distance between all pairs of source and target objects. If any two objects are closer than the specified clearance distance, a clash will be reported.
 
 # Property
+Source: Object A - The first set of objects to be analyzed.
 
-Direction Method : 
-Ifc Direction, it use the data of the IFC to get the direction of the object
-Bouding Box, it use oriented object bounding box to determine the longest direction of an object.
+Target: Object B - The second set of objects to be analyzed.
 
-Angle Difference : The target angle between the two objects.
-0 to get parralel objects
-90 to get perpendicular objects
-
-Angle Tolerance : In degre, it is use to determine to tolerance of angle in between the two objects.
+Clearance: The minimum required distance between objects. Objects that are closer than this distance will trigger a clash result.
 
 # Result
 
+The result will list all pairs of objects where the distance between source and target is less than the specified clearance value.
 
 # Example
 
+It can be used to ensure that building elements maintain required minimum distances from each other, such as verifying clearance requirements between structural components or MEP systems.

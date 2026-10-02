@@ -349,6 +349,26 @@ def display_direction():
     start_display()
 
 
+def select_with_ids(chemin):
+    file=ifcopenshell.open(chemin)
+
+    from ifctester import ids
+
+
+    facet=ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+    facet=ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FNhv")
+    #facet=ids.Entity(name="IfcDoor")
+
+    result=facet.filter(file,file.by_type("IfcWall"))
+
+
+    for x in result:
+        print(x)
+
+
+
+
 if __name__ == "__main__":
     chemin="Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
-    display_front_direction(chemin,angle_offset=180)
+    select_with_ids(chemin)
+    #display_front_direction(chemin,angle_offset=180)

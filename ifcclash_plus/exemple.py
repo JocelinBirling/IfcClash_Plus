@@ -1,9 +1,10 @@
 import RuleClass
 from RuleClass import SelectFacet, SelectRule
-from Rules import Volume, Area, TopSurface, Intersection, Clearance,Above
+from Rules import Volume, Area, TopOrBottomSurface, Intersection, Clearance,Above
 from ifctester import ids
 from ifcopenshell import file
 import ifcopenshell
+
 
 
 def IntersectionCheck():
@@ -161,10 +162,232 @@ def AboveConstruct():
     
 
 
+def save_and_load_configuration():
+    """
+    Example function demonstrating how to save and load rule configurations to/from JSON.
+    This shows how to persist rule configurations for later reuse.
+    """
+    from serialization import save_to_json, load_from_json, create_configuration_from_rule_file
+    
+    # Create a configuration
+    Chemin = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+
+    OneRuleFile = RuleClass.RuleFile()
+    OneRuleFile.list_ifc_path = [Chemin]
+
+    Wall_Select = SelectFacet()
+    Wall_Facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+    Wall_Select.applicability = [Wall_Facet]
+
+    Window_Select = SelectFacet()
+    Window_Facet = ids.Entity(name="IFCWINDOW")
+    Window_Select.applicability = [Window_Facet]
+
+    intersect_rule = Intersection(Window_Select, Wall_Select, 0.001)
+    OneRuleFile.contains = [intersect_rule]
+
+    # Save the configuration to JSON
+    save_to_json(OneRuleFile, "saved_configuration.json")
+    print("Configuration saved to saved_configuration.json")
+
+    # Load the configuration from JSON
+    loaded_rule_file = load_from_json("saved_configuration.json")
+    print("Configuration loaded from saved_configuration.json")
+    
+    # Run the loaded configuration
+    loaded_rule_file.run()
+    
+    for rule in loaded_rule_file.contains:
+        if hasattr(rule, 'result'):
+            for result in rule.result:
+                if result.status:
+                    print("Clash", result.source.Name, result.target.Name)
+                else:
+                    print("No Clash", result.source.Name, result.target.Name)
+
+
+def save_simple_configuration():
+    """
+    Simplified example using the serialization module's helper functions.
+    This is easier to use for simple cases.
+    """
+    from serialization import (
+        save_configuration_to_json, 
+        load_configuration_from_json,
+        create_configuration_from_rule_file,
+        apply_configuration_to_rule_file
+    )
+    
+    # Create a simple configuration
+    Chemin = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+
+    OneRuleFile = RuleClass.RuleFile()
+    OneRuleFile.list_ifc_path = [Chemin]
+
+    Wall_Select = SelectFacet()
+    Wall_Facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+    Wall_Select.applicability = [Wall_Facet]
+
+    Window_Select = SelectFacet()
+    Window_Facet = ids.Entity(name="IFCWINDOW")
+    Window_Select.applicability = [Window_Facet]
+
+    intersect_rule = Intersection(Window_Select, Wall_Select, 0.001)
+    OneRuleFile.contains = [intersect_rule]
+
+    # Convert to a simple configuration dictionary
+    config = create_configuration_from_rule_file(OneRuleFile)
+    
+    # Save to JSON
+    save_configuration_to_json(config, "simple_configuration.json")
+    print("Simple configuration saved to simple_configuration.json")
+    
+    # Load from JSON
+    loaded_config = load_configuration_from_json("simple_configuration.json")
+    print("Simple configuration loaded from simple_configuration.json")
+    
+    # Apply to a new RuleFile
+    new_rule_file = RuleClass.RuleFile()
+    apply_configuration_to_rule_file(new_rule_file, loaded_config)
+    
+    # Run the loaded configuration
+    new_rule_file.run()
+    
+    for rule in new_rule_file.contains:
+        if hasattr(rule, 'result'):
+            for result in rule.result:
+                if result.status:
+                    print("Loaded Clash", result.source.Name, result.target.Name)
+
+
+def save_complex_configuration():
+    """
+    Example showing how to save and load a complex configuration with multiple rules
+    and SelectRule chaining, like in the Rule_Select example.
+    """
+    from serialization import (
+        save_configuration_to_json, 
+        load_configuration_from_json,
+        create_configuration_from_rule_file,
+        apply_configuration_to_rule_file
+    )
+    
+    path_arc = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+
+    OneRuleFile = RuleClass.RuleFile()
+    OneRuleFile.list_ifc_path = [path_arc]
+
+    # Setup selections
+    Wall_Select = SelectFacet()
+    Wall_Facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+    Wall_Select.applicability = [Wall_Facet]
+
+    door_select = SelectFacet()
+    door_facet = ids.Entity(name="IFCDOOR")
+    door_select.applicability = [door_facet]
+
+    furnishing_select = SelectFacet()
+    furnishing_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
+    furnishing_select.applicability = [furnishing_facet]
+
+    # Create the chained rules
+    wall_vs_door = Intersection(source=Wall_Select, target=door_select, tolerance=0.001)
+    rule_select = SelectRule()
+    rule_select.rule = wall_vs_door
+
+    the_check = Clearance(source=rule_select, target=furnishing_select, clearance=1.2)
+    OneRuleFile.contains = [the_check]
+
+    # Save the configuration
+    config = create_configuration_from_rule_file(OneRuleFile)
+    save_configuration_to_json(config, "complex_configuration.json")
+    print("Complex configuration saved to complex_configuration.json")
+    
+    # Load and run
+    loaded_config = load_configuration_from_json("complex_configuration.json")
+    new_rule_file = RuleClass.RuleFile()
+    apply_configuration_to_rule_file(new_rule_file, loaded_config)
+    
+    new_rule_file.run()
+    
+    for rule in new_rule_file.contains:
+        if hasattr(rule, 'result'):
+            for result in rule.result:
+                if result.status:
+                    print("Complex Clash", result.source.Name, result.target.Name)
+
+
+def manual_save_example():
+    """
+    Manual example showing how to create a JSON configuration by hand
+    and then load it to run clash detection.
+    """
+    from serialization import load_configuration_from_json, apply_configuration_to_rule_file
+    import json
+    
+    # Create a configuration manually (could be edited by user)
+    config = {
+        "ifc_paths": ["Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"],
+        "rules": [
+            {
+                "type": "Intersection",
+                "tolerance": 0.001,
+                "source": {
+                    "type": "SelectFacet",
+                    "classification_type": "Facet",
+                    "classification_name": "",
+                    "applicability": [
+                        {
+                            "type": "Entity",
+                            "name": "IFCWALLSTANDARDCASE",
+                            "ifc_version": None
+                        }
+                    ]
+                },
+                "target": {
+                    "type": "SelectFacet",
+                    "classification_type": "Facet",
+                    "classification_name": "",
+                    "applicability": [
+                        {
+                            "type": "Entity",
+                            "name": "IFCWINDOW",
+                            "ifc_version": None
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    
+    # Save to file
+    with open("manual_configuration.json", "w") as f:
+        json.dump(config, f, indent=4)
+    print("Manual configuration saved to manual_configuration.json")
+    
+    # Load and run
+    loaded_config = load_configuration_from_json("manual_configuration.json")
+    rule_file = RuleClass.RuleFile()
+    apply_configuration_to_rule_file(rule_file, loaded_config)
+    
+    rule_file.run()
+    
+    for rule in rule_file.contains:
+        if hasattr(rule, 'result'):
+            for result in rule.result:
+                if result.status:
+                    print("Manual Clash", result.source.Name, result.target.Name)
+
+
 if __name__ == "__main__":
     AboveConstruct()
     #IntersectionCheck()
     #Rule_Select()
     #
     #TODO Expand the examples
+    
+    # Uncomment to test save/load functionality
+    # save_and_load_configuration()
+    # save_simple_configuration()
+    # manual_save_example()
 

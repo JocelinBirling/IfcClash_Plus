@@ -1,26 +1,20 @@
 # Description
 
-This rule check that the angle between two objects.
+This rule aims to detect collisions between objects.
 
-The direction of the objects can be obtains with two differents methods.
-
-
-
+It will check if any part of the source objects intersects with any part of the target objects. A collision is detected when the geometries of two objects overlap in space.
 
 # Property
+Source: Object A - The first set of objects to be analyzed.
 
-Direction Method : 
-Ifc Direction, it use the data of the IFC to get the direction of the object
-Bouding Box, it use oriented object bounding box to determine the longest direction of an object.
+Target: Object B - The second set of objects to be analyzed.
 
-Angle Difference : The target angle between the two objects.
-0 to get parralel objects
-90 to get perpendicular objects
-
-Angle Tolerance : In degre, it is use to determine to tolerance of angle in between the two objects.
+Allow Touching: If True, objects that are exactly touching (but not overlapping) will be considered as a collision. If False, only actual geometric overlaps will be detected.
 
 # Result
 
+The result will list all pairs of objects where a collision is detected between source and target.
 
 # Example
 
+It can be used to detect any unintended intersections between structural elements, pipes, ducts, or any other building components that should not overlap.

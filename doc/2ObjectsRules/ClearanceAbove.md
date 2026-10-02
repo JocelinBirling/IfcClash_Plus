@@ -44,3 +44,7 @@ For now, the result will say if B is on top of A and give the minium distance be
 
 # Example
 It can be used to detect if a pipe is right above an electric machine.
+
+
+
+@todo This function need to be redone. It's slow and it's hard to use opencascade and the triangulation.

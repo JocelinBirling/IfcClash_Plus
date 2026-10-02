@@ -2,7 +2,7 @@ from OCC.Core.Bnd import Bnd_Box, Bnd_OBB
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
 from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
-from OCC.Core.TopoDS import TopoDS_Compound
+from OCC.Core.TopoDS import TopoDS_Compound, TopoDS_Shell, TopoDS_Solid, TopoDS_Face
 from OCC.Core.BRep import BRep_Builder
 from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
 from OCC.Core.BRep import BRep_Tool
@@ -13,8 +13,10 @@ import ifcopenshell.util.shape
 import ifcopenshell.geom
 import ifcopenshell.ifcopenshell_wrapper as W
 
-from typing import Literal
+from typing import Literal, List
 import numpy as np
+from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakePolygon,BRepBuilderAPI_MakeFace
+
 
 
 """
@@ -226,6 +228,45 @@ def create_obb_from_geom_verts(geom:W.Triangulation) -> "Custom_OBB":
 
     return obb
 
+def create_aabb_from_list_of_faces(list_of_faces,vertices) -> "Custom_OBB":
+    """
+
+    """
+    from OCC.Core.TColgp import TColgp_Array1OfPnt
+
+    theobb = Bnd_OBB()
+    list_of_points=[]
+    #@todo clean this
+    
+    for source_face in list_of_faces:
+        s0 = vertices[source_face[0]]
+        s1 = vertices[source_face[1]]
+        s2 = vertices[source_face[2]]
+
+        g0=gp_Pnt(s0[0],s0[1],s0[2])
+        g1=gp_Pnt(s1[0],s1[1],s1[2])
+        g2=gp_Pnt(s2[0],s2[1],s2[2])
+
+        list_of_points.append(g0)
+        list_of_points.append(g1)
+        list_of_points.append(g2)
+        theobb.Add(g0)
+        theobb.Add(g1)
+        theobb.Add(g2)
+        print(s0)
+        break
+        
+    return theobb
+    """
+    tcolgp=TColgp_Array1OfPnt(1,len(list_of_points))
+    for i, point in enumerate(list_of_points, start=1):
+        tcolgp.SetValue(i, point)
+
+    theobb=Custom_OBB.ReBuild(tcolgp)
+    """
+
+
+
 
 def create_obb_from_TopoDs_Shape(shape:TopoDS_Compound) -> "Custom_OBB":
     """
@@ -238,7 +279,7 @@ def create_obb_from_TopoDs_Shape(shape:TopoDS_Compound) -> "Custom_OBB":
         Bnd_OBB: L'OBB calculé pour la forme.
     """
 
-    mesh = BRepMesh_IncrementalMesh(shape, 0.1, False, 0.5)
+    mesh = BRepMesh_IncrementalMesh(shape, 0.01, False, 0.5)
     mesh.Perform()
 
     # Calculer directement l'OBB à partir de la forme avec une tolérance précise
@@ -346,6 +387,89 @@ def create_obb_from_verts_withOCC(geom:W.Triangulation) -> "Custom_OBB":
     # Utiliser ReBuild pour créer l'OBB à partir des points
     obb.ReBuild(points_array)
 
+    return obb
+
+
+def create_obb_from_faces(faces: List[TopoDS_Face]) -> "Custom_OBB":
+    """
+    Crée une OBB (Oriented Bounding Box) à partir d'une liste de faces TopoDS_Face.
+    
+    Cette fonction utilise l'analyse en composantes principales (PCA) pour calculer
+    l'OBB optimale qui englobe toutes les faces fournies.
+    
+    Args:
+        faces: Liste de TopoDS_Face à englober
+    
+    Returns:
+        Custom_OBB: Une OBB représentant la boîte englobante orientée
+    """
+    # Collecter tous les sommets de toutes les faces
+    points = []
+    
+    for face in faces:
+        # Utiliser l'explorateur de sommets pour cette face
+        from OCC.Core.TopExp import TopExp_Explorer
+        from OCC.Core.TopAbs import TopAbs_VERTEX
+        
+        vertex_explorer = TopExp_Explorer(face, TopAbs_VERTEX)
+        while vertex_explorer.More():
+            vertex = vertex_explorer.Current()
+            pnt = BRep_Tool.Pnt(vertex)
+            points.append([pnt.X(), pnt.Y(), pnt.Z()])
+            vertex_explorer.Next()
+    
+    if len(points) < 3:
+        # Si pas assez de points, essayer d'utiliser la triangulation
+        for face in faces:
+            location = face.Location()
+            triangulation = BRep_Tool.Triangulation(face, location)
+            
+            if triangulation is not None:
+                trsf = location.Transformation()
+                has_transformation = not location.IsIdentity()
+                
+                for i in range(1, triangulation.NbNodes() + 1):
+                    node = triangulation.Node(i)
+                    if has_transformation:
+                        node = node.Transformed(trsf)
+                    points.append([node.X(), node.Y(), node.Z()])
+    
+    if len(points) < 3:
+        raise ValueError(f"Pas assez de points pour calculer une OBB. Seulement {len(points)} points trouvés.")
+    
+    pts = np.array(points)
+    
+    # Calculer le centroïde
+    centroid = pts.mean(axis=0)
+    
+    # Centrer les points
+    centered = pts - centroid
+    
+    # Calculer la matrice de covariance
+    cov = np.cov(centered.T)
+    
+    # Calculer les vecteurs propres et les valeurs propres
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    
+    # Trier par ordre décroissant des valeurs propres
+    order = np.argsort(eigenvalues)[::-1]
+    axes = eigenvectors[:, order]
+    
+    # Projection et calcul des demi-tailles
+    projected = centered @ axes
+    min_proj = projected.min(axis=0)
+    max_proj = projected.max(axis=0)
+    
+    half_sizes = (max_proj - min_proj) / 2.0
+    local_center = centroid + axes @ ((min_proj + max_proj) / 2.0)
+    
+    # Construction de l'OBB
+    obb = Custom_OBB()
+    obb.SetCenter(gp_Pnt(*local_center))
+    obb.SetXComponent(gp_Dir(*axes[:, 0]), half_sizes[0])
+    obb.SetYComponent(gp_Dir(*axes[:, 1]), half_sizes[1])
+    obb.SetZComponent(gp_Dir(*axes[:, 2]), half_sizes[2])
+    
     return obb
 
 
@@ -671,7 +795,6 @@ class Custom_OBB(Bnd_OBB):
 
         return top_OBB
 
-
     def extend_up(self, change: float) -> "Custom_OBB":
         """
         Étend l'OBB vers le haut dans la direction mondiale (0, 0, 1).
@@ -921,7 +1044,7 @@ class Custom_OBB(Bnd_OBB):
         return corners_in_dir
 
     def get_two_main_direction_OBB_shape(
-        self, wide_or_narrow: Literal["wide", "narrow"]
+        self, wide_or_narrow: Literal["wide", "narrow"],only_check_xy:bool =True
     ) -> tuple[gp_Dir, gp_Dir]:
         """
         Détermine les deux directions des faces larges (ou étroites) de l'OBB.
@@ -940,13 +1063,37 @@ class Custom_OBB(Bnd_OBB):
 
         # Identifier les deux faces les plus larges ou étroites
         # On compare les dimensions pour déterminer les faces larges ou étroites
+        
+        #@todo What can happen when an object is tilted to 45 degres. No real Z can be found.
+        #@todo This function need to be improve for IfcSlab or tilted object, it's not working yet.
         dimensions = {"X": x_size, "Y": y_size, "Z": z_size}
+        if only_check_xy==True:
+
+            Z_absolute=gp_Dir(0,0,1)
+            angular_tolerance=0.1
+
+            z_direction=gp_Dir(self.ZDirection())
+            if Z_absolute.IsParallel(z_direction,angular_tolerance):
+                dimensions = {"X": x_size, "Y": y_size}
+
+            x_direction=gp_Dir(self.XDirection())
+            if Z_absolute.IsParallel(x_direction,angular_tolerance):
+                dimensions = {"Y": y_size, "Z": z_size}
+
+            y_direction=gp_Dir(self.YDirection())
+            if Z_absolute.IsParallel(y_direction,angular_tolerance):
+                dimensions = {"X": x_size, "Z": z_size}
+
+
+
+
+
 
         # Trouver les deux dimensions les plus grandes ou les plus petites
         sorted_dimensions = sorted(
             dimensions.items(),
             key=lambda item: item[1],
-            reverse=(wide_or_narrow == "narrow"),
+            reverse=(wide_or_narrow == "Narrow"),
         )
 
         # Les deux faces les plus larges ou étroites sont les deux premières dimensions
@@ -1042,7 +1189,156 @@ class Custom_OBB(Bnd_OBB):
 
         return compound
 
+    def to_TopoDS_Compound_V2(self):
+        """
+        Convertit un Bnd_OBB en TopoDS_Compound en calculant ses 8 coins.
 
+        Args:
+            obb (Bnd_OBB): Une boîte englobante orientée.
+
+        Returns:
+            TopoDS_Compound: Un compound contenant la géométrie de la boîte.
+        """
+        # Récupérer le centre et les axes de l'OBB
+        center = self.Center()
+        x_axis = self.XHSize()  # Demi-longueur en X
+        y_axis = self.YHSize()  # Demi-longueur en Y
+        z_axis = self.ZHSize()  # Demi-longueur en Z
+
+        # Récupérer les directions des axes
+        x_dir = self.XDirection()
+        y_dir = self.YDirection()
+        z_dir = self.ZDirection()
+
+        # Calculer les 8 coins en combinant ±x, ±y, ±z
+        corners = []
+        for dx in [-1, 1]:
+            for dy in [-1, 1]:
+                for dz in [-1, 1]:
+                    corner = gp_Pnt(
+                        center.X() + dx * x_axis * x_dir.X() + dy * y_axis * y_dir.X() + dz * z_axis * z_dir.X(),
+                        center.Y() + dx * x_axis * x_dir.Y() + dy * y_axis * y_dir.Y() + dz * z_axis * z_dir.Y(),
+                        center.Z() + dx * x_axis * x_dir.Z() + dy * y_axis * y_dir.Z() + dz * z_axis * z_dir.Z()
+                    )
+                    corners.append(corner)
+
+        # Créer les 6 faces de la boîte
+        faces = [
+            # Face avant (z min)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[2], corners[3], True).Wire()
+            ).Face(),
+            # Face arrière (z max)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[4], corners[5], corners[6], corners[7], True).Wire()
+            ).Face(),
+            # Face gauche (x min)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[3], corners[7], corners[4], True).Wire()
+            ).Face(),
+            # Face droite (x max)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[1], corners[2], corners[6], corners[5], True).Wire()
+            ).Face(),
+            # Face inférieure (y min)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[5], corners[4], True).Wire()
+            ).Face(),
+            # Face supérieure (y max)
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[3], corners[2], corners[6], corners[7], True).Wire()
+            ).Face(),
+        ]
+
+        # Créer un TopoDS_Compound
+        builder = BRep_Builder()
+        compound = TopoDS_Compound()
+        builder.MakeCompound(compound)
+
+        # Ajouter toutes les faces au compound
+        for face in faces:
+            builder.Add(compound, face)
+
+        return compound
+
+    def to_TopoDS_Solid(self) -> TopoDS_Solid:
+        """
+        Convertit un Bnd_OBB en TopoDS_Solid (boîte pleine).
+        
+        Créer un solide valide avec une orientation cohérente des faces (vers l'extérieur).
+        
+        Returns:
+            TopoDS_Solid: Un solide représentant la boîte orientée.
+        """
+        # Récupérer le centre et les axes de l'OBB
+        center = self.Center()
+        x_axis = self.XHSize()  # Demi-longueur en X
+        y_axis = self.YHSize()  # Demi-longueur en Y
+        z_axis = self.ZHSize()  # Demi-longueur en Z
+
+        # Récupérer les directions des axes
+        x_dir = self.XDirection()
+        y_dir = self.YDirection()
+        z_dir = self.ZDirection()
+
+        # Calculer les 8 coins en combinant ±x, ±y, ±z
+        corners = []
+        for dx in [-1, 1]:
+            for dy in [-1, 1]:
+                for dz in [-1, 1]:
+                    corner = gp_Pnt(
+                        center.X() + dx * x_axis * x_dir.X() + dy * y_axis * y_dir.X() + dz * z_axis * z_dir.X(),
+                        center.Y() + dx * x_axis * x_dir.Y() + dy * y_axis * y_dir.Y() + dz * z_axis * z_dir.Y(),
+                        center.Z() + dx * x_axis * x_dir.Z() + dy * y_axis * y_dir.Z() + dz * z_axis * z_dir.Z()
+                    )
+                    corners.append(corner)
+
+        # Créer les 6 faces avec orientation cohérente (anti-horaire vu de l'extérieur)
+        # Ordre des coins :
+        # 0: (-1,-1,-1), 1: (+1,-1,-1), 2: (-1,+1,-1), 3: (+1,+1,-1)  => Face basse (z-)
+        # 4: (-1,-1,+1), 5: (+1,-1,+1), 6: (-1,+1,+1), 7: (+1,+1,+1)  => Face haute (z+)
+        faces = [
+            # Face basse (z min) - vue de dessous, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[3], corners[2], True).Wire()
+            ).Face(),
+            # Face haute (z max) - vue de dessus, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[5], corners[7], corners[6], corners[4], True).Wire()
+            ).Face(),
+            # Face gauche (x min) - vue de gauche, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[4], corners[6], corners[2], True).Wire()
+            ).Face(),
+            # Face droite (x max) - vue de droite, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[1], corners[3], corners[7], corners[5], True).Wire()
+            ).Face(),
+            # Face avant (y min) - vue de devant, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[5], corners[4], True).Wire()
+            ).Face(),
+            # Face arrière (y max) - vue de derrière, sens anti-horaire
+            BRepBuilderAPI_MakeFace(
+                BRepBuilderAPI_MakePolygon(corners[2], corners[6], corners[7], corners[3], True).Wire()
+            ).Face(),
+        ]
+
+        # Créer une coque (shell) à partir des faces
+        shell_builder = BRep_Builder()
+        shell = TopoDS_Shell()
+        shell_builder.MakeShell(shell)
+        for face in faces:
+            shell_builder.Add(shell, face)
+
+        # Créer un solide à partir de la coque
+        solid_builder = BRep_Builder()
+        solid = TopoDS_Solid()
+        solid_builder.MakeSolid(solid)
+        solid_builder.Add(solid, shell)
+
+        return solid
+    
 if __name__ == "__main__":
     import ifcopenshell
 

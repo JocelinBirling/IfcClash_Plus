@@ -125,8 +125,8 @@ class TestCustomOBB(unittest.TestCase):
         
         # Test with percentage
         top_obb = self.obb.detach_top_by_extrude("10%")
-        self.assertEqual(top_obb.ZHSize(), 0.05)  # 10% of 10 / 2
-        expected_center_z = original_center_z + original_z + 0.05 # 10% of 10 / 2
+        self.assertEqual(top_obb.ZHSize(), 0.5)  # 10% of 10 / 2
+        expected_center_z = original_center_z + original_z + 0.5 # 10% of 10 / 2
         self.assertAlmostEqual(top_obb.Center().Z(), expected_center_z, places=4)
         
         # Test with absolute value
@@ -142,8 +142,8 @@ class TestCustomOBB(unittest.TestCase):
         
         # Test with percentage
         bottom_obb = self.obb.detach_bottom_by_extrude("10%")
-        self.assertEqual(bottom_obb.ZHSize(), 0.05)  # 10% of 10 / 2
-        expected_center_z = original_center_z - original_z - 0.05  # 10% of 10 / 2
+        self.assertEqual(bottom_obb.ZHSize(), 0.5)  # 10% of 10 / 2
+        expected_center_z = original_center_z - original_z - 0.5  # 10% of 10 / 2
         self.assertAlmostEqual(bottom_obb.Center().Z(), expected_center_z, places=4)
         
         # Test with absolute value
@@ -183,6 +183,16 @@ class TestCustomOBB(unittest.TestCase):
         # Test with overlapping OBBs (same OBB)
         distance = self.obb._test_separating_axis(axis, self.obb, gp_Vec(0, 0, 0))
         self.assertLess(distance, 0)  # Should indicate overlap
+
+    def test_get_two_main_direction_OBB_shape(self):
+        """Check if the dectection"""
+        
+        from OCC.Core.gp import gp_Vec
+
+        #@todo get a test for get_two_main_direction
+        #We should check that Z is not taken in account if the object if big.
+        
+        self.assertLess(0, 0)  # Should indicate overlap
 
 
 if __name__ == '__main__':

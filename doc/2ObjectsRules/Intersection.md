@@ -1,26 +1,20 @@
 # Description
 
-This rule check that the angle between two objects.
+This rule aims to detect intersections between objects within a specified tolerance.
 
-The direction of the objects can be obtains with two differents methods.
-
-
-
+It will check if any part of the source objects comes within the specified tolerance distance of any part of the target objects. Unlike collision detection which requires actual geometric overlap, intersection detection identifies objects that are close to each other.
 
 # Property
+Source: Object A - The first set of objects to be analyzed.
 
-Direction Method : 
-Ifc Direction, it use the data of the IFC to get the direction of the object
-Bouding Box, it use oriented object bounding box to determine the longest direction of an object.
+Target: Object B - The second set of objects to be analyzed.
 
-Angle Difference : The target angle between the two objects.
-0 to get parralel objects
-90 to get perpendicular objects
-
-Angle Tolerance : In degre, it is use to determine to tolerance of angle in between the two objects.
+Tolerance: The maximum distance at which objects are considered to be intersecting. Objects within this distance of each other will trigger a clash result.
 
 # Result
 
+The result will list all pairs of objects where an intersection is detected between source and target within the specified tolerance.
 
 # Example
 
+It can be used to detect objects that are too close to each other, such as identifying potential clearance issues between MEP components or checking if elements maintain required minimum distances.

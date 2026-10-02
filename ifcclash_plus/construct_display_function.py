@@ -292,7 +292,7 @@ def display_OBB(file_path, angle_offset=0):
         angle_offset: Angle en degrés pour ajuster manuellement la direction (par défaut 0).
     """
     file = ifcopenshell.open(file_path)
-    objects = file.by_type("IFCWINDOW")
+    objects = file.by_type("IfcSlab")
 
     settings = ifcopenshell.geom.settings()
     settings.set("use-python-opencascade", True)
@@ -311,10 +311,10 @@ def display_OBB(file_path, angle_offset=0):
             shape = iterator.get()
             geom = shape.geometry
 
-            obb = create_obb_from_TopoDs_Shape_via_pca(geom)
+            obb = create_obb_from_TopoDs_Shape(geom)
             custom_OBB=Custom_OBB(gp_Pnt(obb.Center()),gp_Dir(obb.XDirection()),gp_Dir(obb.YDirection()),gp_Dir(obb.ZDirection()),obb.XHSize(),obb.YHSize(),obb.ZHSize())
             #custom_OBB=create_obb_from_geom_verts(geom)
-            #custom_OBB=custom_OBB.detach_top_by_extrude(0.1)
+            custom_OBB=custom_OBB.detach_bottom_by_extrude(0.81)
             
             
             topo_DS_obb=custom_OBB.to_TopoDS_Compound()
@@ -329,6 +329,24 @@ def display_OBB(file_path, angle_offset=0):
                 break
 
 
+    #Add another object
+    objects = file.by_type("IfcFurnishingElement")
+    iterator = ifcopenshell.geom.iterator(
+        settings,
+        file,
+        multiprocessing.cpu_count(),
+        include=objects,
+    )
+    if iterator.initialize():
+        while True:
+            shape = iterator.get()
+            geom = shape.geometry
+            object = AIS_Shape(geom)
+            display.Context.Display(object, True)
+            if not iterator.next():
+                break
+    
+    
     display.FitAll()
     start_display()
 
@@ -342,7 +360,7 @@ def display_OBB_front_back(file_path, angle_offset=0):
         angle_offset: Angle en degrés pour ajuster manuellement la direction (par défaut 0).
     """
     file = ifcopenshell.open(file_path)
-    objects = file.by_type("IFCSLAB")
+    objects = file.by_type("IFCDOOR")
 
     settings = ifcopenshell.geom.settings()
     settings.set("USE_WORLD_COORDS", True)
@@ -408,4 +426,4 @@ def display_OBB_front_back(file_path, angle_offset=0):
 
 if __name__ == "__main__":
     chemin = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
-    display_OBB_front_back(chemin)
+    display_OBB(chemin)

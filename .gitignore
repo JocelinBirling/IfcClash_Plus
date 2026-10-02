@@ -1,4 +1,5 @@
 
+*.pyc
 .obsidian/app.json
 .obsidian/appearance.json
 .obsidian/backlink.json
@@ -19,3 +20,18 @@ __pycache__/__init__.cpython-314.pyc
 src/__pycache__/CustomOBB.cpython-314.pyc
 src/__pycache__/Rules.cpython-314.pyc
 src/constructtest_mainfunction.py
+ifcclash_plus/__pycache__/Rules.cpython-314.pyc
+ifcclash_plus/__pycache__/Rules.cpython-312.pyc
+ifcclash_plus/__pycache__/RuleClass.cpython-312.pyc
+ifcclash_plus/__pycache__/__init__.cpython-312.pyc
+/ifcclash_plus/__pycache__
+ifcclash_plus/__pycache__/Rules.cpython-312.pyc
+/tests/__pycache__
+/ifcclash_plus/__pycache__
+ifcclash_plus/__pycache__/clash_utils.cpython-314.pyc
+ifcclash_plus/__pycache__/RuleClass.cpython-314.pyc
+ifcclash_plus/__pycache__/Rules.cpython-314.pyc
+tests/__pycache__/test_custom_obb.cpython-314.pyc
+tests/__pycache__/test_RuleFile.cpython-314.pyc
+ifcclash_plus/constructtest_python.py
+ifcclash_plus/construct_bigmodel.py

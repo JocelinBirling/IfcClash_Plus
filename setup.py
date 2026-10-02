@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="ifcclash-plus",
-    version="0.3.0",
+    name="ifcclash_plus",
+    version="0.4.0",
     author="Jocelin",
     author_email="your.email@example.com",
     description="Extended clash detection rules for IFC models",
