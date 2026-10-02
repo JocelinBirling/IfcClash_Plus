@@ -190,19 +190,23 @@ class SelectRule(Select):
         # 4 - Select target not in the list
 
     def run(self, state="Select", element="source", passed=True):
-        # The run() of the rules takes no argument, the state is set on the rule.
-        self.rule.state = state
-        self.rule.run()
-        self.produce_select(element, passed)
-
-    def produce_select(self, element="source", passed=True):
-        # element: "source" or "target"
+        # element: "source" or "target", only for a two objects rule
         # passed: True to pick elements of the results with status True,
         #         False to pick elements of the input selection that
         #         went through the rule but produced no result.
-        self.dict_elements = self.rule.produce_select(
-            element=element, passed=passed
-        )
+        # The run() of the rules takes no argument, the state is set on the rule.
+        from RuleClass import RuleCheckOneObject
+
+        self.rule.state = state
+        self.rule.run()
+
+        if isinstance(self.rule, RuleCheckOneObject):
+            # A one object rule only has source elements
+            self.dict_elements = self.rule.produce_select(passed=passed)
+        else:
+            self.dict_elements = self.rule.produce_select(
+                element=element, passed=passed
+            )
 
     def update_file_info(self, files_path, files):
         self.list_ifc_path = files_path
@@ -321,28 +325,20 @@ class RuleCheckOneObject(RuleCheck):
         super().__init__(state,source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
-    def produce_select(self, element="source", passed=True):
-        # element: only "source" for a one object rule
+    def produce_select(self, passed=True):
         # passed: True to pick elements of the results with status True,
         #         False to pick elements of the input selection that
         #         went through the rule but produced no result.
-        if element != "source":
-            raise ValueError(
-                f"element must be 'source' for a one object rule, got '{element}'"
-            )
-
+        # A one object rule only has source elements.
         dict_return = {}
 
         if passed:
             for oneresult in self.result:
-                if oneresult.status == passed:
-                    the_element = getattr(oneresult, element)
-                    if the_element is None:
-                        continue
-                    if the_element.file in dict_return:
-                        dict_return[the_element.file].append(the_element)
+                if oneresult.status:
+                    if oneresult.source.file in dict_return:
+                        dict_return[oneresult.source.file].append(oneresult.source)
                     else:
-                        dict_return[the_element.file] = [the_element]
+                        dict_return[oneresult.source.file] = [oneresult.source]
 
             return dict_return
 
@@ -352,9 +348,7 @@ class RuleCheckOneObject(RuleCheck):
         # from the ones of the selection.
         elements_in_results = set()
         for oneresult in self.result:
-            the_element = getattr(oneresult, element)
-            if the_element is not None:
-                elements_in_results.add(the_element)
+            elements_in_results.add(oneresult.source)
 
         for ifc_file, elements in self.select_source.dict_elements.items():
             if not elements:

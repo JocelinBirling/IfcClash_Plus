@@ -121,10 +121,7 @@ class Area(RuleCheckOneObject):
                     if self.volume_min < area < self.volume_max:
                         result = ClashResultOneObject(source=entity, state=True)
                         self.result.append(result)
-                    else:  # @todo How do deal with failed OneRule ?
-                        ...
-                        # result = ClashResultOneObject(source=entity, state=False)
-                        # self.result.append(result)
+
                     if not iterator.next():
                         break
 
