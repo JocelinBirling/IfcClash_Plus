@@ -95,7 +95,7 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 |-----------|----------|-----------|---------|----------|
 | [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Deux objets | OK | KO | OK |
 | [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Deux objets | KO | KO | OK |
-| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Deux objets | KO | KO | KO |
+| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Deux objets | OK | KO | OK |
 
 #### Clearance avec OBB
 
@@ -109,15 +109,15 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 |-----------|----------|-----------|---------|----------|
 | [OBB Above](doc/2ObjectsRules/OBB_Above) | Deux objets | OK | KO | OK |
 | [OBB Below](doc/2ObjectsRules/OBB_Below) | Deux objets | OK | KO | OK |
-| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back) | Deux objets | KO | KO | KO |
+| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back) | Deux objets | OK | KO | OK |
 
 #### Autres types de règles
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
 | [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | KO | KO | KO |
-| [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | KO | KO | KO |
-| [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | KO | KO | KO |
+| [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | KO | OK |
+| [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | KO | OK |
 | [Face Check](doc/2ObjectsRules/FaceCheck) | Deux objets | KO | KO | KO |
 
 ### Règles complexes
