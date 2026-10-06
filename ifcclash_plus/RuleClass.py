@@ -403,7 +403,7 @@ class RuleCheck:
 
     def _add_obb_to_display(self, geom, color):
         the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
-        compound = geom.to_TopoDS_Compound()
+        compound = geom.to_TopoDS_Compound() #@todo Replace with TopoDs_Solid
         ais_shape = AIS_Shape(compound)
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
@@ -1276,9 +1276,11 @@ class RelativeChecking(AbsoluteOrRelativeChecking):
 # ==== Clash Result
 class ClashResult:
     def __init__(self, source, state, type="OneObjectResult"):
+        #@todo ClashResult, complete all the data.
         self.id: str
         self.type: str = type
         self.source: ifcopenshell.entity_instance = source
+        self.rule_name: str = None 
 
         self.status: bool = state
         self.criticity: list[str] = []
@@ -1297,6 +1299,14 @@ class ClashResultTwoObjects(ClashResult):
     def __init__(self, source, target, state, type="TwoObjectsResult"):
         super().__init__(source, state, type)
         self.target: ifcopenshell.entity_instance = target
+        self.distance_between : float = None
+        self.penetration_depth : float = None
+        self.volume_intersection: float = None
+        self.volume_ratio: float = None
+        self.containement_ratio: float = None
+        self.surface_contact_area: float = None
+        self.penetration_direction: float = None
+        self.clearance_violated_volume: float = None
 
 
 class ClashResultComplex(ClashResult):

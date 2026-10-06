@@ -78,6 +78,8 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 | [Orientation](doc/1ObjectsRules/Orientation) | Un objet | OK | KO | OK |
 | [Object height](doc/1ObjectsRules/ObbHeigh) | Un objet | OK | OK | OK |
 | [Object length](doc/1ObjectsRules/ObbLength) | Un objet | OK | OK | OK |
+| [Quality Geometrie](doc/1ObjectsRules/Quality) | Un objet | KO | KO | KO |
+| [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | KO | KO | KO |
 
 ### Règles à deux objets
 
@@ -104,12 +106,16 @@ L'OBB a un second avantage : elle peut facilement être agrandie ou réduite. On
 
 Le dernier bénéfice est la détection de l'avant et de l'arrière d'un élément. La plupart du temps, cette information n'est pas incluse dans la maquette. On ne peut pas déterminer l'avant, l'arrière ou le côté d'un objet. Pour une porte, des éléments peuvent passer sur les côtés, mais pas dans l'embrasure (par l'avant ou l'arrière). Ces méthodes peuvent aider à détecter les objets devant une porte. L'OBB est un parallélépipède, les fonctions pour la modifier ou la calculer sont très simples. C'est une méthode dégradée, mais qui permet tout de même d'obtenir des résultats convaincants.
 
-
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
 | [OBB Above](doc/2ObjectsRules/OBB_Above) | Deux objets | OK | KO | OK |
 | [OBB Below](doc/2ObjectsRules/OBB_Below) | Deux objets | OK | KO | OK |
 | [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back) | Deux objets | OK | KO | OK |
+
+
+
+
+
 
 #### Autres types de règles
 
@@ -119,6 +125,19 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | KO | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | KO | OK |
 | [Face Check](doc/2ObjectsRules/FaceCheck) | Deux objets | KO | KO | KO |
+| [Volume Clash](doc/2ObjectsRules/VolumeClash) | Deux objets | KO | KO | KO |
+| [Inside](doc/2ObjectsRules/Inside) | Deux objets | KO | KO | KO |
+| [Door Check](doc/2ObjectsRules/Door) | Deux objets | KO | KO | KO |
+
+#### Les règles sur les faces
+| **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
+|-----------|----------|-----------|---------|----------|
+| [Face Intersection](doc/2ObjectsRules/FaceIntersect) | Deux objets | KO | KO | KO |
+| [Face Clearance](doc/2ObjectsRules/FaceClearance) | Deux objets | OK | KO | OK |
+| [Face OBB](doc/2ObjectsRules/FaceOBB) | Deux objets | OK | KO | OK |
+| [Face Orient](doc/2ObjectsRules/FaceOrient) | Deux objets | KO | KO | KO |
+
+
 
 ### Règles complexes
 
@@ -243,29 +262,5 @@ Création de la structure principale du script
 
 
 
-# TODO
 
-0. Terminer la documentation
-
-1. Terminer le regroupement (grouping by)
-
-2. Extraction de propriétés
-Lorsqu'on utilise la règle relative, on peut extraire des valeurs des objets afin de sommer des quantités.
-Cela n'a pas été testé correctement.
-
-3. Règle Orientation
-On pourrait faciliter la règle d'orientation pour vérifier si elle fait face au nord ou au sud, en introduisant simplement du texte.
-
-
-4. Déterminer le côté principal d'une OBB
-Quand on cherche le côté principal d'une OBB, la face Z est prise en compte.
-Pour une dalle, cela peut être utile. 
-Pour un mur, cela peut mener à des erreurs. Quand un mur est plus haut que long, cela peut causer des imprécisions.
-
-
-5. Étendre le nombre de règles et créer la structure de base des règles
-
-6. Créer l'association de règles en python => FAIT
-
-7. Étudier l'implémentation dans ifcclash
 
