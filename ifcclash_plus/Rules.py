@@ -7,10 +7,12 @@ from RuleClass import (
 )
 import ifcopenshell
 import multiprocessing
+import math
 import clash_utils
 import shapely
 from ifcopenshell.util.shape import (
     get_vertices,
+    get_faces,
 )
 import numpy as np
 from typing import Literal
@@ -1983,3 +1985,1588 @@ class OBB_Custom(RuleCheckTwoObjects):
 
 
 # ===== Complex Rule
+class Alignement(RuleCheckOneObject):
+    """Check that the objects of a set are aligned.
+
+    The alignment is tested on the main axis of the OBB of each object,
+    not on points. A single global element (a fitted line or plane) is
+    least-squares fitted on all the objects: the group gathers the objects
+    whose offset stays within the tolerance. If the group has at least
+    Min_Group members the alignment is valid and the objects outside the
+    group clash, otherwise no valid alignment exists and all the objects
+    clash. See doc/ComplexRules/Alignement.md.
+    """
+
+    # An axis within 45 degrees of the global Z counts as vertical when
+    # the orientation is auto-detected.
+    VERTICAL_COSINE = math.cos(math.radians(45))
+
+    def __init__(
+        self,
+        source,
+        axis=None,
+        alignment_type="Plane",
+        tolerance=None,
+        min_group=3,
+        state="Final",
+    ):
+        super().__init__(state, source)
+        self.type = "Alignement"
+
+        if axis not in (None, "Vertical", "Horizontal"):
+            raise ValueError(
+                f"axis must be None, 'Vertical' or 'Horizontal', got '{axis}'"
+            )
+        if alignment_type not in ("Line", "Plane"):
+            raise ValueError(
+                f"alignment_type must be 'Line' or 'Plane', got '{alignment_type}'"
+            )
+        if tolerance is None or not isinstance(tolerance, (int, float)):
+            raise ValueError("tolerance is mandatory and must be a number (in meter)")
+        if tolerance < 0:
+            raise ValueError(f"tolerance must be positive, got {tolerance}")
+        if not isinstance(min_group, int) or min_group < 1:
+            raise ValueError(f"min_group must be an integer >= 1, got {min_group}")
+
+        self.axis = axis
+        self.alignment_type = alignment_type
+        self.tolerance = float(tolerance)
+        self.min_group = int(min_group)
+        self.alignment = None
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+
+    def run(self):
+        self.select_source.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        objects = self._collect_axis_data()
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+        offsets = self._compute_offsets(objects)
+        self.alignment = self._build_alignment_info(objects, offsets)
+
+        clash_flags = clash_utils.alignment_clash_flags(
+            offsets, self.tolerance, self.min_group
+        )
+        for one_object, clash, offset in zip(objects, clash_flags, offsets):
+            if clash:
+                result = ClashResultOneObject(source=one_object["entity"], state=True)
+                result.offset = offset
+                self.result.append(result)
+
+        self.end_rule_action()
+
+    def _collect_axis_data(self):
+        """The main axis of the OBB of each selected object.
+
+        The main axis is the OBB axis with the largest half size. The axis
+        segment (center +/- main direction * main half size) carries the
+        geometric data of the alignment.
+        """
+        objects = []
+        for ifc_file in self.select_source.dict_elements.keys():
+            elements = self.select_source.dict_elements[ifc_file]
+            if not elements:
+                continue
+
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=elements,
+            )
+            if not iterator.initialize():
+                continue
+
+            while True:
+                shape = iterator.get()
+                entity = ifc_file.by_id(shape.data.id)
+
+                obb = create_obb_from_TopoDs_Shape(shape.geometry)
+                center = obb.Center()
+                directions = [
+                    obb.XDirection(),
+                    obb.YDirection(),
+                    obb.ZDirection(),
+                ]
+                half_sizes = [obb.XHSize(), obb.YHSize(), obb.ZHSize()]
+
+                main_index = max(range(3), key=lambda i: half_sizes[i])
+                main_direction = directions[main_index]
+                objects.append(
+                    {
+                        "entity": entity,
+                        "center": np.array(
+                            [center.X(), center.Y(), center.Z()]
+                        ),
+                        "main_axis": np.array(
+                            [
+                                main_direction.X(),
+                                main_direction.Y(),
+                                main_direction.Z(),
+                            ]
+                        ),
+                        "half_main": half_sizes[main_index],
+                    }
+                )
+
+                if not iterator.next():
+                    break
+
+        return objects
+
+    def _detect_orientation(self, objects):
+        """Dominant orientation of the set, used when axis is None.
+
+        An object votes vertical when its main axis is within 45 degrees
+        of the global Z. A tie goes to Vertical.
+        """
+        vertical_votes = sum(
+            1
+            for one_object in objects
+            if abs(one_object["main_axis"][2]) >= self.VERTICAL_COSINE
+        )
+        if vertical_votes >= len(objects) - vertical_votes:
+            return "Vertical"
+        return "Horizontal"
+
+    def _compute_offsets(self, objects):
+        """Offset of each object to the globally fitted element.
+
+        Vertical (and Horizontal with a Plane fit): the plan projections of
+        the objects are fitted on one common least-squares line, the fitted
+        plane of the facade case being the vertical extrusion of that line.
+        The offset of an object is the plan distance between its projected
+        center and the fitted line.
+
+        Horizontal with a Line fit: the axes must be collinear in 3D. The
+        fitted line is least-squares fitted on the endpoints of the axis
+        segments, the offset of an object is the largest distance of its
+        endpoints to the fitted line.
+        """
+        if not objects:
+            return []
+
+        orientation = self.axis
+        if orientation is None:
+            orientation = self._detect_orientation(objects)
+        self._orientation = orientation
+
+        if orientation == "Vertical" or self.alignment_type == "Plane":
+            plan_points = [one_object["center"][:2] for one_object in objects]
+            line_origin, line_direction = clash_utils.least_squares_line_2d(
+                plan_points
+            )
+            self._fitted = {
+                "element": "Line" if orientation == "Vertical" else "Plane",
+                "origin": line_origin,
+                "direction": line_direction,
+            }
+            return [
+                clash_utils.point_line_distance(point, line_origin, line_direction)
+                for point in plan_points
+            ]
+
+        # Horizontal, Line: collinear axes in 3D
+        segments = [
+            [
+                one_object["center"] - one_object["main_axis"] * one_object["half_main"],
+                one_object["center"] + one_object["main_axis"] * one_object["half_main"],
+            ]
+            for one_object in objects
+        ]
+        all_endpoints = [endpoint for segment in segments for endpoint in segment]
+        line_origin, line_direction = clash_utils.least_squares_line_3d(
+            all_endpoints
+        )
+        self._fitted = {
+            "element": "Line",
+            "origin": line_origin,
+            "direction": line_direction,
+        }
+        return [
+            max(
+                clash_utils.point_line_distance(endpoint, line_origin, line_direction)
+                for endpoint in segment
+            )
+            for segment in segments
+        ]
+
+    def _build_alignment_info(self, objects, offsets):
+        """The alignment found: the fitted element and its member objects.
+
+        Returns None when the set is empty. The members are the objects of
+        the group (offset within the tolerance), not only the clashing ones.
+        """
+        if not objects:
+            return None
+
+        members = [
+            one_object["entity"]
+            for one_object, offset in zip(objects, offsets)
+            if offset <= self.tolerance
+        ]
+        return {
+            "orientation": self._orientation,
+            "element": self._fitted["element"],
+            "direction": self._fitted["direction"],
+            "position": self._fitted["origin"],
+            "members": members,
+        }
+class SurfaceRecover(RuleCheckTwoObjects):
+    """Check that the contact surface between two objects covers an
+    expected value, defined by a min and a max.
+
+    Only pairs whose distance is below the tolerance are analyzed: pairs
+    not in contact produce no result. The extreme faces of the two objects
+    along the direction are paired, the contact area is the sum of the
+    disjoint contact zones (quasi coplanar triangles at a distance below
+    the tolerance), and a clash is raised when the covering value is
+    outside [Min_Covering, Max_Covering]. See doc/2ObjectsRules/SurfaceRecover.md.
+    """
+
+    # Two facing triangles are paired when their normals are opposite
+    # within 25 degrees.
+    PAIRING_COSINE = -math.cos(math.radians(25))
+
+    def __init__(
+        self,
+        source,
+        target,
+        direction="Auto",
+        reference="Source",
+        tolerance=0.001,
+        min_covering=None,
+        max_covering=None,
+        state="Final",
+    ):
+        super().__init__(state, source, target)
+        self.type = "SurfaceRecover"
+
+        if direction == "Auto":
+            self.direction = "Auto"
+        elif direction == "Top":
+            self.direction = (0.0, 0.0, 1.0)
+        elif direction == "Bottom":
+            self.direction = (0.0, 0.0, -1.0)
+        elif (
+            hasattr(direction, "__len__")
+            and len(direction) == 3
+            and all(isinstance(value, (int, float)) for value in direction)
+            and np.linalg.norm(direction) > 1e-12
+        ):
+            self.direction = tuple(
+                np.asarray(direction, dtype=float)
+                / np.linalg.norm(direction)
+            )
+        else:
+            raise ValueError(
+                "direction must be 'Auto', 'Top', 'Bottom' or a 3D vector, "
+                f"got {direction!r}"
+            )
+
+        if reference not in ("Source", "Target"):
+            raise ValueError(
+                f"reference must be 'Source' or 'Target', got '{reference}'"
+            )
+        if not isinstance(tolerance, (int, float)) or tolerance < 0:
+            raise ValueError(f"tolerance must be a positive number, got {tolerance}")
+
+        self.reference = reference
+        self.tolerance = float(tolerance)
+        self.min_covering = self._parse_covering(min_covering, "min_covering")
+        self.max_covering = self._parse_covering(max_covering, "max_covering")
+
+        # OpenCascade shapes for the distance and the OBB prefilter.
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+        # Triangulated meshes in world coordinates for the contact area.
+        self.mesh_settings = ifcopenshell.geom.settings()
+        self.mesh_settings.set("USE_WORLD_COORDS", True)
+
+    @staticmethod
+    def _parse_covering(value, parameter_name):
+        """A covering bound: None, an absolute area (float, in m2) or a
+        relative value (string ending with %)."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return ("absolute", float(value))
+        if isinstance(value, str) and value.endswith("%"):
+            try:
+                return ("relative", float(value[:-1]))
+            except ValueError:
+                pass
+        raise ValueError(
+            f"{parameter_name} must be a number (m2) or a string ending "
+            f"with '%', got {value!r}"
+        )
+
+    def _collect_geometry(self, select):
+        """OCC shape, OBB and triangulated mesh of each selected element."""
+        elements = []
+        for ifc_file in select.dict_elements.keys():
+            included = select.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            occ_shapes = {}
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    entity = ifc_file.by_id(shape.data.id)
+                    occ_shapes[entity.id()] = shape.geometry
+                    if not iterator.next():
+                        break
+
+            iterator = ifcopenshell.geom.iterator(
+                self.mesh_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    entity = ifc_file.by_id(shape.id)
+                    occ_shape = occ_shapes.get(entity.id())
+                    if occ_shape is None:
+                        if not iterator.next():
+                            break
+                        continue
+
+                    vertices = get_vertices(shape.geometry)
+                    faces = get_faces(shape.geometry)
+                    if len(faces) == 0:
+                        if not iterator.next():
+                            break
+                        continue
+
+                    elements.append(
+                        {
+                            "entity": entity,
+                            "occ": occ_shape,
+                            "obb": create_obb_from_TopoDs_Shape(occ_shape),
+                            "vertices": np.asarray(vertices, dtype=float),
+                            "faces": np.asarray(faces),
+                            "centroid": np.asarray(vertices, dtype=float).mean(
+                                axis=0
+                            ),
+                        }
+                    )
+                    if not iterator.next():
+                        break
+
+        return elements
+
+    def run(self):
+        self.select_source.run()
+        self.select_target.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        sources = self._collect_geometry(self.select_source)
+        targets = self._collect_geometry(self.select_target)
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+        for source in sources:
+            for target in targets:
+                # The OBB prefilter keeps the pairs whose bounding boxes
+                # are within the tolerance, the exact distance is checked
+                # afterwards.
+                if (
+                    source["obb"].min_distance_to_obb(target["obb"])
+                    > self.tolerance
+                ):
+                    continue
+
+                dist_tool = BRepExtrema_DistShapeShape()
+                dist_tool.LoadS1(source["occ"])
+                dist_tool.LoadS2(target["occ"])
+                dist_tool.Perform()
+                distance = dist_tool.Value()
+
+                # Pairs not in contact produce no result.
+                if distance > self.tolerance:
+                    continue
+
+                if self.direction == "Auto":
+                    direction = self._auto_direction(dist_tool)
+                    if direction is None:
+                        # Touching or overlapping objects: the closest
+                        # points coincide, fall back on the centroids.
+                        direction = self._centroid_direction(source, target)
+                    if direction is None:
+                        continue
+                else:
+                    direction = np.asarray(self.direction, dtype=float)
+
+                source_triangles = clash_utils.extreme_triangles(
+                    source["vertices"],
+                    source["faces"],
+                    direction,
+                    tolerance=self.tolerance,
+                )
+                target_triangles = clash_utils.extreme_triangles(
+                    target["vertices"],
+                    target["faces"],
+                    -direction,
+                    tolerance=self.tolerance,
+                )
+
+                contact_area = clash_utils.contact_area_between_triangle_sets(
+                    source_triangles,
+                    target_triangles,
+                    direction,
+                    tolerance=self.tolerance,
+                    pairing_cosine=self.PAIRING_COSINE,
+                )
+
+                if self.reference == "Source":
+                    reference_triangles = source_triangles
+                else:
+                    reference_triangles = target_triangles
+                reference_area = clash_utils.triangles_projected_area(
+                    reference_triangles, direction
+                )
+
+                ratio = None
+                if reference_area > 1e-12:
+                    ratio = 100.0 * contact_area / reference_area
+
+                if clash_utils.covering_out_of_bounds(
+                    contact_area,
+                    ratio,
+                    self.min_covering,
+                    self.max_covering,
+                ):
+                    result = ClashResultTwoObjects(
+                        source=source["entity"],
+                        target=target["entity"],
+                        state=True,
+                    )
+                    result.distance_between = distance
+                    result.surface_contact_area = contact_area
+                    result.ratio = ratio
+                    result.source_face = {
+                        "normal": tuple(float(v) for v in direction),
+                        "area": clash_utils.triangles_projected_area(
+                            source_triangles, direction
+                        ),
+                    }
+                    result.target_face = {
+                        "normal": tuple(float(-v) for v in direction),
+                        "area": clash_utils.triangles_projected_area(
+                            target_triangles, -direction
+                        ),
+                    }
+                    self.result.append(result)
+
+        self.end_rule_action()
+
+    @staticmethod
+    def _auto_direction(dist_tool):
+        """Direction of the check derived from the pair itself: the vector
+        from the closest point of the source to the closest point of the
+        target.
+
+        Returns None when the direction cannot be derived (the closest
+        points coincide, e.g. for touching or overlapping objects).
+        """
+        if dist_tool.NbSolution() < 1:
+            return None
+        point_source = dist_tool.PointOnShape1(1)
+        point_target = dist_tool.PointOnShape2(1)
+        vector = np.array(
+            [
+                point_target.X() - point_source.X(),
+                point_target.Y() - point_source.Y(),
+                point_target.Z() - point_source.Z(),
+            ]
+        )
+        norm = np.linalg.norm(vector)
+        if norm < 1e-9:
+            return None
+        return vector / norm
+
+    @staticmethod
+    def _centroid_direction(source, target):
+        """Fallback direction for touching pairs: the vector between the
+        mesh centroids of the two objects.
+
+        Returns None when the centroids coincide.
+        """
+        vector = target["centroid"] - source["centroid"]
+        norm = np.linalg.norm(vector)
+        if norm < 1e-9:
+            return None
+        return vector / norm
+class DirectView(RuleCheckTwoObjects):
+    """Determine if the direct view between two objects is free, by
+    casting rays between them.
+
+    Only the faces oriented toward the other object emit or receive rays,
+    and only the Context objects block a ray: the source and the target
+    are transparent to their own rays. The hit ratio over the rays
+    actually cast must reach the Threshold, otherwise the pair clashes.
+    See doc/2ObjectsRules/DirectView.md.
+
+    This rule tests the mutual geometric visibility: no direction of
+    view, no field of view, no viewing cone.
+    """
+
+    def __init__(
+        self,
+        source,
+        target,
+        context,
+        ray_source="Source",
+        ray_count=10,
+        threshold="100%",
+        max_distance=None,
+        state="Final",
+    ):
+        super().__init__(state, source, target)
+        self.type = "DirectView"
+        self.select_context: Select = context
+
+        if ray_source not in ("Both", "Source", "Target"):
+            raise ValueError(
+                f"ray_source must be 'Both', 'Source' or 'Target', got '{ray_source}'"
+            )
+        if not isinstance(ray_count, int) or ray_count < 1:
+            raise ValueError(f"ray_count must be an integer >= 1, got {ray_count}")
+        if not (isinstance(threshold, str) and threshold.endswith("%")):
+            raise ValueError(
+                f"threshold must be a string ending with '%', got {threshold!r}"
+            )
+        try:
+            threshold_value = float(threshold[:-1])
+        except ValueError:
+            raise ValueError(
+                f"threshold must be a percentage, got {threshold!r}"
+            )
+        if not 0.0 <= threshold_value <= 100.0:
+            raise ValueError(
+                f"threshold must be between 0% and 100%, got {threshold!r}"
+            )
+        if max_distance is not None and (
+            not isinstance(max_distance, (int, float)) or max_distance <= 0
+        ):
+            raise ValueError(
+                f"max_distance must be None or a positive number, got {max_distance}"
+            )
+
+        self.ray_source = ray_source
+        self.ray_count = ray_count
+        self.threshold = threshold_value
+        self.max_distance = (
+            float(max_distance) if max_distance is not None else None
+        )
+
+        # The context goes into the ray tree (triangulated, world coords).
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set("USE_WORLD_COORDS", True)
+        # The emitting and receiving faces come from the world meshes.
+        self.mesh_settings = ifcopenshell.geom.settings()
+        self.mesh_settings.set("USE_WORLD_COORDS", True)
+
+    def _collect_meshes(self, select):
+        """The triangulated world mesh of each selected element."""
+        meshes = {}
+        for ifc_file in select.dict_elements.keys():
+            included = select.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            iterator = ifcopenshell.geom.iterator(
+                self.mesh_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if not iterator.initialize():
+                continue
+
+            while True:
+                shape = iterator.get()
+                entity = ifc_file.by_id(shape.id)
+                vertices = np.asarray(
+                    get_vertices(shape.geometry), dtype=float
+                )
+                faces = np.asarray(get_faces(shape.geometry))
+                if len(faces) > 0:
+                    triangles = vertices[faces]
+                    meshes[entity] = {
+                        "triangles": triangles,
+                        "centroid": vertices.mean(axis=0),
+                    }
+                if not iterator.next():
+                    break
+
+        return meshes
+
+    @staticmethod
+    def _faces_toward(mesh, other_centroid):
+        """The triangles of a mesh whose normal faces the other object."""
+        triangles = mesh["triangles"]
+        v1 = triangles[:, 1] - triangles[:, 0]
+        v2 = triangles[:, 2] - triangles[:, 0]
+        normals = np.cross(v1, v2)
+        magnitudes = np.linalg.norm(normals, axis=1)
+        centers = triangles.mean(axis=1)
+
+        facing = np.zeros(len(triangles), dtype=bool)
+        valid = magnitudes > 1e-12
+        if valid.any():
+            unit_normals = normals[valid] / magnitudes[valid, np.newaxis]
+            directions = other_centroid - centers[valid]
+            facing[valid] = np.einsum("ij,ij->i", unit_normals, directions) > 0.0
+        return triangles[facing]
+
+    @staticmethod
+    def _pick_receiving_face(receiver_faces, areas, total_area, index):
+        """Deterministic area-weighted choice of the receiving face."""
+        u = clash_utils.r2_sequence(index)[0] * total_area
+        cumulative = 0.0
+        for face, area in zip(receiver_faces, areas):
+            cumulative += area
+            if u <= cumulative:
+                return face
+        return receiver_faces[-1]
+
+    def _pair_rays(self, emitter_mesh, receiver_mesh):
+        """The (origin, aim) ray pairs of one emitting object.
+
+        The rays are spread over the emitting faces proportionally to
+        their area, each aimed at a sampled point of a receiving face
+        (area-weighted). The sampling is deterministic (R2 sequence).
+        """
+        emitter_faces = self._faces_toward(
+            emitter_mesh, receiver_mesh["centroid"]
+        )
+        receiver_faces = self._faces_toward(
+            receiver_mesh, emitter_mesh["centroid"]
+        )
+
+        if len(emitter_faces) == 0 or len(receiver_faces) == 0:
+            return
+
+        emitter_areas = 0.5 * np.linalg.norm(
+            np.cross(
+                emitter_faces[:, 1] - emitter_faces[:, 0],
+                emitter_faces[:, 2] - emitter_faces[:, 0],
+            ),
+            axis=1,
+        )
+        counts = clash_utils.plan_ray_counts(
+            list(emitter_areas), self.ray_count
+        )
+
+        receiver_areas = 0.5 * np.linalg.norm(
+            np.cross(
+                receiver_faces[:, 1] - receiver_faces[:, 0],
+                receiver_faces[:, 2] - receiver_faces[:, 0],
+            ),
+            axis=1,
+        )
+        receiver_total = float(receiver_areas.sum())
+
+        index = 0
+        for face, count in zip(emitter_faces, counts):
+            for _ in range(count):
+                origin = clash_utils.sample_point_in_triangle(face, index)
+                receiving_face = self._pick_receiving_face(
+                    receiver_faces, receiver_areas, receiver_total, index
+                )
+                # The aim point uses a shifted index: the origin and the
+                # aim samples are decorrelated, so the rays cover the two
+                # objects instead of pairing identical sample positions.
+                aim = clash_utils.sample_point_in_triangle(
+                    receiving_face, index + 1_000_007
+                )
+                index += 1
+                yield origin, aim
+
+    def _cast_ray(self, origin, aim):
+        """True when the ray touches, i.e. no context object stands
+        between the origin and the aim point."""
+        vector = aim - origin
+        length = np.linalg.norm(vector)
+
+        if length < 1e-9:
+            # The faces touch: nothing can stand in a zero-length ray.
+            return True
+
+        if self.max_distance is not None and length > self.max_distance:
+            # The ray stops before the target: a miss.
+            return False
+
+        direction = vector / length
+        hits = self.tree.select_ray(
+            tuple(float(v) for v in origin),
+            tuple(float(v) for v in direction),
+            length=float(length),
+        )
+        return len(hits) == 0
+
+    def run(self):
+        self.select_source.run()
+        self.select_target.run()
+
+        # The context needs the same files as the source to be able to run.
+        self.select_context.list_ifc_path = self.select_source.list_ifc_path
+        self.select_context.list_ifc_file = self.select_source.list_ifc_file
+        self.select_context.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        self.tree = ifcopenshell.geom.tree()
+        self.add_to_tree(self.select_context, "UB")
+
+        source_meshes = self._collect_meshes(self.select_source)
+        target_meshes = self._collect_meshes(self.select_target)
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+
+        if self.ray_source == "Both":
+            emitters_of = lambda source_mesh, target_mesh: [
+                (source_mesh, target_mesh),
+                (target_mesh, source_mesh),
+            ]
+        elif self.ray_source == "Source":
+            emitters_of = lambda source_mesh, target_mesh: [
+                (source_mesh, target_mesh)
+            ]
+        else:
+            emitters_of = lambda source_mesh, target_mesh: [
+                (target_mesh, source_mesh)
+            ]
+
+        threshold_fraction = self.threshold / 100.0
+
+        for source_entity, source_mesh in source_meshes.items():
+            for target_entity, target_mesh in target_meshes.items():
+                if source_entity == target_entity:
+                    continue
+
+                planned = self.ray_count * len(
+                    emitters_of(source_mesh, target_mesh)
+                )
+                hits = 0
+                casts = 0
+                hit_segments = []
+                blocked_segments = []
+                decision = None
+
+                for emitter, receiver in emitters_of(source_mesh, target_mesh):
+                    if decision is not None:
+                        break
+                    for origin, aim in self._pair_rays(emitter, receiver):
+                        decision = clash_utils.direct_view_early_stop(
+                            hits, casts, planned, threshold_fraction
+                        )
+                        if decision is not None:
+                            break
+
+                        touched = self._cast_ray(origin, aim)
+                        casts += 1
+                        if touched:
+                            hits += 1
+                            hit_segments.append((origin, aim))
+                        else:
+                            blocked_segments.append((origin, aim))
+
+                hit_ratio = 100.0 * hits / casts if casts > 0 else 0.0
+                if hit_ratio < self.threshold:
+                    result = ClashResultTwoObjects(
+                        source=source_entity,
+                        target=target_entity,
+                        state=True,
+                    )
+                    result.hit_ratio = hit_ratio
+                    result.rays_cast = casts
+                    result.rays_planned = planned
+                    result.hit_segments = hit_segments
+                    result.blocked_segments = blocked_segments
+                    self.result.append(result)
+
+        self.end_rule_action()
+class OneObjectFace(RuleCheckOneObject):
+    """Run face-level checks within a single object.
+
+    The faces of group A and group B are selected with two
+    FaceSelection dictionaries (the schema of the FaceCheck family),
+    every face of A is paired with every face of B, and each pair must
+    pass all the enabled checks: distance (min/max, adjacent faces
+    skipped on demand), intersection (crossing deeper than a tolerance)
+    and orientation (angle between the normals). One clash is raised per
+    pair per failed check. See doc/1ObjectsRules/OneObjectFace.md.
+    """
+
+    def __init__(
+        self,
+        source,
+        face_a_selection=None,
+        face_b_selection=None,
+        distance=False,
+        min=None,
+        max=None,
+        skip_adjacent=True,
+        intersection=False,
+        intersection_tolerance=None,
+        orientation=False,
+        angle=None,
+        angle_tolerance=None,
+        state="Final",
+    ):
+        super().__init__(state, source)
+        self.type = "OneObjectFace"
+
+        self.face_a_selection = clash_utils.validate_face_selection(
+            face_a_selection
+        )
+        self.face_b_selection = clash_utils.validate_face_selection(
+            face_b_selection
+        )
+
+        if not (distance or intersection or orientation):
+            raise ValueError(
+                "OneObjectFace needs at least one enabled check: "
+                "distance, intersection or orientation"
+            )
+
+        if distance:
+            for bound_name, bound_value in (("min", min), ("max", max)):
+                if bound_value is not None and (
+                    not isinstance(bound_value, (int, float))
+                    or bound_value < 0
+                ):
+                    raise ValueError(
+                        f"{bound_name} must be a positive number (m), "
+                        f"got {bound_value!r}"
+                    )
+            if min is not None and max is not None and min > max:
+                raise ValueError(f"min ({min}) must not exceed max ({max})")
+            if not isinstance(skip_adjacent, bool):
+                raise ValueError(
+                    f"skip_adjacent must be a boolean, got {skip_adjacent!r}"
+                )
+        self.distance = distance
+        self.min = float(min) if min is not None else None
+        self.max = float(max) if max is not None else None
+        self.skip_adjacent = skip_adjacent if distance else True
+
+        if intersection:
+            if intersection_tolerance is None:
+                intersection_tolerance = 0.0
+            if (
+                not isinstance(intersection_tolerance, (int, float))
+                or intersection_tolerance < 0
+            ):
+                raise ValueError(
+                    "intersection_tolerance must be a positive number (m), "
+                    f"got {intersection_tolerance!r}"
+                )
+        self.intersection = intersection
+        self.intersection_tolerance = (
+            float(intersection_tolerance)
+            if intersection and intersection_tolerance is not None
+            else 0.0
+        )
+
+        if orientation:
+            if not isinstance(angle, (int, float)) or not 0.0 <= angle <= 180.0:
+                raise ValueError(
+                    f"angle is mandatory (degrees in [0, 180]) when the "
+                    f"orientation check is enabled, got {angle!r}"
+                )
+            if angle_tolerance is None:
+                angle_tolerance = 0.0
+            if (
+                not isinstance(angle_tolerance, (int, float))
+                or angle_tolerance < 0
+            ):
+                raise ValueError(
+                    "angle_tolerance must be a positive number (degrees), "
+                    f"got {angle_tolerance!r}"
+                )
+        self.orientation = orientation
+        self.angle = float(angle) if angle is not None else None
+        self.angle_tolerance = float(angle_tolerance) if angle_tolerance is not None else 0.0
+
+        # Triangulated world meshes only: no OpenCascade shape needed
+        # except for the distance between two triangles.
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set("USE_WORLD_COORDS", True)
+
+    @staticmethod
+    def _triangle_data(triangle):
+        """The normal (unit) and the area of a triangle."""
+        v1 = triangle[1] - triangle[0]
+        v2 = triangle[2] - triangle[0]
+        normal = np.cross(v1, v2)
+        magnitude = np.linalg.norm(normal)
+        if magnitude > 1e-12:
+            normal = normal / magnitude
+        return normal, 0.5 * magnitude
+
+    def _run_checks(self, triangle_a, triangle_b):
+        """The failed checks of one pair, as (check, value) tuples."""
+        failures = []
+
+        if self.distance:
+            adjacent = clash_utils.triangles_share_geometry(triangle_a, triangle_b)
+            if not (self.skip_adjacent and adjacent):
+                measured = clash_utils.distance_between_triangles(
+                    triangle_a, triangle_b
+                )
+                if self.min is not None and measured < self.min:
+                    failures.append(("distance", measured))
+                elif self.max is not None and measured > self.max:
+                    failures.append(("distance", measured))
+
+        if self.intersection:
+            if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
+                depth = clash_utils.triangle_penetration_depth(
+                    triangle_a, triangle_b
+                )
+                if depth > self.intersection_tolerance:
+                    failures.append(("intersection", depth))
+
+        if self.orientation:
+            normal_a, _ = self._triangle_data(triangle_a)
+            normal_b, _ = self._triangle_data(triangle_b)
+            dot = float(np.clip(normal_a @ normal_b, -1.0, 1.0))
+            measured = math.degrees(math.acos(dot))
+            if abs(measured - self.angle) > self.angle_tolerance:
+                failures.append(("orientation", measured))
+
+        return failures
+
+    def run(self):
+        self.select_source.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            included = self.select_source.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if not iterator.initialize():
+                continue
+
+            while True:
+                shape = iterator.get()
+                entity = ifc_file.by_id(shape.id)
+                vertices = np.asarray(
+                    get_vertices(shape.geometry), dtype=float
+                )
+                faces = np.asarray(get_faces(shape.geometry))
+                if len(faces) > 0:
+                    material_names = clash_utils.get_element_material_names(
+                        entity
+                    )
+                    group_a = clash_utils.select_faces(
+                        vertices,
+                        faces,
+                        self.face_a_selection,
+                        material_names,
+                    )
+                    group_b = clash_utils.select_faces(
+                        vertices,
+                        faces,
+                        self.face_b_selection,
+                        material_names,
+                    )
+
+                    self._check_pairs(entity, group_a, group_b)
+
+                if not iterator.next():
+                    break
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        self.end_rule_action()
+
+    def _check_pairs(self, entity, group_a, group_b):
+        """Every face of A against every face of B, each pair once,
+        self-pairs skipped, one clash per pair per failed check."""
+        seen_pairs = set()
+        for triangle_a in group_a:
+            key_a = clash_utils._triangle_key(triangle_a)
+            for triangle_b in group_b:
+                key_b = clash_utils._triangle_key(triangle_b)
+                if key_a == key_b:
+                    # A face paired with itself is skipped.
+                    continue
+
+                pair_key = (key_a, key_b) if key_a <= key_b else (key_b, key_a)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                for check, value in self._run_checks(triangle_a, triangle_b):
+                    result = ClashResultOneObject(source=entity, state=True)
+                    result.check = check
+                    result.value = value
+                    normal_a, area_a = self._triangle_data(triangle_a)
+                    normal_b, area_b = self._triangle_data(triangle_b)
+                    result.face_a = {
+                        "normal": tuple(float(v) for v in normal_a),
+                        "area": float(area_a),
+                    }
+                    result.face_b = {
+                        "normal": tuple(float(v) for v in normal_b),
+                        "area": float(area_b),
+                    }
+                    self.result.append(result)
+class ClearanceForDoors(RuleCheckTwoObjects):
+    """Ensure that nothing obstructs the doors: a clearance zone is
+    built for each door (the leaf sweep, or a rectangle), and any
+    target object penetrating a zone by more than the tolerance raises
+    a clash. See doc/2ObjectsRules/ClearanceForDoors.md.
+
+    V1 of the swing detection reads the OperationType (IfcDoorType via
+    IsTypedBy, IfcDoorPanelProperties via IsDefinedBy); the Curve2D
+    geometry method is not implemented: without a usable operation
+    type, the rule falls back on conservative rectangles on both
+    sides.
+    """
+
+    def __init__(
+        self,
+        source,
+        target,
+        zone_shape="Arc",
+        sides="Swing",
+        leaves=None,
+        width=None,
+        depth=None,
+        height=None,
+        tolerance=0.001,
+        state="Final",
+    ):
+        super().__init__(state, source, target)
+        self.type = "ClearanceForDoors"
+
+        if zone_shape not in ("Arc", "Rectangle"):
+            raise ValueError(
+                f"zone_shape must be 'Arc' or 'Rectangle', got '{zone_shape}'"
+            )
+        if sides not in ("Swing", "Both", "Front", "Back"):
+            raise ValueError(
+                f"sides must be 'Swing', 'Both', 'Front' or 'Back', got '{sides}'"
+            )
+        if leaves is not None and (not isinstance(leaves, int) or leaves < 1):
+            raise ValueError(f"leaves must be None or an integer >= 1, got {leaves}")
+        for dimension_name, dimension_value in (
+            ("width", width),
+            ("depth", depth),
+            ("height", height),
+        ):
+            if dimension_value is not None and (
+                not isinstance(dimension_value, (int, float))
+                or dimension_value <= 0
+            ):
+                raise ValueError(
+                    f"{dimension_name} must be None or a positive number, "
+                    f"got {dimension_value!r}"
+                )
+        if not isinstance(tolerance, (int, float)) or tolerance < 0:
+            raise ValueError(
+                f"tolerance must be a positive number, got {tolerance!r}"
+            )
+
+        self.zone_shape = zone_shape
+        self.sides = sides
+        self.leaves = leaves
+        self.width = float(width) if width is not None else None
+        self.depth = float(depth) if depth is not None else None
+        self.height = float(height) if height is not None else None
+        self.tolerance = float(tolerance)
+
+        # OpenCascade shapes for the zone checks, world meshes for the
+        # door dimensions and the target vertices.
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+        self.local_settings = ifcopenshell.geom.settings()
+        self.world_settings = ifcopenshell.geom.settings()
+        self.world_settings.set("USE_WORLD_COORDS", True)
+
+    def _door_dimensions(self, door):
+        """The width, thickness and height of the door, from its local
+        mesh (width along the local X axis, height along Z)."""
+        for ifc_file in self.select_source.dict_elements.keys():
+            if door.file != ifc_file:
+                continue
+            iterator = ifcopenshell.geom.iterator(
+                self.local_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=[door],
+            )
+            if not iterator.initialize():
+                break
+            shape = iterator.get()
+            vertices = np.asarray(
+                get_vertices(shape.geometry), dtype=float
+            )
+            return (
+                float(vertices[:, 0].max() - vertices[:, 0].min()),
+                float(vertices[:, 1].max() - vertices[:, 1].min()),
+                float(vertices[:, 2].max() - vertices[:, 2].min()),
+            )
+        return (0.0, 0.0, 0.0)
+
+    def _collect_targets(self):
+        """The OCC shape and the world vertices of each target object."""
+        targets = []
+        for ifc_file in self.select_target.dict_elements.keys():
+            included = self.select_target.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            occ_shapes = {}
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    entity = ifc_file.by_id(shape.data.id)
+                    occ_shapes[entity.id()] = shape.geometry
+                    if not iterator.next():
+                        break
+
+            iterator = ifcopenshell.geom.iterator(
+                self.world_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    entity = ifc_file.by_id(shape.id)
+                    occ_shape = occ_shapes.get(entity.id())
+                    if occ_shape is not None:
+                        targets.append(
+                            {
+                                "entity": entity,
+                                "occ": occ_shape,
+                                "vertices": np.asarray(
+                                    get_vertices(shape.geometry), dtype=float
+                                ),
+                            }
+                        )
+                    if not iterator.next():
+                        break
+
+        return targets
+
+    def _build_zones(self, door):
+        """The clearance zones of one door.
+
+        Each zone is a dict: leaf, side ("Front"/"Back"), shape
+        ("Arc"/"Rectangle"), dimensions and the OpenCascade solid.
+        """
+        origin, x_axis, y_axis, z_axis = clash_utils.get_local_placement_axes(
+            door
+        )
+        width, thickness, door_height = self._door_dimensions(door)
+
+        operation = clash_utils.parse_door_operation(
+            clash_utils.get_door_operation_type(door)
+        )
+        leaves = self.leaves if self.leaves is not None else operation["leaves"]
+        leaf_width = width / leaves if leaves > 0 else width
+
+        zone_width = self.width if self.width is not None else leaf_width
+        zone_depth = self.depth if self.depth is not None else leaf_width
+        zone_height = (
+            self.height if self.height is not None else max(door_height, 0.0)
+        )
+
+        zones = []
+
+        def add_rectangle(side_sign, side, leaf):
+            zones.append(
+                {
+                    "leaf": leaf,
+                    "side": side,
+                    "shape": "Rectangle",
+                    "width": zone_width,
+                    "depth": zone_depth,
+                    "height": zone_height,
+                    "solid": clash_utils.make_box_zone(
+                        origin,
+                        x_axis,
+                        y_axis,
+                        z_axis,
+                        zone_width,
+                        zone_depth,
+                        zone_height,
+                        side_sign,
+                    ),
+                }
+            )
+
+        def add_arc(hinge, leaf):
+            zones.append(
+                {
+                    "leaf": leaf,
+                    "side": "Front",
+                    "shape": "Arc",
+                    "width": zone_width,
+                    "depth": zone_width,
+                    "height": zone_height,
+                    "solid": clash_utils.make_arc_zone(
+                        hinge,
+                        x_axis,
+                        y_axis,
+                        z_axis,
+                        zone_width,
+                        zone_height,
+                    ),
+                }
+            )
+
+        if operation["mechanism"] == "sliding":
+            # A sliding door cannot sweep: rectangles of passage. The
+            # "Swing" side of a sliding door is both sides (V1
+            # convention: the passage through the opening).
+            if self.sides in ("Swing", "Both"):
+                add_rectangle(1.0, "Front", 1)
+                add_rectangle(-1.0, "Back", 1)
+            elif self.sides == "Front":
+                add_rectangle(1.0, "Front", 1)
+            else:
+                add_rectangle(-1.0, "Back", 1)
+            return zones
+
+        if operation["mechanism"] == "swing" and self.zone_shape == "Arc":
+            # The leaves sweep toward the front (local +Y).
+            for leaf_index, hinge_side in enumerate(operation["hinges"], start=1):
+                if hinge_side == "left":
+                    hinge = origin
+                else:
+                    hinge = origin + x_axis * width
+                if self.sides in ("Swing", "Both", "Front"):
+                    add_arc(hinge, leaf_index)
+                if self.sides in ("Both", "Back"):
+                    add_rectangle(-1.0, "Back", leaf_index)
+            return zones
+
+        if operation["mechanism"] == "swing" and self.zone_shape == "Rectangle":
+            # Rectangles in front of each leaf.
+            for leaf_index, hinge_side in enumerate(operation["hinges"], start=1):
+                if hinge_side == "left":
+                    leaf_origin = origin + x_axis * (
+                        (leaf_index - 1) * leaf_width
+                    )
+                else:
+                    leaf_origin = origin + x_axis * (
+                        (leaf_index - 1) * leaf_width
+                    )
+                if self.sides in ("Swing", "Both", "Front"):
+                    add_rectangle(1.0, "Front", leaf_index)
+                if self.sides in ("Both", "Back"):
+                    add_rectangle(-1.0, "Back", leaf_index)
+            # Rectangle zones span the opening, not one per leaf: keep
+            # the front rectangle single by deduplicating on the side.
+            deduplicated = []
+            seen = set()
+            for zone in zones:
+                key = (zone["side"], round(zone["width"], 9))
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduplicated.append(zone)
+            return deduplicated
+
+        # No determined direction: conservative rectangles on both
+        # sides, whatever Sides says.
+        add_rectangle(1.0, "Front", 1)
+        add_rectangle(-1.0, "Back", 1)
+        return zones
+
+    def run(self):
+        self.select_source.run()
+        self.select_target.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        targets = self._collect_targets()
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            for door in self.select_source.dict_elements[ifc_file] or []:
+                zones = self._build_zones(door)
+
+                for target in targets:
+                    worst = None
+                    for zone in zones:
+                        dist_tool = BRepExtrema_DistShapeShape()
+                        dist_tool.LoadS1(target["occ"])
+                        dist_tool.LoadS2(zone["solid"])
+                        dist_tool.Perform()
+                        if dist_tool.Value() > 0:
+                            # No contact with this zone.
+                            continue
+
+                        depth = clash_utils.max_penetration_depth(
+                            zone["solid"], target["vertices"]
+                        )
+                        if depth > self.tolerance and (
+                            worst is None or depth > worst[0]
+                        ):
+                            worst = (depth, zone)
+
+                    if worst is not None:
+                        depth, zone = worst
+                        result = ClashResultTwoObjects(
+                            source=door, target=target["entity"], state=True
+                        )
+                        result.penetration_depth = depth
+                        result.zone = {
+                            "shape": zone["shape"],
+                            "side": zone["side"],
+                            "leaf": zone["leaf"],
+                            "width": zone["width"],
+                            "depth": zone["depth"],
+                            "height": zone["height"],
+                        }
+                        self.result.append(result)
+
+        self.end_rule_action()
+class FreeSpace(RuleCheckOneObject):
+    """Check whether a cylinder of free space of a given diameter and
+    height can be found in a room.
+
+    The cylinder must fit entirely inside the footprint of each source
+    object (its lowest face is the floor) and must not intersect any
+    Context object (touching is allowed). A regular grid of candidates
+    covers the footprint, refined locally around the best node; the
+    first free placement wins. A clash is raised for each source where
+    no free placement is found. See doc/ComplexRules/FreeSpace.md.
+    """
+
+    # The grid step is a fraction of the diameter; the refinement step
+    # is a fraction of the grid step.
+    GRID_FRACTION = 4.0
+    REFINEMENT_FRACTION = 4.0
+
+    def __init__(self, source, context, diameter=1.50, height=None, state="Final"):
+        super().__init__(state, source)
+        self.type = "FreeSpace"
+        self.select_context: Select = context
+
+        if not isinstance(diameter, (int, float)) or diameter <= 0:
+            raise ValueError(
+                f"diameter must be a positive number (m), got {diameter!r}"
+            )
+        if not isinstance(height, (int, float)) or height <= 0:
+            raise ValueError(f"height is mandatory (m), got {height!r}")
+
+        self.diameter = float(diameter)
+        self.height = float(height)
+        self.placements = {}
+
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+        self.mesh_settings = ifcopenshell.geom.settings()
+        self.mesh_settings.set("USE_WORLD_COORDS", True)
+
+    def _collect_context(self):
+        """The OCC shape of each context object."""
+        obstacles = []
+        for ifc_file in self.select_context.dict_elements.keys():
+            included = self.select_context.dict_elements[ifc_file]
+            if not included:
+                continue
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if iterator.initialize():
+                while True:
+                    shape = iterator.get()
+                    entity = ifc_file.by_id(shape.data.id)
+                    obstacles.append({"entity": entity, "occ": shape.geometry})
+                    if not iterator.next():
+                        break
+        return obstacles
+
+    def _placement_margin(self, cylinder, disk, footprint, obstacles):
+        """The shortest distance from the placed cylinder to the
+        obstacles and to the footprint boundary. Touching is 0."""
+        margin = footprint.boundary.distance(disk)
+        for obstacle in obstacles:
+            dist_tool = BRepExtrema_DistShapeShape()
+            dist_tool.LoadS1(cylinder)
+            dist_tool.LoadS2(obstacle["occ"])
+            dist_tool.Perform()
+            margin = min(margin, dist_tool.Value())
+        return float(margin)
+
+    def _is_free(self, x, y, z_base, footprint, obstacles):
+        """A placement is free when the cylinder fits inside the
+        footprint and does not intersect any obstacle (touching
+        allowed: an intersection needs a positive volume)."""
+        radius = self.diameter / 2.0
+        disk = shapely.Point(x, y).buffer(radius, quad_segs=32)
+        if not footprint.contains(disk):
+            return None, None
+
+        cylinder = clash_utils.cylinder_solid(x, y, z_base, radius, self.height)
+        for obstacle in obstacles:
+            dist_tool = BRepExtrema_DistShapeShape()
+            dist_tool.LoadS1(cylinder)
+            dist_tool.LoadS2(obstacle["occ"])
+            dist_tool.Perform()
+            if dist_tool.Value() > 0:
+                continue
+            if clash_utils.shapes_intersect_volume(cylinder, obstacle["occ"]) > 1e-9:
+                return None, None
+
+        margin = self._placement_margin(cylinder, disk, footprint, obstacles)
+        return (x, y), margin
+
+    def _search_placement(self, footprint, z_base, obstacles):
+        """Grid search then local refinement; the first free placement
+        wins. Returns None when no free placement exists."""
+        radius = self.diameter / 2.0
+        min_x, min_y, max_x, max_y = footprint.bounds
+
+        step = self.diameter / self.GRID_FRACTION
+        best_score = None
+        best_node = None
+
+        # The grid starts at radius from the walls: the tangent
+        # placements (touching allowed) are candidates like the others.
+        x = min_x + radius
+        while x <= max_x - radius + 1e-9:
+            y = min_y + radius
+            while y <= max_y - radius + 1e-9:
+                found, margin = self._is_free(x, y, z_base, footprint, obstacles)
+                if found is not None:
+                    return found, margin
+
+                # Score the failing node: the distance of the disk
+                # center to the footprint boundary (candidates to
+                # refine around).
+                score = footprint.boundary.distance(shapely.Point(x, y))
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_node = (x, y)
+                y += step
+            x += step
+
+        if best_node is None:
+            return None, None
+
+        # Local refinement around the best node.
+        fine = step / self.REFINEMENT_FRACTION
+        center_x, center_y = best_node
+        for x in np.arange(center_x - step, center_x + step + fine / 2.0, fine):
+            for y in np.arange(center_y - step, center_y + step + fine / 2.0, fine):
+                if footprint.boundary.distance(shapely.Point(x, y)) <= radius:
+                    # Deep inside the footprint is already covered by
+                    # the grid pass.
+                    continue
+                found, margin = self._is_free(x, y, z_base, footprint, obstacles)
+                if found is not None:
+                    return found, margin
+
+        return None, None
+
+    def run(self):
+        self.select_source.run()
+
+        self.select_context.list_ifc_path = self.select_source.list_ifc_path
+        self.select_context.list_ifc_file = self.select_source.list_ifc_file
+        self.select_context.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        obstacles = self._collect_context()
+
+        for ifc_file in self.select_source.dict_elements.keys():
+            for source in self.select_source.dict_elements[ifc_file] or []:
+                iterator = ifcopenshell.geom.iterator(
+                    self.mesh_settings,
+                    ifc_file,
+                    multiprocessing.cpu_count(),
+                    include=[source],
+                )
+                footprint, z_base = shapely.Polygon(), 0.0
+                if iterator.initialize():
+                    shape = iterator.get()
+                    vertices = np.asarray(
+                        get_vertices(shape.geometry), dtype=float
+                    )
+                    faces = np.asarray(get_faces(shape.geometry))
+                    footprint, z_base = clash_utils.lowest_footprint(
+                        vertices, faces
+                    )
+
+                if footprint.is_empty:
+                    # No footprint: no placement can be evaluated.
+                    self.result.append(
+                        ClashResultOneObject(source=source, state=True)
+                    )
+                    continue
+
+                found, margin = self._search_placement(
+                    footprint, z_base, obstacles
+                )
+                if found is None:
+                    self.result.append(
+                        ClashResultOneObject(source=source, state=True)
+                    )
+                else:
+                    self.placements[source] = {
+                        "position": (found[0], found[1], z_base),
+                        "margin": margin,
+                    }
+
+        self.end_rule_action()

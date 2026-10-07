@@ -51,3 +51,16 @@ If the pair stopped early (step 6), hit_ratio and the seen zones reflect only th
 A supervision desk must see the entrance area: Source = desks, Target = entrance doors, Context = walls and partitions, Ray_Source = Source, Threshold = "100%". Only the desk casts rays, since the doors have no reason to emit.
 
 Partial occlusion accepted: an operator position must see at least 60% of a machine: Source = operator positions, Target = machines, Context = walls and slabs, Ray_Source = Source, Threshold = "60%", Ray_Count = 20.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- A clash result is raised only for the pairs whose hit ratio is below the Threshold; a compliant pair produces no result.
+- The sampling is deterministic (R2 low-discrepancy sequence): a given model always gives the same hit ratio. The aim point of a ray uses a shifted sampling index so that origins and aims are decorrelated.
+- The receiving face of a ray is chosen with an area-weighted deterministic pick; the aim point is sampled inside that face (face-to-face aiming).
+- A zero-length ray (the faces touch) counts as a touch; a ray longer than Max_Distance is a miss and still counts as cast.
+- A pair with no castable ray (no face turned toward the other object) has a 0% hit ratio: it clashes for any Threshold above 0%.
+- The threshold is exclusive on the clash side: a ratio exactly at the Threshold is compliant, "0%" never clashes.
+- The early termination guarantees the same decision as a full cast: "clash" when (touches + remaining) / planned < Threshold (the maximum possible ratio over the cast rays), "ok" when touches / planned >= Threshold (the minimum possible final ratio).
+- A face is oriented toward the other object when its normal has a positive dot product with the vector from the face center to the other object's centroid.

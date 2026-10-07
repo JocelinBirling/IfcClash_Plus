@@ -1447,3 +1447,1066 @@ def is_face_below_any(face: TopoDS_Face, other_faces: List[TopoDS_Face], axis: g
             return True
     return False
 
+
+
+# ==== Least squares fitting for the alignment rules (Alignement)
+
+def least_squares_line_2d(points: List[Tuple[float, float]]) -> Tuple[np.ndarray, np.ndarray]:
+    """Fit a line through 2D points by least squares (principal component).
+
+    Returns (point_on_line, unit_direction), both numpy arrays of shape (2,).
+    The line passes through the centroid of the points and runs along the
+    direction of largest variance.
+
+    Degenerate case: when all the points coincide, the variance is zero and
+    no direction can be fitted. The direction (1, 0) is returned, the line
+    passes through the common point, so all the offsets are zero.
+    """
+    pts = np.asarray(points, dtype=float)
+    centroid = pts.mean(axis=0)
+    centered = pts - centroid
+
+    covariance = centered.T @ centered
+    _, eigenvectors = np.linalg.eigh(covariance)
+    direction = eigenvectors[:, -1]
+
+    if np.linalg.norm(direction) < 1e-12:
+        return centroid, np.array([1.0, 0.0])
+    return centroid, direction / np.linalg.norm(direction)
+
+
+def least_squares_line_3d(points: List[Tuple[float, float, float]]) -> Tuple[np.ndarray, np.ndarray]:
+    """Fit a line through 3D points by least squares (principal component).
+
+    Returns (point_on_line, unit_direction), both numpy arrays of shape (3,).
+
+    Degenerate case: when all the points coincide, the direction (1, 0, 0)
+    is returned, so all the offsets are zero.
+    """
+    pts = np.asarray(points, dtype=float)
+    centroid = pts.mean(axis=0)
+    centered = pts - centroid
+
+    covariance = centered.T @ centered
+    _, eigenvectors = np.linalg.eigh(covariance)
+    direction = eigenvectors[:, -1]
+
+    if np.linalg.norm(direction) < 1e-12:
+        return centroid, np.array([1.0, 0.0, 0.0])
+    return centroid, direction / np.linalg.norm(direction)
+
+
+def least_squares_plane_3d(points: List[Tuple[float, float, float]]) -> Tuple[np.ndarray, np.ndarray]:
+    """Fit a plane through 3D points by least squares (principal component).
+
+    Returns (point_on_plane, unit_normal), both numpy arrays of shape (3,).
+    The normal is the direction of smallest variance of the points.
+
+    Degenerate case: when the points are collinear (or coincident), any
+    plane containing the line fits them. A normal perpendicular to the
+    fitted line is returned, so all the offsets are zero.
+    """
+    pts = np.asarray(points, dtype=float)
+    centroid = pts.mean(axis=0)
+    centered = pts - centroid
+
+    covariance = centered.T @ centered
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+    normal = eigenvectors[:, 0]
+
+    # Points collinear (or coincident): two smallest eigenvalues vanish.
+    # Any plane containing the line is a valid fit.
+    if eigenvalues[1] < 1e-12:
+        line_direction = eigenvectors[:, -1]
+        helper = np.array([1.0, 0.0, 0.0])
+        if abs(float(line_direction @ helper)) > 0.9:
+            helper = np.array([0.0, 1.0, 0.0])
+        normal = np.cross(line_direction, helper)
+
+    if np.linalg.norm(normal) < 1e-12:
+        return centroid, np.array([0.0, 0.0, 1.0])
+    return centroid, normal / np.linalg.norm(normal)
+
+
+def point_line_distance(point, line_origin, line_direction) -> float:
+    """Perpendicular distance between a point and an infinite line.
+
+    Works in 2D and 3D (the arrays must share their dimension).
+    """
+    p = np.asarray(point, dtype=float)
+    origin = np.asarray(line_origin, dtype=float)
+    direction = np.asarray(line_direction, dtype=float)
+    direction = direction / np.linalg.norm(direction)
+
+    diff = p - origin
+    return float(np.linalg.norm(diff - (diff @ direction) * direction))
+
+
+def point_plane_distance(point, plane_origin, plane_normal) -> float:
+    """Absolute distance between a point and a plane."""
+    p = np.asarray(point, dtype=float)
+    origin = np.asarray(plane_origin, dtype=float)
+    normal = np.asarray(plane_normal, dtype=float)
+    normal = normal / np.linalg.norm(normal)
+
+    return float(abs((p - origin) @ normal))
+
+
+def alignment_clash_flags(offsets: List[float], tolerance: float, min_group: int) -> List[bool]:
+    """Decide which objects of a set raise an alignment clash.
+
+    The group gathers the objects whose offset stays within the tolerance,
+    the limit being inclusive (an object at exactly Tolerance belongs to the
+    group).
+
+    If the group has at least min_group members, the alignment is valid and
+    only the objects outside the group clash. Otherwise no valid alignment
+    exists and all the objects clash.
+    """
+    in_group = [offset <= tolerance for offset in offsets]
+
+    if sum(in_group) >= min_group:
+        return [not flag for flag in in_group]
+    return [True] * len(offsets)
+
+
+# ==== Contact surface helpers for the SurfaceRecover rule
+
+def _plane_basis(direction: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Two unit vectors (u, v) spanning the plane perpendicular to direction."""
+    helper = np.array([1.0, 0.0, 0.0])
+    if abs(float(direction @ helper)) > 0.9:
+        helper = np.array([0.0, 1.0, 0.0])
+    u = np.cross(direction, helper)
+    u = u / np.linalg.norm(u)
+    v = np.cross(direction, u)
+    return u, v
+
+
+def extreme_triangles(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    direction: VECTOR_3D,
+    tolerance: float,
+    alignment_cosine: float = 0.5,
+) -> np.ndarray:
+    """The extreme triangles of a mesh along a direction.
+
+    A triangle is a candidate when its normal points along the direction
+    (dot product above alignment_cosine). Among the candidates, the
+    extreme ones are those within the tolerance of the extreme plane of
+    the mesh along the direction: faces of holes or inner faces pointing
+    the same way are ignored.
+
+    Args:
+        vertices: (n, 3) array of the mesh vertices, world coordinates.
+        faces: (m, 3) array of the triangle vertex indices.
+        direction: the direction the faces must be aligned with.
+        tolerance: the thickness of the extreme slab, in meter.
+        alignment_cosine: the minimum dot product between the triangle
+            normal and the direction.
+
+    Returns:
+        (k, 3, 3) array of the selected triangles vertex coordinates.
+    """
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces)
+    direction = np.asarray(direction, dtype=float)
+    direction = direction / np.linalg.norm(direction)
+
+    if len(faces) == 0:
+        return np.zeros((0, 3, 3))
+
+    triangles = vertices[faces]
+    v1 = triangles[:, 1] - triangles[:, 0]
+    v2 = triangles[:, 2] - triangles[:, 0]
+    normals = np.cross(v1, v2)
+    norms = np.linalg.norm(normals, axis=1)
+    # Degenerate triangles (zero area) cannot point anywhere.
+    valid = norms > 1e-12
+    normals[valid] = normals[valid] / norms[valid, np.newaxis]
+    normals[~valid] = 0.0
+
+    dot_products = normals @ direction
+    candidates = np.where((dot_products > alignment_cosine) & valid)[0]
+
+    if len(candidates) == 0:
+        return np.zeros((0, 3, 3))
+
+    projections = triangles[candidates].mean(axis=1) @ direction
+    extreme = projections.max()
+    selected = candidates[projections >= extreme - tolerance]
+
+    return triangles[selected]
+
+
+def triangles_projected_area(triangles: np.ndarray, direction: VECTOR_3D) -> float:
+    """Sum of the areas of the triangles projected on the plane
+    perpendicular to the direction."""
+    if len(triangles) == 0:
+        return 0.0
+
+    direction = np.asarray(direction, dtype=float)
+    direction = direction / np.linalg.norm(direction)
+
+    v1 = triangles[:, 1] - triangles[:, 0]
+    v2 = triangles[:, 2] - triangles[:, 0]
+    normals = np.cross(v1, v2)
+    areas = 0.5 * np.linalg.norm(normals, axis=1)
+    return float(areas.sum())
+
+
+def contact_area_between_triangle_sets(
+    triangles_a: np.ndarray,
+    triangles_b: np.ndarray,
+    direction: VECTOR_3D,
+    tolerance: float,
+    pairing_cosine: float = -0.9,
+) -> float:
+    """Contact area between two sets of triangles facing each other.
+
+    Two triangles are in contact when they are quasi coplanar (their
+    normals are opposite within the pairing angle) and their distance
+    along the direction stays below the tolerance. The contact area of a
+    pair is the area of the intersection of their projections on the
+    plane perpendicular to the direction. All the disjoint contact zones
+    of the two sets are summed.
+    """
+    if len(triangles_a) == 0 or len(triangles_b) == 0:
+        return 0.0
+
+    direction = np.asarray(direction, dtype=float)
+    direction = direction / np.linalg.norm(direction)
+    u, v = _plane_basis(direction)
+
+    def normals_of(triangles):
+        v1 = triangles[:, 1] - triangles[:, 0]
+        v2 = triangles[:, 2] - triangles[:, 0]
+        normals = np.cross(v1, v2)
+        norms = np.linalg.norm(normals, axis=1)
+        return normals, norms
+
+    normals_a, magnitudes_a = normals_of(triangles_a)
+    normals_b, magnitudes_b = normals_of(triangles_b)
+    centers_a = triangles_a.mean(axis=1)
+    centers_b = triangles_b.mean(axis=1)
+    positions_a = centers_a @ direction
+    positions_b = centers_b @ direction
+
+    def to_2d(triangle):
+        return [
+            (float(point @ u), float(point @ v))
+            for point in triangle
+        ]
+
+    total = 0.0
+    for i, triangle_a in enumerate(triangles_a):
+        if magnitudes_a[i] < 1e-12:
+            continue
+        polygon_a = shapely.Polygon(to_2d(triangle_a))
+        if polygon_a.is_empty:
+            continue
+
+        for j, triangle_b in enumerate(triangles_b):
+            if magnitudes_b[j] < 1e-12:
+                continue
+
+            # Quasi coplanar: opposite normals within the pairing angle.
+            unit_a = normals_a[i] / magnitudes_a[i]
+            unit_b = normals_b[j] / magnitudes_b[j]
+            if float(unit_a @ unit_b) > pairing_cosine:
+                continue
+
+            # Distance along the contact direction below the tolerance.
+            if abs(float(positions_a[i] - positions_b[j])) > tolerance:
+                continue
+
+            polygon_b = shapely.Polygon(to_2d(triangle_b))
+            if polygon_b.is_empty:
+                continue
+
+            intersection = polygon_a.intersection(polygon_b)
+            if not intersection.is_empty:
+                total += intersection.area
+
+    return float(total)
+
+
+def covering_out_of_bounds(
+    contact_area: float,
+    ratio: Optional[float],
+    min_covering: Optional[Tuple[str, float]] = None,
+    max_covering: Optional[Tuple[str, float]] = None,
+) -> bool:
+    """Check the covering of a pair against the optional bounds.
+
+    min_covering and max_covering are (kind, value) tuples, kind being
+    "absolute" (a value in m2) or "relative" (a percentage of the
+    reference face area). The bounds are inclusive: a value exactly at a
+    bound is compliant, only strictly lower or strictly higher values
+    raise a clash.
+
+    A relative bound with an undefined ratio (no reference face) cannot
+    be verified and raises a clash.
+    """
+    def value_of(bound):
+        if bound[0] == "absolute":
+            return contact_area
+        return ratio
+
+    for bound, is_lower in ((min_covering, True), (max_covering, False)):
+        if bound is None:
+            continue
+        if bound[0] == "relative" and ratio is None:
+            return True
+        value = value_of(bound)
+        if is_lower and value < bound[1]:
+            return True
+        if not is_lower and value > bound[1]:
+            return True
+
+    return False
+
+
+# ==== Ray casting helpers for the DirectView rule
+
+# Coefficients of the R2 low-discrepancy sequence: the sampling of the
+# rays is deterministic, so a run gives reproducible results.
+R2_ALPHA = 0.7548776662466927
+R2_BETA = 0.5698402909980532
+
+
+def r2_sequence(index: int) -> Tuple[float, float]:
+    """The (u, v) point of the R2 low-discrepancy sequence, in [0, 1]^2."""
+    u = ((index + 1) * R2_ALPHA) % 1.0
+    v = ((index + 1) * R2_BETA) % 1.0
+    return u, v
+
+
+def sample_point_in_triangle(triangle: np.ndarray, index: int) -> np.ndarray:
+    """A deterministic sample point inside a triangle.
+
+    The barycentric coordinates come from the R2 sequence, mirrored into
+    the half unit square when u + v > 1 so that the point stays inside
+    the triangle. The same index always gives the same point.
+    """
+    u, v = r2_sequence(index)
+    if u + v > 1.0:
+        u, v = 1.0 - u, 1.0 - v
+    return (
+        (1.0 - u - v) * triangle[0] + u * triangle[1] + v * triangle[2]
+    )
+
+
+def plan_ray_counts(areas: List[float], ray_count: int) -> List[int]:
+    """Distribute ray_count rays over faces proportionally to their area.
+
+    Largest remainder method: each face gets the floor of its share, the
+    leftover rays go to the faces with the largest fractional parts (the
+    first ones on ties). The sum of the counts is exactly ray_count, a
+    face can receive none.
+
+    An empty area list returns an empty plan.
+    """
+    if ray_count <= 0 or len(areas) == 0:
+        return [0] * len(areas)
+
+    total = float(sum(areas))
+    if total <= 0.0:
+        # Degenerate faces: spread the rays evenly.
+        base = ray_count // len(areas)
+        counts = [base] * len(areas)
+        for i in range(ray_count - base * len(areas)):
+            counts[i] += 1
+        return counts
+
+    shares = [ray_count * area / total for area in areas]
+    counts = [int(math.floor(share)) for share in shares]
+    remainders = [share - count for share, count in zip(shares, counts)]
+
+    leftover = ray_count - sum(counts)
+    order = sorted(range(len(areas)), key=lambda i: (-remainders[i], i))
+    for i in range(leftover):
+        counts[order[i % len(order)]] += 1
+
+    return counts
+
+
+def direct_view_early_stop(
+    hits: int, cast: int, planned: int, threshold: float
+) -> Optional[str]:
+    """Whether the outcome of a DirectView pair is already decided.
+
+    threshold is a fraction in [0, 1]. Returns "clash" when even if all
+    the remaining rays touched the target, the hit ratio would stay
+    strictly below the threshold; "ok" when the touches already reach the
+    threshold of the planned rays; None to keep casting.
+    """
+    remaining = planned - cast
+    if (hits + remaining) / planned < threshold:
+        return "clash"
+    if hits / planned >= threshold:
+        return "ok"
+    return None
+
+
+# ==== FaceSelection engine shared by the FaceCheck family (FaceCheck.md)
+
+# The orientation presets of a FaceSelection dictionary.
+FACE_ORIENTATION_PRESETS = {
+    "Top": (0.0, 0.0, 1.0),
+    "Bottom": (0.0, 0.0, -1.0),
+}
+
+# A face is aligned with the orientation direction within 45 degrees.
+FACE_ALIGNMENT_COSINE = math.cos(math.radians(45))
+
+# Thickness of the extreme slab of the extreme_faces filter.
+FACE_EXTREME_TOLERANCE = 0.001
+
+FACE_SELECTION_KEYS = (
+    "min_surface",
+    "max_surface",
+    "orientation",
+    "extreme_faces",
+    "materials",
+    "interior_exterior",
+)
+
+
+def validate_face_selection(selection) -> dict:
+    """Validate and normalize a FaceSelection dictionary.
+
+    The schema is the one of doc/2ObjectsRules/FaceCheck.md: all the
+    provided keys combine with AND, an empty dictionary selects all the
+    faces. Unknown keys and invalid values raise a ValueError.
+
+    interior_exterior is kept in the specification but not implemented
+    in V1: providing it raises a ValueError instead of silently
+    returning wrong faces.
+
+    Returns a normalized copy of the selection.
+    """
+    if selection is None:
+        return {}
+
+    if not isinstance(selection, dict):
+        raise ValueError(
+            f"A FaceSelection must be a dictionary, got {type(selection)}"
+        )
+
+    normalized = {}
+    for key, value in selection.items():
+        if key not in FACE_SELECTION_KEYS:
+            raise ValueError(
+                f"Unknown FaceSelection key '{key}', valid keys are "
+                f"{FACE_SELECTION_KEYS}"
+            )
+
+        if key in ("min_surface", "max_surface"):
+            if value is not None:
+                if not isinstance(value, (int, float)) or value < 0:
+                    raise ValueError(
+                        f"{key} must be a positive number (m2), got {value!r}"
+                    )
+                value = float(value)
+
+        if key == "orientation":
+            if value is not None:
+                if isinstance(value, str):
+                    if value not in ("Top", "Bottom", "Side"):
+                        raise ValueError(
+                            "orientation preset must be 'Top', 'Bottom' or "
+                            f"'Side', got '{value}'"
+                        )
+                elif (
+                    hasattr(value, "__len__")
+                    and len(value) == 3
+                    and all(
+                        isinstance(component, (int, float))
+                        for component in value
+                    )
+                ):
+                    if np.linalg.norm(value) < 1e-12:
+                        raise ValueError(
+                            "orientation vector must be non-zero, got "
+                            f"{value!r}"
+                        )
+                    value = tuple(
+                        np.asarray(value, dtype=float)
+                        / np.linalg.norm(value)
+                    )
+                else:
+                    raise ValueError(
+                        "orientation must be 'Top', 'Bottom', 'Side' or a "
+                        f"3D vector, got {value!r}"
+                    )
+
+        if key == "extreme_faces":
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(
+                    f"extreme_faces must be a boolean, got {value!r}"
+                )
+
+        if key == "materials":
+            if value is not None:
+                if not isinstance(value, (list, tuple)) or not all(
+                    isinstance(name, str) for name in value
+                ):
+                    raise ValueError(
+                        f"materials must be a list of names, got {value!r}"
+                    )
+                value = list(value)
+
+        if key == "interior_exterior" and value is not None:
+            raise ValueError(
+                "interior_exterior is specified but not implemented in V1"
+            )
+
+        normalized[key] = value
+
+    return normalized
+
+
+def select_faces(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    selection: dict,
+    material_names: Optional[List[str]] = None,
+    extreme_tolerance: float = FACE_EXTREME_TOLERANCE,
+) -> np.ndarray:
+    """Apply a FaceSelection dictionary to the triangulated faces of one
+    object.
+
+    All the provided keys combine with AND; an empty selection returns
+    every non-degenerate triangle:
+
+    - min_surface / max_surface: the triangle area must be strictly
+      above / below the bound.
+    - orientation: the face normal is aligned with the direction within
+      45 degrees. 'Side' keeps the faces whose normal lies within 45
+      degrees of the horizontal plane.
+    - extreme_faces: among the orientation-aligned faces, only the ones
+      within extreme_tolerance of the extreme plane of the geometry
+      along the orientation (faces of holes pointing the same way are
+      ignored). Ignored when no orientation is provided.
+    - materials: the object matches when one of its material names is
+      listed (V1: the materials are resolved at the object level, not
+      per face).
+
+    Returns the selected triangles as a (k, 3, 3) array.
+    """
+    selection = validate_face_selection(selection)
+
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces)
+    if len(faces) == 0:
+        return np.zeros((0, 3, 3))
+
+    triangles = vertices[faces]
+    v1 = triangles[:, 1] - triangles[:, 0]
+    v2 = triangles[:, 2] - triangles[:, 0]
+    normals = np.cross(v1, v2)
+    magnitudes = np.linalg.norm(normals, axis=1)
+    areas = 0.5 * magnitudes
+    valid = magnitudes > 1e-12
+
+    kept = valid.copy()
+
+    min_surface = selection.get("min_surface")
+    if min_surface is not None:
+        kept &= areas > min_surface
+
+    max_surface = selection.get("max_surface")
+    if max_surface is not None:
+        kept &= areas < max_surface
+
+    orientation = selection.get("orientation")
+    if orientation is not None and orientation != "Side":
+        if orientation in FACE_ORIENTATION_PRESETS:
+            direction = np.array(FACE_ORIENTATION_PRESETS[orientation])
+        else:
+            direction = np.asarray(orientation, dtype=float)
+        unit_normals = np.zeros_like(normals)
+        unit_normals[valid] = normals[valid] / magnitudes[valid, np.newaxis]
+        kept &= (unit_normals @ direction) > FACE_ALIGNMENT_COSINE
+
+    if orientation == "Side":
+        unit_normals = np.zeros_like(normals)
+        unit_normals[valid] = normals[valid] / magnitudes[valid, np.newaxis]
+        kept &= np.abs(unit_normals[:, 2]) <= FACE_ALIGNMENT_COSINE
+
+    if selection.get("extreme_faces") and orientation is not None:
+        if orientation != "Side":
+            if orientation in FACE_ORIENTATION_PRESETS:
+                direction = np.array(FACE_ORIENTATION_PRESETS[orientation])
+            else:
+                direction = np.asarray(orientation, dtype=float)
+            extreme = extreme_triangles(
+                vertices,
+                faces,
+                direction,
+                tolerance=extreme_tolerance,
+                alignment_cosine=FACE_ALIGNMENT_COSINE,
+            )
+            # extreme_triangles works on the whole mesh: keep only the
+            # triangles already selected.
+            kept_index = {}
+            for triangle in extreme:
+                key = tuple(map(tuple, triangle))
+                kept_index[key] = True
+            kept &= np.array(
+                [
+                    tuple(map(tuple, triangle)) in kept_index
+                    for triangle in triangles
+                ]
+            )
+
+    materials = selection.get("materials")
+    if materials:
+        object_materials = set(material_names or [])
+        if not object_materials.intersection(materials):
+            kept &= False
+
+    return triangles[kept]
+
+
+def get_element_material_names(element) -> List[str]:
+    """The material names of an IFC element.
+
+    V1 of the FaceSelection engine resolves the materials at the object
+    level: the name of the material itself, or the names of the layers
+    of its material layer set. Elements without material return an
+    empty list.
+    """
+    from ifcopenshell.util.element import get_material
+
+    try:
+        material = get_material(element)
+    except Exception:
+        return []
+
+    if material is None:
+        return []
+
+    if material.is_a("IfcMaterial"):
+        return [material.Name] if material.Name else []
+
+    if material.is_a("IfcMaterialLayerSetUsage"):
+        material = material.ForLayerSet
+
+    if material.is_a("IfcMaterialLayerSet"):
+        names = []
+        for layer in material.MaterialLayers or []:
+            if layer.Material is not None and layer.Material.Name:
+                names.append(layer.Material.Name)
+        return names
+
+    if material.is_a("IfcMaterialConstituentSet"):
+        names = []
+        for constituent in material.MaterialConstituents or []:
+            if constituent.Material is not None and constituent.Material.Name:
+                names.append(constituent.Material.Name)
+        return names
+
+    name = getattr(material, "Name", None)
+    return [name] if name else []
+
+
+# ==== Triangle pair helpers for the OneObjectFace rule
+
+def _triangle_key(triangle) -> tuple:
+    """A hashable identity of a triangle (its vertices, sorted)."""
+    return tuple(sorted(tuple(map(tuple, np.asarray(triangle, dtype=float)))))
+
+
+def triangles_share_geometry(triangle_a, triangle_b) -> bool:
+    """True when two triangles share at least one vertex (exact
+    coordinates): they are adjacent faces of the same mesh."""
+    vertices_a = {tuple(point) for point in np.asarray(triangle_a, dtype=float)}
+    vertices_b = {tuple(point) for point in np.asarray(triangle_b, dtype=float)}
+    return not vertices_a.isdisjoint(vertices_b)
+
+
+def _segment_crosses_triangle_strictly(p0, p1, triangle) -> bool:
+    """Moeller-Trumbore: the segment p0-p1 crosses the interior of the
+    triangle, endpoints and edges excluded (a contact does not count)."""
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    v0, v1, v2 = (np.asarray(point, dtype=float) for point in triangle)
+
+    direction = p1 - p0
+    edge1 = v1 - v0
+    edge2 = v2 - v0
+
+    pvec = np.cross(direction, edge2)
+    det = float(edge1 @ pvec)
+    if abs(det) < 1e-14:
+        # Parallel or coplanar: no strict crossing.
+        return False
+    inv_det = 1.0 / det
+    tvec = p0 - v0
+    u = inv_det * float(tvec @ pvec)
+    if not (0.0 < u < 1.0):
+        return False
+    qvec = np.cross(tvec, edge1)
+    v = inv_det * float(direction @ qvec)
+    if not (0.0 < v < 1.0):
+        return False
+    t = inv_det * float(edge2 @ qvec)
+    return 0.0 < t < 1.0
+
+
+def triangles_cross_properly(triangle_a, triangle_b) -> bool:
+    """True when two triangles properly cross each other.
+
+    A proper crossing means an edge of one triangle goes through the
+    interior of the other (strict test): triangles that only touch by
+    an edge or a vertex do not cross.
+    """
+    a = np.asarray(triangle_a, dtype=float)
+    b = np.asarray(triangle_b, dtype=float)
+
+    for i in range(3):
+        if _segment_crosses_triangle_strictly(a[i], a[(i + 1) % 3], b):
+            return True
+        if _segment_crosses_triangle_strictly(b[i], b[(i + 1) % 3], a):
+            return True
+    return False
+
+
+def triangle_penetration_depth(triangle_a, triangle_b) -> float:
+    """How deep two crossing triangles dive past each other's plane.
+
+    The depth is the largest distance from a vertex of one triangle to
+    the plane of the other. Grazing contacts stay close to zero, real
+    crossings of thick skins reach centimeters.
+    """
+    a = np.asarray(triangle_a, dtype=float)
+    b = np.asarray(triangle_b, dtype=float)
+
+    depth = 0.0
+    for triangle, other in ((a, b), (b, a)):
+        v0, v1, v2 = other
+        normal = np.cross(v1 - v0, v2 - v0)
+        norm = np.linalg.norm(normal)
+        if norm < 1e-12:
+            continue
+        normal = normal / norm
+        for vertex in triangle:
+            depth = max(depth, abs(float((vertex - v0) @ normal)))
+    return depth
+
+
+def distance_between_triangles(triangle_a, triangle_b) -> float:
+    """The exact distance between two triangles, via OpenCascade faces."""
+    # triangle_to_occ_face expects plain python points, not numpy arrays.
+    face_a = triangle_to_occ_face(
+        [list(point) for point in np.asarray(triangle_a, dtype=float)]
+    )
+    face_b = triangle_to_occ_face(
+        [list(point) for point in np.asarray(triangle_b, dtype=float)]
+    )
+    if face_a is None or face_b is None:
+        return float("inf")
+
+    dist_tool = BRepExtrema_DistShapeShape()
+    dist_tool.LoadS1(face_a)
+    dist_tool.LoadS2(face_b)
+    dist_tool.Perform()
+    return float(dist_tool.Value())
+
+
+# ==== Door clearance helpers for the ClearanceForDoors rule
+
+def get_local_placement_axes(element) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """The world origin and axes of the local placement of an element.
+
+    Returns (origin, x_axis, y_axis, z_axis) as numpy arrays: the local
+    X axis runs along the door width, Y through the wall, Z up.
+    """
+    import ifcopenshell.util.placement
+
+    matrix = ifcopenshell.util.placement.get_local_placement(
+        element.ObjectPlacement
+    )
+    origin = np.array(matrix[0:3, 3], dtype=float)
+    x_axis = np.array(matrix[0:3, 0], dtype=float)
+    y_axis = np.array(matrix[0:3, 1], dtype=float)
+    z_axis = np.array(matrix[0:3, 2], dtype=float)
+    return origin, x_axis, y_axis, z_axis
+
+
+def get_door_operation_type(door):
+    """The OperationType of a door, from its type (IFC4) or from its
+    door panel properties (IFC2x3).
+
+    Returns the OperationType string, or None when the door carries no
+    operation type. When the type exists but ParameterTakesPrecedence
+    is False (the geometry wins) and the geometry is not readable, the
+    result is still the OperationType: the caller decides whether it is
+    reliable enough.
+    """
+    operation_type = None
+
+    # IFC4: IfcDoor -> IsTypedBy -> IfcDoorType
+    for rel in door.IsTypedBy or []:
+        relating_type = getattr(rel, "RelatingType", None)
+        if (
+            relating_type is not None
+            and relating_type.is_a("IfcDoorType")
+            and relating_type.OperationType
+        ):
+            operation_type = relating_type.OperationType
+
+    # IFC2x3: IfcDoor -> IsDefinedBy -> IfcDoorPanelProperties
+    if operation_type is None:
+        for rel in door.IsDefinedBy or []:
+            if rel.is_a("IfcRelDefinesByProperties"):
+                properties = rel.RelatingPropertyDefinition
+                if properties.is_a("IfcDoorPanelProperties"):
+                    if properties.OperationType:
+                        operation_type = properties.OperationType
+
+    return operation_type
+
+
+def parse_door_operation(operation_type: Optional[str]) -> dict:
+    """Classify an IfcDoor OperationType into the V1 door model:
+    mechanism (swing / sliding / unknown), number of leaves and hinge
+    side of each leaf (left / right along the door local X axis)."""
+    if not operation_type:
+        return {"mechanism": "unknown", "leaves": 1, "hinges": []}
+
+    normalized = str(operation_type).replace(" ", "").replace("_", "").lower()
+
+    if "sliding" in normalized:
+        return {"mechanism": "sliding", "leaves": 1, "hinges": []}
+
+    if "double" in normalized:
+        return {
+            "mechanism": "swing",
+            "leaves": 2,
+            "hinges": ["left", "right"],
+        }
+
+    if "swingleft" in normalized:
+        return {"mechanism": "swing", "leaves": 1, "hinges": ["left"]}
+    if "swingright" in normalized:
+        return {"mechanism": "swing", "leaves": 1, "hinges": ["right"]}
+
+    return {"mechanism": "unknown", "leaves": 1, "hinges": []}
+
+
+def make_box_zone(
+    origin: np.ndarray,
+    x_axis: np.ndarray,
+    y_axis: np.ndarray,
+    z_axis: np.ndarray,
+    width: float,
+    depth: float,
+    height: float,
+    side_sign: float,
+) -> TopoDS_Shape:
+    """A rectangular clearance zone, extruded from the door plane.
+
+    The footprint spans `width` along x_axis starting at origin and
+    extends `depth` meters on the side given by side_sign (+1 front
+    along y_axis, -1 back). The zone rises `height` along z_axis from
+    origin.
+    """
+    from OCC.Core.BRepBuilderAPI import (
+        BRepBuilderAPI_MakePolygon,
+        BRepBuilderAPI_MakeFace,
+    )
+    from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCC.Core.gp import gp_Pnt, gp_Vec
+
+    depth_direction = y_axis * side_sign
+
+    def corner(u, v):
+        point = (
+            origin
+            + x_axis * (width * u)
+            + depth_direction * (depth * v)
+        )
+        return gp_Pnt(float(point[0]), float(point[1]), float(point[2]))
+
+    polygon = BRepBuilderAPI_MakePolygon()
+    polygon.Add(corner(0.0, 0.0))
+    polygon.Add(corner(1.0, 0.0))
+    polygon.Add(corner(1.0, 1.0))
+    polygon.Add(corner(0.0, 1.0))
+    polygon.Close()
+
+    face = BRepBuilderAPI_MakeFace(polygon.Wire())
+    prism = BRepPrimAPI_MakePrism(
+        face.Face(),
+        gp_Vec(
+            float(z_axis[0] * height),
+            float(z_axis[1] * height),
+            float(z_axis[2] * height),
+        ),
+    )
+    return prism.Shape()
+
+
+def make_arc_zone(
+    hinge: np.ndarray,
+    x_axis: np.ndarray,
+    y_axis: np.ndarray,
+    z_axis: np.ndarray,
+    radius: float,
+    height: float,
+    segments: int = 16,
+) -> TopoDS_Shape:
+    """The area swept by a leaf: a quarter disk centered on the hinge,
+    from the closed position (along the wall, x_axis) to the open
+    position (front, y_axis), extruded by height along z_axis.
+
+    The arc is approximated by `segments` straight segments.
+    """
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakePolygon
+    from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakePrism
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    from OCC.Core.gp import gp_Pnt, gp_Vec
+
+    polygon = BRepBuilderAPI_MakePolygon()
+    polygon.Add(
+        gp_Pnt(float(hinge[0]), float(hinge[1]), float(hinge[2]))
+    )
+    # The closed position: the leaf along the wall.
+    polygon.Add(
+        gp_Pnt(
+            float(hinge[0] + x_axis[0] * radius),
+            float(hinge[1] + x_axis[1] * radius),
+            float(hinge[2] + x_axis[2] * radius),
+        )
+    )
+    # The arc from the closed position to the open position.
+    for i in range(1, segments + 1):
+        angle = math.pi / 2.0 * i / segments
+        direction = x_axis * math.cos(angle) + y_axis * math.sin(angle)
+        polygon.Add(
+            gp_Pnt(
+                float(hinge[0] + direction[0] * radius),
+                float(hinge[1] + direction[1] * radius),
+                float(hinge[2] + direction[2] * radius),
+            )
+        )
+    polygon.Close()
+
+    face = BRepBuilderAPI_MakeFace(polygon.Wire())
+    prism = BRepPrimAPI_MakePrism(
+        face.Face(),
+        gp_Vec(
+            float(z_axis[0] * height),
+            float(z_axis[1] * height),
+            float(z_axis[2] * height),
+        ),
+    )
+    return prism.Shape()
+
+
+def max_penetration_depth(zone_solid: TopoDS_Shape, points) -> float:
+    """How deep a set of points penetrates into a solid zone.
+
+    The depth of a point strictly inside the zone is its distance to the
+    boundary of the zone (measured against the faces of the solid: the
+    distance to the solid itself is 0 for any inside point); points on
+    or outside the boundary have depth 0. The returned value is the
+    deepest penetration found.
+    """
+    from OCC.Core.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCC.Core.TopExp import TopExp_Explorer
+    from OCC.Core.TopAbs import TopAbs_IN, TopAbs_FACE
+    from OCC.Core.BRep import BRep_Builder
+    from OCC.Core.TopoDS import TopoDS_Compound
+    from OCC.Core.gp import gp_Pnt
+
+    # The boundary of the zone: all its faces in one compound.
+    builder = BRep_Builder()
+    boundary = TopoDS_Compound()
+    builder.MakeCompound(boundary)
+    explorer = TopExp_Explorer(zone_solid, TopAbs_FACE)
+    while explorer.More():
+        builder.Add(boundary, explorer.Current())
+        explorer.Next()
+
+    classifier = BRepClass3d_SolidClassifier(zone_solid)
+    depth = 0.0
+    for point in np.asarray(points, dtype=float):
+        gp_point = gp_Pnt(float(point[0]), float(point[1]), float(point[2]))
+        classifier.Perform(gp_point, 1e-7)
+        if classifier.State() == TopAbs_IN:
+            # Distance from the inside point to the boundary of the zone.
+            distance_tool = BRepExtrema_DistShapeShape()
+            distance_tool.LoadS1(BRepBuilderAPI_MakeVertex(gp_point).Vertex())
+            distance_tool.LoadS2(boundary)
+            distance_tool.Perform()
+            depth = max(depth, distance_tool.Value())
+    return float(depth)
+
+
+# ==== Free space search helpers for the FreeSpace rule
+
+def lowest_footprint(vertices: np.ndarray, faces: np.ndarray, slab: float = 0.001):
+    """The horizontal footprint of a mesh: the union of the projections
+    of the triangles lying in the lowest slab of the object.
+
+    Returns (polygon, z_min): the shapely polygon of the footprint (may
+    be empty) and the height of its base, the floor of the space.
+    """
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces)
+    if len(faces) == 0:
+        return shapely.Polygon(), 0.0
+
+    z_min = float(vertices[:, 2].min())
+    triangles = vertices[faces]
+    centers = triangles.mean(axis=1)
+    lowest = triangles[centers[:, 2] <= z_min + slab]
+
+    if len(lowest) == 0:
+        lowest = triangles[np.argsort(centers[:, 2])[:2]]
+
+    polygons = [shapely.Polygon(triangle[:, :2]) for triangle in lowest]
+    polygons = [polygon for polygon in polygons if not polygon.is_empty]
+    if not polygons:
+        return shapely.Polygon(), z_min
+
+    footprint = shapely.union_all(polygons)
+    return footprint, z_min
+
+
+def cylinder_solid(x: float, y: float, z_base: float, radius: float, height: float) -> TopoDS_Shape:
+    """A vertical cylinder, used as the free space probe."""
+    from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCC.Core.gp import gp_Ax2, gp_Pnt, gp_Dir
+
+    axis = gp_Ax2(gp_Pnt(float(x), float(y), float(z_base)), gp_Dir(0.0, 0.0, 1.0))
+    return BRepPrimAPI_MakeCylinder(axis, float(radius), float(height)).Shape()
+
+
+def shapes_intersect_volume(shape_a: TopoDS_Shape, shape_b: TopoDS_Shape) -> float:
+    """The intersection volume of two shapes: 0 when they do not overlap.
+
+    Tangential contacts have no volume: touching does not intersect.
+    """
+    from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCC.Core import BRepGProp
+    from OCC.Core.GProp import GProp_GProps
+
+    common = BRepAlgoAPI_Common(shape_a, shape_b)
+    common.Build()
+    if not common.IsDone():
+        return float("inf")
+
+    result = common.Shape()
+    if result is None or result.IsNull():
+        return 0.0
+
+    properties = GProp_GProps()
+    BRepGProp.brepgprop.VolumeProperties(result, properties)
+    return float(properties.Mass())

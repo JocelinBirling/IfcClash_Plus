@@ -70,3 +70,16 @@ Nothing may obstruct the swing of an office door: Source = doors, Target = furni
 An accessible landing must stay clear on both sides: Source = doors, Target = furniture, Zone_Shape = Rectangle, Sides = Both, Width = 1.50, Depth = 2.00 — the regulatory clearance overrides the physical door size.
 
 A sliding pocket door must stay clear: Source = doors, Target = furniture, Zone_Shape = Rectangle, Sides = Swing.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- V1 of the swing detection implements method 1 only (OperationType from IfcDoorType via IsTypedBy, or from IfcDoorPanelProperties via IsDefinedBy). The Curve2D geometry method (method 2) is not implemented: without a usable OperationType, the rule falls back on conservative rectangles on both sides. ParameterTakesPrecedence = False is not distinguished: the OperationType is used when it exists.
+- Placement convention: the door local origin sits at the opening edge (hinge side), X along the wall, Y through the wall, Z up; the leaves sweep toward the local +Y ("Front"). Front/Back sides follow the placement Y axis.
+- Hinges: SingleSwingLeft at local x=0, SingleSwingRight at x=width; DoubleDoorSingleSwing gives two leaves, hinges left and right.
+- Sides: Swing = the sweep side; Both = arc front + rectangle back; Front = arc; Back = rectangle back. A door with no determined direction gets rectangles on both sides whatever Sides says.
+- Sliding doors: "Swing" means the passage rectangles on both sides of the opening (the pocket is inside the wall); Front/Back gives the rectangle of the requested side.
+- Zone_Shape = Rectangle builds one zone per side (the opening), while the arc builds one zone per leaf.
+- Penetration depth: the largest distance to the zone boundary over the target vertices strictly inside the zone; a tangential contact (no vertex strictly inside) is depth 0 and is ignored. The tolerance comparison is strict (> tolerance clashes).
+- The arc is approximated by 16 straight segments.

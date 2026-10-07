@@ -536,6 +536,13 @@ point2 = dist_tool.PointOnShape2()
 | OBB_Above | 2-Objects | ✅ | ❌ | ✅ |
 | OBB_Below | 2-Objects | ✅ | ❌ | ⚠️ |
 | OBB_Front_And_Back | 2-Objects | ⚠️ | ❌ | ❌ |
+| Alignement | 1-Object (Complexe) | ✅ | ✅ | ✅ |
+| SurfaceRecover | 2-Objects | ✅ | ✅ | ✅ |
+| DirectView | 2-Objects + context | ✅ | ✅ | ✅ |
+| FaceCheck (moteur FaceSelection) | 2-Objects (famille) | ⚠️ | ✅ | ✅ |
+| OneObjectFace | 1-Object | ✅ | ✅ | ✅ |
+| ClearanceForDoors | 2-Objects | ✅ | ✅ | ✅ |
+| FreeSpace | Complexe (1-Object + context) | ✅ | ✅ | ✅ |
 
 ### Priority Development Areas
 
@@ -557,11 +564,9 @@ point2 = dist_tool.PointOnShape2()
    - Add ClearanceNextTo, ClearanceAbove, ClearanceBelow
 
 4. **New Features** (MEDIUM)
-   - SurfaceRecover rule
    - AngleBetween rule
-   - DirectView rule
-   - FaceCheck rule
-   - Complex rules (FreeSpace, FindPath, EvacuationDistance, Alignment)
+   - FaceCheck member rules (FaceClearance, FaceIntersect, FaceOBB, FaceOrient — engine deployed, specs pending)
+   - EvacuationDistance rule (FindPath not in the deployment list)
 
 5. **Performance** (LOW)
    - Optimize OBB generation

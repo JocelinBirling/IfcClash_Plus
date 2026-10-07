@@ -46,3 +46,14 @@ For each source where no free placement is found: a clash is raised.
 A wheelchair must be able to turn in each accessible sanitary room: Source = IfcSpace of the sanitary rooms, Context = fixtures and furniture, Diameter = 1.50, Height = 1.40.
 
 A stretcher must be able to maneuver in the corridors: Source = IfcSpace of the corridors, Context = furniture and equipment, Diameter = 2.20, Height = 2.00.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- The rule is a one-object rule with an additional Context selection (no target set): RuleCheckComplex is an unusable draft in RuleClass.py.
+- The footprint is the union of the projections of the triangles lying in the lowest slab (1 mm) of the source mesh; its base height is the floor. A source without footprint clashes.
+- Grid step: diameter / 4; refinement step: diameter / 16, around the best failing node (largest distance of the disk center to the footprint boundary). The grid starts at radius from the walls, so tangential placements (touching allowed) are actual candidates.
+- The first free placement wins and stops the search, per source.
+- An obstacle blocks a placement only when the intersection has a positive volume: tangential contacts are free.
+- Free placements (position on the floor and margin) are exposed in rule.placements per source entity; only the sources without any placement raise a clash result.

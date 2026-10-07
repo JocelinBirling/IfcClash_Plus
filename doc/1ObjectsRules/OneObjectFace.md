@@ -88,3 +88,14 @@ The free height of a glazed surface must be between 2.10 m and 2.50 m: Source = 
 The skin of a wall must not self-intersect: Source = walls, empty face selections, intersection = true with intersection_tolerance = 0.001 (overlaps deeper than 1 mm fail the check).
 
 Two faces of a frame must be perpendicular, within 5 degrees: Source = frames, face selections on the two face groups, orientation = true with angle = 90, angle_tolerance = 5.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- Bounds are inclusive: a distance exactly at min or max is compliant, only strictly closer/farther fails; an angle deviation exactly at angle_tolerance is compliant.
+- skip_adjacent applies to the distance check only; adjacency is detected by a shared mesh vertex (exact coordinates).
+- The intersection check works at the triangle level: a pair fails when the triangles cross strictly (an edge goes through the interior of the other — touching by an edge or a vertex does not count) and the penetration depth (largest distance from a vertex of one triangle to the plane of the other) exceeds intersection_tolerance. This filters numerical grazing contacts.
+- The measured angle is the angle between the paired faces' normals; the face selections and the target angle are the user's responsibility (the "door frame" example of this file mixes a Top selection with an angle of 180, which would measure 0 on top faces — the check itself only measures the angle between the selected faces).
+- Default tolerances: intersection_tolerance 0, angle_tolerance 0. A rule with no enabled check, a missing angle with orientation enabled, or min > max raise a ValueError.
+- Pairs are deduplicated by geometric identity and tested once, unordered; a face paired with itself is skipped.

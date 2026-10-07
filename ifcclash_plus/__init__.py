@@ -4,7 +4,8 @@
 # Expose main modules for easy importing
 from .Rules import (
     Volume, Area,  Intersection, Clearance, Above, 
-    OBB_Above, Ray_Check, TopOrBottomSurface
+    OBB_Above, Ray_Check, TopOrBottomSurface, Alignement, SurfaceRecover,
+    DirectView, OneObjectFace, ClearanceForDoors, FreeSpace
 )
 from .RuleClass import SelectFacet, SelectRule, RuleFile
 from .CustomOBB import Custom_OBB
@@ -26,7 +27,7 @@ __all__ = [
     'Volume', 'Area', 'TopOrBottomSurface', 'TopSurface', 'BottomSurface',
     'Intersection', 'Clearance', 'Above',
     'OBB_Above', 'Ray_Check', 'SelectFacet', 'SelectRule', 'RuleFile',
-    'Custom_OBB',
+    'Custom_OBB', 'Alignement', 'SurfaceRecover', 'DirectView', 'OneObjectFace', 'ClearanceForDoors', 'FreeSpace',
     # Serialization functions
     'save_to_json', 'load_from_json',
     'save_configuration_to_json', 'load_configuration_from_json',

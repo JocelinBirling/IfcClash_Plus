@@ -82,3 +82,14 @@ The intra-object cases (the passage space of a door, the height of a glazed surf
 Should we add a geometry to test: check the selected faces against a user-provided geometry (a box, a shape) instead of a target object set.
 
 Exception rules must be redone at the face level, once the member rules exist.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07, engine only — no member rule is deployed yet):
+
+- Surface bounds are strict: an area exactly at min_surface or max_surface is excluded.
+- Orientation alignment: the face normal is within 45 degrees of the direction. The 'Side' preset keeps the faces whose normal is within 45 degrees of the horizontal plane ('Side' is not a single direction).
+- extreme_faces reuses the extreme slab of the engine: 1 mm thick extreme plane along the orientation, faces of holes ignored; ignored when no orientation is provided.
+- materials (V1): resolved at the object level — the object matches when one of its material names (material itself, layers of its layer set, constituents) is listed. Face-level granularity will come with the member rules.
+- interior_exterior: providing it raises a ValueError in V1 (explicitly not implemented) instead of silently returning wrong faces.
+- Unknown dictionary keys raise a ValueError.

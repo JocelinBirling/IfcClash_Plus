@@ -58,3 +58,16 @@ Columns of one storey must form a clean row: Source = columns of a storey, Axis 
 Facade walls must be aligned within 1 m: Source = facade walls, Axis = Horizontal, Alignment_Type = Plane, Tolerance = 1.0.
 
 Wall segments must continue on the same axis: Source = walls, Axis = Horizontal, Alignment_Type = Line, Tolerance = 0.10.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- The rule is a one-object rule (`RuleCheckOneObject`): the source is a single set, there is no target, each clash result carries one source object. Its `offset` attribute gives the deviation to the fitted element.
+- "Least squares" is a total least squares fit (principal component) on the perpendicular offsets.
+- `Alignment_Type = Plane`: the fitted plane is constrained vertical — it is the Z extrusion of the least-squares plan line fitted on the projected centers of the axes. The offset of an object is its plan distance to that line. A free 3D plane would degenerate to a horizontal plane for same-height walls and never detect a facade offset.
+- `Alignment_Type = Line`: the fitted line is adjusted on the endpoints of the axis segments; the offset of an object is the largest distance of its endpoints to the line (a perpendicular segment crossing the line is detected).
+- Auto-detection of `Axis`: each object votes vertical when its main axis is within 45 degrees of the global Z; the majority wins, a tie goes to Vertical.
+- The OBB main axis is the OBB axis with the largest half size.
+- Boundary values: an object at exactly Tolerance belongs to the group; a group of exactly Min_Group members is a valid alignment.
+- Degenerate sets: an empty set raises no clash; coincident projected points (stacked columns) give zero offsets; two distinct plan positions are always exactly aligned by the fit (hence Min_Group = 3).

@@ -52,3 +52,16 @@ A beam must rest on a wall with at least 70% of its bottom face in contact: Sour
 A bearing plate of 0.05 m² minimum must be in contact with its support: Min_Covering = 0.05.
 
 A pipe support must be laterally in contact with its bracket: Direction = Auto.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07):
+
+- A clash result is raised only for the pairs whose covering value is outside the bounds; a compliant pair in contact produces no result.
+- "Distance below Tolerance" is inclusive (at exactly the tolerance, the pair is in contact and the triangles are counted).
+- Direction = Auto: the vector from the closest point of the source to the closest point of the target; when they coincide (touching or overlapping objects), the vector between the mesh centroids is used, and the pair is skipped when even that is degenerate.
+- The pairing angle (quasi coplanar triangles) is 25 degrees, the candidate face alignment is 45 degrees; the distance between two triangles is measured along the direction.
+- The contact area and the reference face area are both measured as projections on the contact plane (perpendicular to the direction).
+- The bounds are inclusive: a covering value exactly at a bound is compliant, only strictly lower (Min) or strictly higher (Max) values clash. A covering value given as a string must end with `%` (a numeric string is rejected).
+- A relative bound with an empty reference face (ratio undefined) cannot be verified and clashes.
+- Without any bound, nothing is checked and no clash is raised.
