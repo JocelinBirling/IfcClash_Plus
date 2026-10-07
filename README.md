@@ -123,7 +123,7 @@ The last benefit is detecting the front and back of an element. Most of the time
 | [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Two objects | KO | KO | KO |
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Two objects | OK | KO | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Two objects | OK | KO | OK |
-| [Face Check](doc/2ObjectsRules/FaceCheck) | Two objects | KO | KO | KO |
+| [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Two objects | KO | KO | KO |
 | [Inside](doc/2ObjectsRules/Insie.md) | Two objects | KO | KO | KO |
 
 
@@ -275,5 +275,12 @@ For a wall, this can lead to errors. When a wall is taller than it is long, this
 6. Create the rule association in Python => DONE
 
 7. Study the implementation in ifcclash
+
+8. Review the new rule Alignement, FreeSpace, SurfaceRecover, OneFaceCheck, TwoFaceCheck, DirectView
+None of them is truly functionnal.
+
+9. Refactor Face Display
+Now, a lot of rule can return a triangle (or a face), from the execution. 
+It would be usefull to refactor this fonction to display the result.
 
 
