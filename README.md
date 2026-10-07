@@ -100,7 +100,7 @@ Each rule has a sheet presenting the rule, its parameters and its special cases.
 | [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo.md) | Two objects | KO | KO | OK |
 | [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow.md) | Two objects | OK | KO | OK |
 
-| [Door Clearance](doc/2ObjectsRules/ClearanceForDoors.md) | Two objects | OK | KO | OK |
+| [Door Clearance](doc/2ObjectsRules/ClearanceForDoors.md) | Two objects | KO | KO | KO |
 
 #### Clearance with OBB
 

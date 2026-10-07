@@ -2317,8 +2317,9 @@ def get_door_operation_type(door):
     """
     operation_type = None
 
-    # IFC4: IfcDoor -> IsTypedBy -> IfcDoorType
-    for rel in door.IsTypedBy or []:
+    # IFC4: IfcDoor -> IsTypedBy -> IfcDoorType. IsTypedBy does not
+    # exist in IFC2x3, hence the getattr.
+    for rel in getattr(door, "IsTypedBy", None) or []:
         relating_type = getattr(rel, "RelatingType", None)
         if (
             relating_type is not None
