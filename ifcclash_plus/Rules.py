@@ -753,7 +753,7 @@ class Collision(RuleCheckTwoObjects):
     def __init__(self, source, target, allow_touching=False, state="Final"):
         super().__init__(state, source, target)
         self.type = "Collision"
-        self.allow_touching = False
+        self.allow_touching = allow_touching
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
