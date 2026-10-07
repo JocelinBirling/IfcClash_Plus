@@ -741,6 +741,7 @@ class RuleCheckOneObject(RuleCheck):
 
         self._display_result_generic()
         self._display_result_specific()
+        self._display_input_context()
 
         self.display.FitAll()
         self.start_display()
@@ -1147,6 +1148,7 @@ class RuleCheckTwoObjects(RuleCheck):
 
         self._display_result_generic()
         self._display_result_specific()
+        self._display_input_context()
 
         self.display.FitAll()
         self.start_display()

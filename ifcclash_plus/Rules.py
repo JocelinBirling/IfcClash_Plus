@@ -2220,6 +2220,7 @@ class Alignement(RuleCheckOneObject):
             "position": self._fitted["origin"],
             "members": members,
         }
+
 class SurfaceRecover(RuleCheckTwoObjects):
     """Check that the contact surface between two objects covers an
     expected value, defined by a min and a max.
@@ -2432,12 +2433,14 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     tolerance=self.tolerance,
                 )
 
-                contact_area = clash_utils.contact_area_between_triangle_sets(
-                    source_triangles,
-                    target_triangles,
-                    direction,
-                    tolerance=self.tolerance,
-                    pairing_cosine=self.PAIRING_COSINE,
+                contact_area, contact_triangles = (
+                    clash_utils.contact_polygons_between_triangle_sets(
+                        source_triangles,
+                        target_triangles,
+                        direction,
+                        tolerance=self.tolerance,
+                        pairing_cosine=self.PAIRING_COSINE,
+                    )
                 )
 
                 if self.reference == "Source":
@@ -2466,6 +2469,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     result.distance_between = distance
                     result.surface_contact_area = contact_area
                     result.ratio = ratio
+                    result.source_faces = contact_triangles
                     result.source_face = {
                         "normal": tuple(float(v) for v in direction),
                         "area": clash_utils.triangles_projected_area(
@@ -2481,6 +2485,43 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     self.result.append(result)
 
         self.end_rule_action()
+
+    def _display_result_specific(self):
+        """The contact surfaces of each result, orange, midway
+        between the two objects."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeFace,
+            BRepBuilderAPI_MakePolygon,
+        )
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
+
+        for result in self.result:
+            for triangle in getattr(result, "source_faces", []):
+                polygon = BRepBuilderAPI_MakePolygon(
+                    gp_Pnt(
+                        float(triangle[0][0]),
+                        float(triangle[0][1]),
+                        float(triangle[0][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[1][0]),
+                        float(triangle[1][1]),
+                        float(triangle[1][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[2][0]),
+                        float(triangle[2][1]),
+                        float(triangle[2][2]),
+                    ),
+                    True,
+                )
+                face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
+                ais_shape = AIS_Shape(face)
+                ais_shape.SetColor(orange_color)
+                self.display.Context.Display(ais_shape, True)
 
     @staticmethod
     def _auto_direction(dist_tool):
@@ -2519,6 +2560,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
         if norm < 1e-9:
             return None
         return vector / norm
+
 class DirectView(RuleCheckTwoObjects):
     """Determine if the direct view between two objects is free, by
     casting rays between them.
@@ -2606,6 +2648,31 @@ class DirectView(RuleCheckTwoObjects):
                 ais_shape.SetColor(grey_color)
                 ais_shape.SetTransparency(0.85)
                 self.display.Context.Display(ais_shape, True)
+
+    def _display_result_specific(self):
+        """The rays actually cast for each result: green when the ray
+        reached the other object, red when a context object blocked it."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        hit_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
+        blocked_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+        def display_segment(origin, aim, color):
+            edge = BRepBuilderAPI_MakeEdge(
+                gp_Pnt(float(origin[0]), float(origin[1]), float(origin[2])),
+                gp_Pnt(float(aim[0]), float(aim[1]), float(aim[2])),
+            ).Edge()
+            ais_shape = AIS_Shape(edge)
+            ais_shape.SetColor(color)
+            self.display.Context.Display(ais_shape, True)
+
+        for result in self.result:
+            for origin, aim in result.hit_segments:
+                display_segment(origin, aim, hit_color)
+            for origin, aim in result.blocked_segments:
+                display_segment(origin, aim, blocked_color)
 
     def _collect_meshes(self, select):
         """The triangulated world mesh of each selected element."""
@@ -2832,6 +2899,7 @@ class DirectView(RuleCheckTwoObjects):
                     self.result.append(result)
 
         self.end_rule_action()
+
 class OneObjectFace(RuleCheckOneObject):
     """Run face-level checks within a single object.
 
@@ -3071,6 +3139,7 @@ class OneObjectFace(RuleCheckOneObject):
                         "area": float(area_b),
                     }
                     self.result.append(result)
+
 class ClearanceForDoors(RuleCheckTwoObjects):
     """Ensure that nothing obstructs the doors: a clearance zone is
     built for each door (the leaf sweep, or a rectangle), and any

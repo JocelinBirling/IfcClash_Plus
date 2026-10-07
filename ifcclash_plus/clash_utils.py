@@ -1656,24 +1656,49 @@ def triangles_projected_area(triangles: np.ndarray, direction: VECTOR_3D) -> flo
     return float(areas.sum())
 
 
-def contact_area_between_triangle_sets(
+def _fan_triangulation(polygon) -> List[Tuple[Tuple[float, float], ...]]:
+    """The fan triangles of a convex shapely polygon.
+
+    MultiPolygon or GeometryCollection parts are flattened first. A
+    convex input makes the fan exact; degenerate rings give no
+    triangle.
+    """
+    parts = getattr(polygon, "geoms", None)
+    if parts is not None:
+        triangles = []
+        for part in parts:
+            triangles.extend(_fan_triangulation(part))
+        return triangles
+
+    triangles = []
+    ring = list(polygon.exterior.coords)
+    for index in range(1, len(ring) - 2):
+        triangles.append((ring[0], ring[index], ring[index + 1]))
+    return triangles
+
+
+def contact_polygons_between_triangle_sets(
     triangles_a: np.ndarray,
     triangles_b: np.ndarray,
     direction: VECTOR_3D,
     tolerance: float,
     pairing_cosine: float = -0.9,
-) -> float:
-    """Contact area between two sets of triangles facing each other.
+) -> Tuple[float, np.ndarray]:
+    """Contact area between two sets of triangles facing each other,
+    and the contact zones as 3D triangles.
 
     Two triangles are in contact when they are quasi coplanar (their
     normals are opposite within the pairing angle) and their distance
-    along the direction stays below the tolerance. The contact area of a
-    pair is the area of the intersection of their projections on the
-    plane perpendicular to the direction. All the disjoint contact zones
-    of the two sets are summed.
+    along the direction stays below the tolerance. The contact of a
+    pair is the intersection of their projections on the plane
+    perpendicular to the direction: convex, so the fan triangulation
+    is exact. Each contact zone sits midway between its two triangles
+    along the direction.
+
+    Returns (total area, (n, 3, 3) array of the contact triangles).
     """
     if len(triangles_a) == 0 or len(triangles_b) == 0:
-        return 0.0
+        return 0.0, np.zeros((0, 3, 3))
 
     direction = np.asarray(direction, dtype=float)
     direction = direction / np.linalg.norm(direction)
@@ -1700,6 +1725,7 @@ def contact_area_between_triangle_sets(
         ]
 
     total = 0.0
+    contact_triangles = []
     for i, triangle_a in enumerate(triangles_a):
         if magnitudes_a[i] < 1e-12:
             continue
@@ -1726,10 +1752,52 @@ def contact_area_between_triangle_sets(
                 continue
 
             intersection = polygon_a.intersection(polygon_b)
-            if not intersection.is_empty:
-                total += intersection.area
+            if intersection.is_empty:
+                continue
+            total += intersection.area
 
-    return float(total)
+            # Degenerate contacts (points, lines) have no surface to
+            # display.
+            if intersection.area <= 1e-12:
+                continue
+            height = 0.5 * (float(positions_a[i]) + float(positions_b[j]))
+            for points in _fan_triangulation(intersection):
+                contact_triangles.append(
+                    [
+                        point[0] * u + point[1] * v + height * direction
+                        for point in points
+                    ]
+                )
+
+    contact_triangles = np.asarray(contact_triangles, dtype=float)
+    if len(contact_triangles) == 0:
+        contact_triangles = np.zeros((0, 3, 3))
+    return float(total), contact_triangles
+
+
+def contact_area_between_triangle_sets(
+    triangles_a: np.ndarray,
+    triangles_b: np.ndarray,
+    direction: VECTOR_3D,
+    tolerance: float,
+    pairing_cosine: float = -0.9,
+) -> float:
+    """Contact area between two sets of triangles facing each other.
+
+    Two triangles are in contact when they are quasi coplanar (their
+    normals are opposite within the pairing angle) and their distance
+    along the direction stays below the tolerance. The contact area of a
+    pair is the area of the intersection of their projections on the
+    plane perpendicular to the direction. All the disjoint contact zones
+    of the two sets are summed.
+    """
+    return contact_polygons_between_triangle_sets(
+        triangles_a,
+        triangles_b,
+        direction,
+        tolerance,
+        pairing_cosine,
+    )[0]
 
 
 def covering_out_of_bounds(

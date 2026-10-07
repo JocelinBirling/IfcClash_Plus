@@ -43,6 +43,7 @@ class TestSurfaceRecover(unittest.TestCase):
     def run_rule(self, model, source, target, **parameters):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [os.path.join(MODEL_DIR, model)]
+        parameters["state"]="Display_Result"
         rule = SurfaceRecover(
             select_by_name(source), select_by_name(target), **parameters
         )
