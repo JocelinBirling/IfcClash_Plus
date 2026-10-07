@@ -1,8 +1,8 @@
-Dans le dossier, vous trouverez 80 fichiers IFC. Ils fournissent une petite bibliothèque d'objet.
+In this folder you will find 80 IFC files. They provide a small object library.
 
-Ces objets sont associés par deux dans la maquette avec une position qui est décrite dans le titre.
+These objects are paired two by two in the model, with a position that is described in the title.
 
-ObjetA_Position_ObjetB_Parameter.
+ObjectA_Position_ObjectB_Parameter.
 
-L'objectif est de décrire différentes positions relative d'objet et de tester les règles.
-Un fichier peut donc être utilisé pour différentes règles.
+The goal is to describe different relative object positions and to test the rules.
+A single file can therefore be used for different rules.
