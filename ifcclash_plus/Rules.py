@@ -2589,6 +2589,24 @@ class DirectView(RuleCheckTwoObjects):
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
 
+    def _display_input_context(self):
+        """The context objects (the obstacles of the view), grey
+        translucent on top of the two selections."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        grey_color = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
+        geom_settings = ifcopenshell.geom.settings()
+        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        for elements in self.select_context.dict_elements.values():
+            for element in elements or []:
+                shape = ifcopenshell.geom.create_shape(geom_settings, element)
+                ais_shape = AIS_Shape(shape.geometry)
+                ais_shape.SetColor(grey_color)
+                ais_shape.SetTransparency(0.85)
+                self.display.Context.Display(ais_shape, True)
+
     def _collect_meshes(self, select):
         """The triangulated world mesh of each selected element."""
         meshes = {}
@@ -3375,6 +3393,23 @@ class ClearanceForDoors(RuleCheckTwoObjects):
                         self.result.append(result)
 
         self.end_rule_action()
+
+    def _display_input_zone(self):
+        """The clearance zones of every door (the clash detection zone),
+        red translucent on top of the two selections."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+        for doors in self.select_source.dict_elements.values():
+            for door in doors or []:
+                for zone in self._build_zones(door):
+                    ais_shape = AIS_Shape(zone["solid"])
+                    ais_shape.SetColor(red_color)
+                    ais_shape.SetTransparency(0.6)
+                    self.display.Context.Display(ais_shape, True)
+
 class FreeSpace(RuleCheckOneObject):
     """Check whether a cylinder of free space of a given diameter and
     height can be found in a room.
@@ -3412,6 +3447,24 @@ class FreeSpace(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
+
+    def _display_input_context(self):
+        """The context objects (the obstacles of the free space search),
+        grey translucent on top of the source selection."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        grey_color = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
+        geom_settings = ifcopenshell.geom.settings()
+        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        for elements in self.select_context.dict_elements.values():
+            for element in elements or []:
+                shape = ifcopenshell.geom.create_shape(geom_settings, element)
+                ais_shape = AIS_Shape(shape.geometry)
+                ais_shape.SetColor(grey_color)
+                ais_shape.SetTransparency(0.85)
+                self.display.Context.Display(ais_shape, True)
 
     def _collect_context(self):
         """The OCC shape of each context object."""
@@ -3570,3 +3623,41 @@ class FreeSpace(RuleCheckOneObject):
                     }
 
         self.end_rule_action()
+
+    def _display_input_zone(self):
+        """The free space probe cylinder (the clash detection zone),
+        red translucent at the center of each source footprint."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+        for ifc_file, sources in self.select_source.dict_elements.items():
+            for source in sources or []:
+                iterator = ifcopenshell.geom.iterator(
+                    self.mesh_settings,
+                    ifc_file,
+                    multiprocessing.cpu_count(),
+                    include=[source],
+                )
+                if not iterator.initialize():
+                    continue
+                shape = iterator.get()
+                vertices = np.asarray(
+                    get_vertices(shape.geometry), dtype=float
+                )
+                faces = np.asarray(get_faces(shape.geometry))
+                footprint, z_base = clash_utils.lowest_footprint(
+                    vertices, faces
+                )
+                if footprint.is_empty:
+                    continue
+
+                center = footprint.representative_point()
+                cylinder = clash_utils.cylinder_solid(
+                    center.x, center.y, z_base, self.diameter / 2.0, self.height
+                )
+                ais_shape = AIS_Shape(cylinder)
+                ais_shape.SetColor(red_color)
+                ais_shape.SetTransparency(0.6)
+                self.display.Context.Display(ais_shape, True)

@@ -136,6 +136,7 @@ class TestDirectView(unittest.TestCase):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [model]
         context = SelectFacet()
+        parameters["state"]="Display_Result"
         context.applicability = [
             ids.Attribute(name="Name", value=name) for name in context_names
         ]

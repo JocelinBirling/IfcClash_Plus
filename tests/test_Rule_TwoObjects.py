@@ -123,7 +123,7 @@ class TestRules(unittest.TestCase):
 
 
 
-        rule = Ray_Check(first_select, second_select,context_select, 5,state="Final") 
+        rule = Ray_Check(first_select, second_select,context_select, 5,state="Display_Result") 
 
         OneRuleFile.contains=[rule]
         OneRuleFile.run()

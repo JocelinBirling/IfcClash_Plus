@@ -213,7 +213,7 @@ class TestRulesTwoObjectsTwoElements(unittest.TestCase):
             self._one_element_select(UNRELATED_SOURCE),
             self._one_element_select(UNRELATED_TARGET),
             self._context_select(),
-            max_ray_length=5,
+            max_ray_length=5
         )
         self._run(rule)
         self._assert_no_match(rule)

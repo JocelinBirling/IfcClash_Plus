@@ -443,6 +443,25 @@ class RuleCheck:
         ais_shape.SetTransparency(0.2)
         self.display.Context.Display(ais_shape, True)
 
+    def _display_input_zone(self):
+        """The clash detection zone of the rule, displayed on top of the
+        two selections in Display_Input.
+
+        Only the rules with an explicit zone override this (for now the
+        clearance zones of ClearanceForDoors and the probe cylinder of
+        FreeSpace); the others show nothing.
+        """
+        pass
+
+    def _display_input_context(self):
+        """The context elements, displayed grey translucent on top of
+        the two selections in Display_Input.
+
+        A rule with a context selection overrides this method to show
+        it (DirectView, FreeSpace); the base shows nothing.
+        """
+        pass
+
 
 
 
@@ -666,13 +685,26 @@ class RuleCheckOneObject(RuleCheck):
             for element in list_of_elements:
                 add_to_display(element, geom_settings, blue_color)
 
-    def _display_result_generic(self):
-        # Imports for center calculation and edge display
-        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-        from OCC.Core.Bnd import Bnd_Box
-        from OCC.Core.BRepBndLib import brepbndlib
-        from OCC.Core.gp import gp_Pnt
+        # The context elements, when the rule overrides the method.
+        self._display_input_context()
+        # The clash detection zone of the rule, when it has one.
+        self._display_input_zone()
 
+    def _result_color_map(self):
+        """The display color of every source object of the selection:
+        True for red (the object appears in the results), False for
+        green."""
+        clashing_sources = set()
+        for clash in self.result:
+            clashing_sources.add(clash.source)
+
+        color_map = {}
+        for elements in self.select_source.dict_elements.values():
+            for element in elements or []:
+                color_map[element] = element in clashing_sources
+        return color_map
+
+    def _display_result_generic(self):
         def add_to_display(display, entity, geom_settings, color):
             shape = ifcopenshell.geom.create_shape(geom_settings, entity)
             geom = shape.geometry
@@ -684,51 +716,22 @@ class RuleCheckOneObject(RuleCheck):
             display.Context.Display(ais_shape, True)
             return display
 
-        def get_random_color():
-            R = random.randrange(1, 255, 1) / 256
-            V = random.randrange(1, 255, 1) / 256
-            B = random.randrange(1, 255, 1) / 256
-            color = Quantity_Color(R, V, B, Quantity_TOC_RGB)
-            return color
-
-        def get_entity_center(entity, geom_settings):
-            """Calculate the center of an IFC entity's bounding box"""
-            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
-            geom = shape.geometry
-
-            bbox = Bnd_Box()
-            brepbndlib.Add(geom, bbox)
-
-            corner_min = bbox.CornerMin()
-            corner_max = bbox.CornerMax()
-
-            center = gp_Pnt(
-                (corner_min.X() + corner_max.X()) / 2.0,
-                (corner_min.Y() + corner_max.Y()) / 2.0,
-                (corner_min.Z() + corner_max.Z()) / 2.0,
-            )
-            return center
-
-        def display_edge(display, p1, p2, edge_color):
-            """Display an edge between two gp_Pnt points"""
-            edge = BRepBuilderAPI_MakeEdge(p1, p2).Edge()
-            ais_edge = AIS_Shape(edge)
-
-            ais_edge.SetColor(edge_color)
-            ais_edge.SetTransparency(0.0)
-
-            display.Context.Display(ais_edge, True)
-
         self.display, self.start_display, add_menu, add_function = init_display()
 
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        neutral_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
+        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
 
-        for clash in self.result:
+        # Every source object is green, the ones appearing in the
+        # results are red. A one object rule has no pair to link.
+        for entity, is_clashing in self._result_color_map().items():
             self.display = add_to_display(
-                self.display, clash.source, geom_settings, neutral_color
+                self.display,
+                entity,
+                geom_settings,
+                red_color if is_clashing else green_color,
             )
 
     def _display_result_specific(self):
@@ -1018,6 +1021,46 @@ class RuleCheckTwoObjects(RuleCheck):
         if self.run_abs_or_rel() is None:
             self.run_grouping()
 
+    def _result_color_map(self):
+        """The display color of every source and target object of the
+        two selections: True for red (the object appears in the
+        results), False for green."""
+        clashing_objects = set()
+        for clash in self.result:
+            clashing_objects.add(clash.source)
+            clashing_objects.add(clash.target)
+
+        color_map = {}
+        for select in (self.select_source, self.select_target):
+            for elements in select.dict_elements.values():
+                for element in elements or []:
+                    color_map[element] = element in clashing_objects
+        return color_map
+
+    def _result_pairs(self):
+        """The unique (source, target) pairs of the results, in order of
+        first appearance."""
+        pairs = []
+        seen = set()
+        for clash in self.result:
+            pair = (clash.source, clash.target)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            pairs.append(pair)
+        return pairs
+
+    def _pair_colors(self, pairs):
+        """One distinct random color per pair, so that every clash pair
+        can be followed visually."""
+        colors = {}
+        for pair in pairs:
+            red = random.randrange(1, 255, 1) / 256
+            green = random.randrange(1, 255, 1) / 256
+            blue = random.randrange(1, 255, 1) / 256
+            colors[pair] = Quantity_Color(red, green, blue, Quantity_TOC_RGB)
+        return colors
+
     def _display_result_generic(self):
         # Imports for center calculation and edge display
         from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
@@ -1035,13 +1078,6 @@ class RuleCheckTwoObjects(RuleCheck):
             ais_shape.SetTransparency(0.9)
             display.Context.Display(ais_shape, True)
             return display
-
-        def get_random_color():
-            R = random.randrange(1, 255, 1) / 256
-            V = random.randrange(1, 255, 1) / 256
-            B = random.randrange(1, 255, 1) / 256
-            color = Quantity_Color(R, V, B, Quantity_TOC_RGB)
-            return color
 
         def get_entity_center(entity, geom_settings):
             """Calculate the center of an IFC entity's bounding box"""
@@ -1076,32 +1112,32 @@ class RuleCheckTwoObjects(RuleCheck):
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        neutral_color = Quantity_Color(0, 0, 0.5, Quantity_TOC_RGB)
-        source_set = set()
+        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
+        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
 
-        for clash in self.result:
+        # Every source and target object is green, the ones appearing
+        # in the results are red.
+        for entity, is_clashing in self._result_color_map().items():
             self.display = add_to_display(
-                self.display, clash.target, geom_settings, neutral_color
-            )
-            source_set.add(clash.source)
-
-        dict_of_source_color = {}
-        for source in source_set:
-            random_color = get_random_color()
-            dict_of_source_color[source] = random_color
-            self.display = add_to_display(
-                self.display, source, geom_settings, random_color
+                self.display,
+                entity,
+                geom_settings,
+                red_color if is_clashing else green_color,
             )
 
-        # Display edges between centers of clashing pairs
-        for clash in self.result:
-            center_source = get_entity_center(clash.source, geom_settings)
-            center_target = get_entity_center(clash.target, geom_settings)
+        # One colored line per result pair, between the bounding box
+        # centers of the two objects.
+        pairs = self._result_pairs()
+        pair_colors = self._pair_colors(pairs)
+        for pair in pairs:
+            source, target = pair
+            center_source = get_entity_center(source, geom_settings)
+            center_target = get_entity_center(target, geom_settings)
             display_edge(
                 self.display,
                 center_source,
                 center_target,
-                dict_of_source_color[clash.source],
+                pair_colors[pair],
             )
 
     def _display_result_specific(self):
@@ -1150,6 +1186,11 @@ class RuleCheckTwoObjects(RuleCheck):
             list_of_elements = self.select_target.dict_elements[ifc_file]
             for element in list_of_elements:
                 add_to_display(element, geom_settings, green_color)
+
+        # The context elements, when the rule overrides the method.
+        self._display_input_context()
+        # The clash detection zone of the rule, when it has one.
+        self._display_input_zone()
 
     def _display_input_specific(self):
         pass
