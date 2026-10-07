@@ -130,6 +130,7 @@ class TestOneObjectFace(unittest.TestCase):
     def run_rule(self, entity_name="Cube", **parameters):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [self.model]
+        parameters["state"]="Display_Result"
         rule = OneObjectFace(self.select(entity_name), **parameters)
         rule_file.contains = [rule]
         rule_file.run()
@@ -149,7 +150,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=2.10,
+            min_distance=2.10,
         )
 
         # 2 triangles per face, all against all: 4 pairs, all failing.
@@ -170,8 +171,8 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=0.5,
-            max=1.5,
+            min_distance=0.5,
+            max_distance=1.5,
         )
         self.assertEqual(len(rule.result), 0)
 
@@ -180,7 +181,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            max=0.5,
+            max_distance=0.5,
         )
         self.assertEqual(len(rule.result), 4)
         self.assertEqual({result.check for result in rule.result}, {"distance"})
@@ -190,10 +191,10 @@ class TestOneObjectFace(unittest.TestCase):
     def test_skip_adjacent_skips_touching_pairs(self):
         """With all the faces selected, adjacent pairs touch (distance 0):
         they are skipped by default, and flagged without the skip."""
-        rule = self.run_rule(distance=True, min=0.1, skip_adjacent=True)
+        rule = self.run_rule(distance=True, min_distance=0.1, skip_adjacent=True)
         self.assertEqual(len(rule.result), 0)
 
-        rule = self.run_rule(distance=True, min=0.1, skip_adjacent=False)
+        rule = self.run_rule(distance=True, min_distance=0.1, skip_adjacent=False)
         self.assertGreater(len(rule.result), 0)
         for result in rule.result:
             self.assertAlmostEqual(result.value, 0.0, places=6)
@@ -268,7 +269,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=2.0,
+            min_distance=2.0,
             orientation=True,
             angle=0,
             angle_tolerance=5,
@@ -285,7 +286,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=0.5,
+            min_distance=0.5,
             orientation=True,
             angle=180,
             angle_tolerance=10,
@@ -300,7 +301,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=1.0,
+            min_distance=1.0,
         )
         self.assertEqual(len(rule.result), 0)
 
@@ -308,7 +309,7 @@ class TestOneObjectFace(unittest.TestCase):
             face_a_selection=self.bottom_selection(),
             face_b_selection=self.top_selection(),
             distance=True,
-            min=1.0 + 1e-6,
+            min_distance=1.0 + 1e-6,
         )
         self.assertEqual(len(rule.result), 4)
 
@@ -335,7 +336,7 @@ class TestOneObjectFace(unittest.TestCase):
     # ---- Cas limites
 
     def test_empty_selection_no_crash(self):
-        rule = self.run_rule("Nothing", distance=True, min=0.1)
+        rule = self.run_rule("Nothing", distance=True, min_distance=0.1)
         self.assertEqual(len(rule.result), 0)
 
     def test_invalid_parameters_raise_value_error(self):
@@ -350,13 +351,13 @@ class TestOneObjectFace(unittest.TestCase):
         with self.assertRaises(ValueError):
             OneObjectFace(source, orientation=True, angle=90, angle_tolerance=-1)
         with self.assertRaises(ValueError):
-            OneObjectFace(source, distance=True, min=2.0, max=1.0)
+            OneObjectFace(source, distance=True, min_distance=2.0, max_distance=1.0)
         with self.assertRaises(ValueError):
-            OneObjectFace(source, distance=True, min=-1.0)
+            OneObjectFace(source, distance=True, min_distance=-1.0)
         with self.assertRaises(ValueError):
             OneObjectFace(source, intersection=True, intersection_tolerance=-0.1)
         with self.assertRaises(ValueError):
-            OneObjectFace(source, face_a_selection={"color": "red"}, distance=True, min=1.0)
+            OneObjectFace(source, face_a_selection={"color": "red"}, distance=True, min_distance=1.0)
 
 
 class TestOneObjectFaceUtilities(unittest.TestCase):

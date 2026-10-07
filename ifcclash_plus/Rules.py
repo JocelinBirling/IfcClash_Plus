@@ -2906,28 +2906,29 @@ class OneObjectFace(RuleCheckOneObject):
     The faces of group A and group B are selected with two
     FaceSelection dictionaries (the schema of the FaceCheck family),
     every face of A is paired with every face of B, and each pair must
-    pass all the enabled checks: distance (min/max, adjacent faces
-    skipped on demand), intersection (crossing deeper than a tolerance)
+    pass all the enabled checks: distance (min_distance/max_distance,
+    adjacent faces skipped on demand), intersection (crossing deeper
+    than a tolerance)
     and orientation (angle between the normals). One clash is raised per
     pair per failed check. See doc/1ObjectsRules/OneObjectFace.md.
     """
 
     def __init__(
         self,
-        source,
-        face_a_selection=None,
-        face_b_selection=None,
-        distance=False,
-        min=None,
-        max=None,
-        skip_adjacent=True,
-        intersection=False,
-        intersection_tolerance=None,
-        orientation=False,
-        angle=None,
-        angle_tolerance=None,
-        state="Final",
-    ):
+        source: Select,
+        face_a_selection: dict | None = None,
+        face_b_selection: dict | None = None,
+        distance: bool = False,
+        min_distance: float | None = None,
+        max_distance: float | None = None,
+        skip_adjacent: bool = True,
+        intersection: bool = False,
+        intersection_tolerance: float | None = None,
+        orientation: bool = False,
+        angle: float | None = None,
+        angle_tolerance: float | None = None,
+        state: str = "Final",
+    ) -> None:
         super().__init__(state, source)
         self.type = "OneObjectFace"
 
@@ -2945,7 +2946,10 @@ class OneObjectFace(RuleCheckOneObject):
             )
 
         if distance:
-            for bound_name, bound_value in (("min", min), ("max", max)):
+            for bound_name, bound_value in (
+                ("min_distance", min_distance),
+                ("max_distance", max_distance),
+            ):
                 if bound_value is not None and (
                     not isinstance(bound_value, (int, float))
                     or bound_value < 0
@@ -2954,15 +2958,26 @@ class OneObjectFace(RuleCheckOneObject):
                         f"{bound_name} must be a positive number (m), "
                         f"got {bound_value!r}"
                     )
-            if min is not None and max is not None and min > max:
-                raise ValueError(f"min ({min}) must not exceed max ({max})")
+            if (
+                min_distance is not None
+                and max_distance is not None
+                and min_distance > max_distance
+            ):
+                raise ValueError(
+                    f"min_distance ({min_distance}) must not exceed "
+                    f"max_distance ({max_distance})"
+                )
             if not isinstance(skip_adjacent, bool):
                 raise ValueError(
                     f"skip_adjacent must be a boolean, got {skip_adjacent!r}"
                 )
         self.distance = distance
-        self.min = float(min) if min is not None else None
-        self.max = float(max) if max is not None else None
+        self.min_distance = (
+            float(min_distance) if min_distance is not None else None
+        )
+        self.max_distance = (
+            float(max_distance) if max_distance is not None else None
+        )
         self.skip_adjacent = skip_adjacent if distance else True
 
         if intersection:
@@ -3029,9 +3044,15 @@ class OneObjectFace(RuleCheckOneObject):
                 measured = clash_utils.distance_between_triangles(
                     triangle_a, triangle_b
                 )
-                if self.min is not None and measured < self.min:
+                if (
+                    self.min_distance is not None
+                    and measured < self.min_distance
+                ):
                     failures.append(("distance", measured))
-                elif self.max is not None and measured > self.max:
+                elif (
+                    self.max_distance is not None
+                    and measured > self.max_distance
+                ):
                     failures.append(("distance", measured))
 
         if self.intersection:
@@ -3138,7 +3159,49 @@ class OneObjectFace(RuleCheckOneObject):
                         "normal": tuple(float(v) for v in normal_b),
                         "area": float(area_b),
                     }
+                    result.source_faces = [triangle_a]
+                    result.target_faces = [triangle_b]
                     self.result.append(result)
+
+    def _display_result_specific(self):
+        """The faces at fault of each result, orange, on top of the
+        source object: source_faces then target_faces."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeFace,
+            BRepBuilderAPI_MakePolygon,
+        )
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
+
+        for result in self.result:
+            faces = list(getattr(result, "source_faces", [])) + list(
+                getattr(result, "target_faces", [])
+            )
+            for triangle in faces:
+                polygon = BRepBuilderAPI_MakePolygon(
+                    gp_Pnt(
+                        float(triangle[0][0]),
+                        float(triangle[0][1]),
+                        float(triangle[0][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[1][0]),
+                        float(triangle[1][1]),
+                        float(triangle[1][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[2][0]),
+                        float(triangle[2][1]),
+                        float(triangle[2][2]),
+                    ),
+                    True,
+                )
+                fault_face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
+                ais_shape = AIS_Shape(fault_face)
+                ais_shape.SetColor(orange_color)
+                self.display.Context.Display(ais_shape, True)
 
 class ClearanceForDoors(RuleCheckTwoObjects):
     """Ensure that nothing obstructs the doors: a clearance zone is

@@ -275,3 +275,5 @@ For a wall, this can lead to errors. When a wall is taller than it is long, this
 6. Create the rule association in Python => DONE
 
 7. Study the implementation in ifcclash
+
+
