@@ -70,14 +70,16 @@ Each rule has a sheet presenting the rule, its parameters and its special cases.
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Volume](doc/1ObjectsRules/Volume) | One object | OK | KO | OK |
-| [Area](doc/1ObjectsRules/Area) | One object | OK | KO | OK |
+| [Volume](doc/1ObjectsRules/Volume.md) | One object | OK | KO | OK |
+| [Area](doc/1ObjectsRules/Area.md) | One object | OK | KO | OK |
 | [Top Or Bottom Surface](doc/1ObjectsRules/TopOrBottomSurface.md) | One object | OK | KO | OK |
-| [Lateral Surface](doc/1ObjectsRules/LateralSurface) | One object | OK | KO | OK |
-| [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | One object | OK | KO | OK |
-| [Orientation](doc/1ObjectsRules/Orientation) | One object | OK | KO | OK |
-| [Object height](doc/1ObjectsRules/ObbHeigh) | One object | OK | OK | OK |
-| [Object length](doc/1ObjectsRules/ObbLength) | One object | OK | OK | OK |
+| [Lateral Surface](doc/1ObjectsRules/LateralSurface.md) | One object | OK | KO | OK |
+| [Projected Surface](doc/1ObjectsRules/ProjectedSurface.md) | One object | OK | KO | OK |
+| [Orientation](doc/1ObjectsRules/Orientation.md) | One object | OK | KO | OK |
+| [Object height](doc/1ObjectsRules/ObbHeigh.md) | One object | OK | OK | OK |
+| [Object length](doc/1ObjectsRules/ObbLength.md) | One object | OK | OK | OK |
+| [One Object Face Check](doc/1ObjectsRules/OneObjectFace.md) | One object | KO | KO | KO |
+| [Quality Geometry](doc/1ObjectsRules/Quality.md) | One object | KO | KO | KO |
 
 ### Two-object rules
 
@@ -85,17 +87,20 @@ Each rule has a sheet presenting the rule, its parameters and its special cases.
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Clearance](doc/2ObjectsRules/Clearance) | Two objects | OK | KO | OK |
-| [Intersection](doc/2ObjectsRules/Intersection) | Two objects | OK | KO | OK |
-| [Collision](doc/2ObjectsRules/Collision) | Two objects | OK | KO | OK |
+| [Clearance](doc/2ObjectsRules/Clearance.md) | Two objects | OK | KO | OK |
+| [Intersection](doc/2ObjectsRules/Intersection.md) | Two objects | OK | KO | OK |
+| [Collision](doc/2ObjectsRules/Collision.md) | Two objects | OK | KO | OK |
+| [Ray Check](doc/2ObjectsRules/BasicRayCheck.md) | Two objects | OK | KO | OK |
 
 #### Advanced clearance rules
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
 | [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Two objects | OK | KO | OK |
-| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Two objects | KO | KO | OK |
-| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Two objects | OK | KO | OK |
+| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo.md) | Two objects | KO | KO | OK |
+| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow.md) | Two objects | OK | KO | OK |
+
+| [Door Clearance](doc/2ObjectsRules/ClearanceForDoors.md) | Two objects | OK | KO | OK |
 
 #### Clearance with OBB
 
@@ -119,6 +124,8 @@ The last benefit is detecting the front and back of an element. Most of the time
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Two objects | OK | KO | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Two objects | OK | KO | OK |
 | [Face Check](doc/2ObjectsRules/FaceCheck) | Two objects | KO | KO | KO |
+| [Inside](doc/2ObjectsRules/Insie.md) | Two objects | KO | KO | KO |
+
 
 ### Complex rules
 
