@@ -169,15 +169,21 @@ class TestAlignement(unittest.TestCase):
         self.assertEqual(rule.result[0].source.Name, "C_offset")
         self.assertEqual(rule.alignment["orientation"], "Vertical")
 
-    def test_horizontal_plane_facade_outlier_clashes(self):
-        """Facade walls in one plane, one wall behind the facade: clash."""
+    def test_horizontal_plane_outlier_clashes(self):
+        """Walls lying in one common plane, one wall out of the plane:
+        clash.
+
+        The fitted plane of a group is free: three walls at the same
+        height align in their common horizontal plane, a wall sitting
+        one meter higher belongs to no valid group.
+        """
         path = self.write_model(
             "facade.ifc",
             [
                 wall("W_left", 0.0, 0.0),
-                wall("W_middle", 6.0, 0.0),
-                wall("W_right", 12.0, 0.0),
-                wall("W_behind", 6.0, 2.0),
+                wall("W_middle", 6.0, 0.5),
+                wall("W_right", 12.0, 0.2),
+                ("IfcWall", "W_behind", (6.0, 2.0, 1.0), 0.0, 4.0, 0.2, 3.0),
             ],
         )
 
@@ -186,13 +192,16 @@ class TestAlignement(unittest.TestCase):
             entity="IFCWALL",
             axis="Horizontal",
             alignment_type="Plane",
-            tolerance=1.0,
+            tolerance=0.05,
         )
 
         self.assertEqual(len(rule.result), 1)
         self.assertEqual(rule.result[0].source.Name, "W_behind")
-        self.assertGreater(rule.result[0].offset, 1.0)
         self.assertEqual(rule.alignment["element"], "Plane")
+        member_names = [member.Name for member in rule.alignment["members"]]
+        self.assertEqual(
+            sorted(member_names), ["W_left", "W_middle", "W_right"]
+        )
 
     def test_horizontal_line_crossing_wall_clashes(self):
         """Wall segments on one axis, one perpendicular wall: clash."""
