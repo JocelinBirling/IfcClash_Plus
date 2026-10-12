@@ -1989,12 +1989,14 @@ class Alignement(RuleCheckOneObject):
     """Check that the objects of a set are aligned.
 
     The alignment is tested on the main axis of the OBB of each object,
-    not on points. A single global element (a fitted line or plane) is
-    least-squares fitted on all the objects: the group gathers the objects
-    whose offset stays within the tolerance. If the group has at least
-    Min_Group members the alignment is valid and the objects outside the
-    group clash, otherwise no valid alignment exists and all the objects
-    clash. See doc/ComplexRules/Alignement.md.
+    not on points. The rule searches the alignment groups of the set:
+    each group gathers the objects lying on one common fitted line (or
+    plane), an object being allowed to belong to several groups. A group
+    with at least Min_Group members is a valid alignment, and an object
+    belonging to no valid group raises a clash. A single global element
+    is still fitted on the whole set, only to report the offset of the
+    clashing objects (a guidance value for the correction).
+    See doc/ComplexRules/Alignement.md.
     """
 
     # An axis within 45 degrees of the global Z counts as vertical when
@@ -2050,12 +2052,12 @@ class Alignement(RuleCheckOneObject):
             return 0
 
         offsets = self._compute_offsets(objects)
-        self.alignment = self._build_alignment_info(objects, offsets)
+        groups = self._compute_groups(objects)
+        self.alignment = self._build_alignment_info(objects, offsets, groups)
 
-        clash_flags = clash_utils.alignment_clash_flags(
-            offsets, self.tolerance, self.min_group
-        )
-        for one_object, clash, offset in zip(objects, clash_flags, offsets):
+        for one_object, clash, offset in zip(
+            objects, self._clash_flags(objects, groups), offsets
+        ):
             if clash:
                 result = ClashResultOneObject(source=one_object["entity"], state=True)
                 result.offset = offset
@@ -2140,11 +2142,17 @@ class Alignement(RuleCheckOneObject):
     def _compute_offsets(self, objects):
         """Offset of each object to the globally fitted element.
 
-        Vertical (and Horizontal with a Plane fit): the plan projections of
-        the objects are fitted on one common least-squares line, the fitted
-        plane of the facade case being the vertical extrusion of that line.
-        The offset of an object is the plan distance between its projected
-        center and the fitted line.
+        This global fit does not decide the clashes (the groups of
+        _compute_groups do): the offset of a clashing object is a
+        guidance value for the correction.
+
+        Vertical: the plan projections of the objects are fitted on one
+        common least-squares line. The offset of an object is the plan
+        distance between its projected center and the fitted line.
+
+        Horizontal with a Plane fit: the axis segments are fitted on one
+        common free least-squares plane. The offset of an object is the
+        largest distance of its endpoints to the fitted plane.
 
         Horizontal with a Line fit: the axes must be collinear in 3D. The
         fitted line is least-squares fitted on the endpoints of the axis
@@ -2159,13 +2167,13 @@ class Alignement(RuleCheckOneObject):
             orientation = self._detect_orientation(objects)
         self._orientation = orientation
 
-        if orientation == "Vertical" or self.alignment_type == "Plane":
+        if orientation == "Vertical":
             plan_points = [one_object["center"][:2] for one_object in objects]
             line_origin, line_direction = clash_utils.least_squares_line_2d(
                 plan_points
             )
             self._fitted = {
-                "element": "Line" if orientation == "Vertical" else "Plane",
+                "element": "Line",
                 "origin": line_origin,
                 "direction": line_direction,
             }
@@ -2174,14 +2182,30 @@ class Alignement(RuleCheckOneObject):
                 for point in plan_points
             ]
 
-        # Horizontal, Line: collinear axes in 3D
-        segments = [
-            [
-                one_object["center"] - one_object["main_axis"] * one_object["half_main"],
-                one_object["center"] + one_object["main_axis"] * one_object["half_main"],
+        segments = self._axis_segments(objects)
+        if self.alignment_type == "Plane":
+            all_endpoints = [
+                endpoint for segment in segments for endpoint in segment
             ]
-            for one_object in objects
-        ]
+            plane_origin, plane_normal = clash_utils.least_squares_plane_3d(
+                all_endpoints
+            )
+            self._fitted = {
+                "element": "Plane",
+                "origin": plane_origin,
+                "direction": plane_normal,
+            }
+            return [
+                max(
+                    clash_utils.point_plane_distance(
+                        endpoint, plane_origin, plane_normal
+                    )
+                    for endpoint in segment
+                )
+                for segment in segments
+            ]
+
+        # Horizontal, Line: collinear axes in 3D
         all_endpoints = [endpoint for segment in segments for endpoint in segment]
         line_origin, line_direction = clash_utils.least_squares_line_3d(
             all_endpoints
@@ -2199,14 +2223,137 @@ class Alignement(RuleCheckOneObject):
             for segment in segments
         ]
 
-    def _build_alignment_info(self, objects, offsets):
-        """The alignment found: the fitted element and its member objects.
+    def _axis_segments(self, objects):
+        """The main axis segment (start, end) of each object."""
+        return [
+            (
+                one_object["center"] - one_object["main_axis"] * one_object["half_main"],
+                one_object["center"] + one_object["main_axis"] * one_object["half_main"],
+            )
+            for one_object in objects
+        ]
 
-        Returns None when the set is empty. The members are the objects of
-        the group (offset within the tolerance), not only the clashing ones.
+    def _compute_groups(self, objects):
+        """The alignment groups of the set (see clash_utils).
+
+        An object may belong to several groups. Vertical: the groups are
+        built on the plan projections of the objects, the main axis of
+        an object being projected to a point when it stands vertical.
+        Horizontal with a Plane fit: the groups are the sets of objects
+        lying in one common free plane, close to the horizontal (at
+        most 40 degrees from it — floor planes, ramps; the alignment
+        of horizontal objects is about levels). Horizontal with a Line
+        fit: the groups are built on the 3D axis segments.
+        """
+        if not objects:
+            return []
+
+        if self._orientation == "Vertical":
+            points = [one_object["center"][:2] for one_object in objects]
+            directions = []
+            for one_object in objects:
+                axis = one_object["main_axis"]
+                if abs(axis[2]) >= self.VERTICAL_COSINE:
+                    # Vertical main axis: the plan projection is a point.
+                    directions.append(None)
+                else:
+                    plan_axis = np.asarray(axis[:2], dtype=float)
+                    directions.append(plan_axis / np.linalg.norm(plan_axis))
+            return clash_utils.plan_alignment_groups(
+                points, directions, self.tolerance
+            )
+
+        segments = self._axis_segments(objects)
+        directions = [one_object["main_axis"] for one_object in objects]
+        if self.alignment_type == "Plane":
+            return clash_utils.coplanar_alignment_groups(
+                segments, directions, self.tolerance
+            )
+        return clash_utils.collinear_alignment_groups(
+            segments, directions, self.tolerance
+        )
+
+    def _clash_flags(self, objects, groups):
+        """A clash when the object belongs to no valid alignment group.
+
+        A valid group has at least Min_Group members. Min_Group = 1
+        makes every single object a valid alignment: no clash.
+        """
+        if self.min_group <= 1:
+            return [False] * len(objects)
+
+        passing = set()
+        for group in groups:
+            if len(group) >= self.min_group:
+                passing.update(group)
+        return [index not in passing for index in range(len(objects))]
+
+    def _fit_group_element(self, objects, indices):
+        """The fitted element of one alignment group.
+
+        Returns (element, position, direction): the least-squares line
+        on the projected centers for the Vertical orientation, the
+        least-squares plane on the axis segments for a Plane fit (the
+        least-squares line when the segments are collinear within the
+        tolerance — the alignment is then a line), the least-squares
+        line on the axis segments for a Line fit.
+        """
+        segments = self._axis_segments(objects)
+
+        if self._orientation == "Vertical":
+            points = [objects[index]["center"][:2] for index in indices]
+            position, direction = clash_utils.least_squares_line_2d(points)
+            return "Line", position, direction
+
+        endpoints = [
+            endpoint for index in indices for endpoint in segments[index]
+        ]
+
+        if self.alignment_type == "Plane":
+            line_origin, line_direction = clash_utils.least_squares_line_3d(
+                endpoints
+            )
+            collinear = all(
+                clash_utils.point_line_distance(
+                    endpoint, line_origin, line_direction
+                )
+                <= self.tolerance
+                for endpoint in endpoints
+            )
+            if collinear:
+                return "Line", line_origin, line_direction
+            position, direction = clash_utils.least_squares_plane_3d(endpoints)
+            return "Plane", position, direction
+
+        position, direction = clash_utils.least_squares_line_3d(endpoints)
+        return "Line", position, direction
+
+    def _build_alignment_info(self, objects, offsets, groups):
+        """The alignment found: the largest valid group and its fitted
+        element (direction = the line direction, or the plane normal
+        for a Plane fit).
+
+        Returns None when the set is empty. When no valid group exists,
+        the global least-squares fit is reported, with the objects whose
+        offset stays within the tolerance.
         """
         if not objects:
             return None
+
+        valid_groups = [
+            group for group in groups if len(group) >= self.min_group
+        ]
+        if valid_groups:
+            best = max(valid_groups, key=len)
+            members = [objects[index]["entity"] for index in best]
+            element, position, direction = self._fit_group_element(objects, best)
+            return {
+                "orientation": self._orientation,
+                "element": element,
+                "direction": direction,
+                "position": position,
+                "members": members,
+            }
 
         members = [
             one_object["entity"]
@@ -2220,6 +2367,205 @@ class Alignement(RuleCheckOneObject):
             "position": self._fitted["origin"],
             "members": members,
         }
+
+    def _display_input_zone(self):
+        """The fitted element of every valid alignment group (the
+        clash detection zones), displayed red translucent on top of
+        the source selection in Display_Input.
+
+        The alignment is computed as in run(): each valid group is
+        displayed with its fitted element — the fitted plane (a Plane
+        fit) as a rectangle spanning the member objects, the fitted
+        line (a Line fit) as an edge, the fitted plan line of the
+        Vertical orientation as its vertical extrusion. Groups
+        sharing the same element are displayed once; the global fit is
+        displayed when no valid group exists.
+        """
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeEdge,
+            BRepBuilderAPI_MakeFace,
+            BRepBuilderAPI_MakePolygon,
+        )
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        objects = self._collect_axis_data()
+        if not objects:
+            return
+        offsets = self._compute_offsets(objects)
+        groups = self._compute_groups(objects)
+        self.alignment = self._build_alignment_info(objects, offsets, groups)
+
+        # One fitted element per valid group, or the global fit alone
+        # when no group is valid.
+        valid_groups = [
+            group for group in groups if len(group) >= self.min_group
+        ]
+        if valid_groups:
+            elements = [
+                (self._fit_group_element(objects, group), group)
+                for group in valid_groups
+            ]
+        else:
+            elements = [
+                (
+                    (
+                        self.alignment["element"],
+                        self.alignment["position"],
+                        self.alignment["direction"],
+                    ),
+                    None,
+                )
+            ]
+
+        def canonical(direction):
+            """A direction with a stable sign, for the deduplication."""
+            vector = np.asarray(direction, dtype=float)
+            for value in vector:
+                if abs(value) > 1e-9:
+                    if value < 0:
+                        vector = -vector
+                    break
+            return vector
+
+        # The same fitted element shared by several groups (a pair and
+        # the group it extends to) is displayed once. The signature of
+        # an element: its direction, and its position reduced to its
+        # invariant — the offset along the normal for a plane, the
+        # component perpendicular to the direction for a line.
+        displayed = {}
+        for (element, position, direction), group in elements:
+            position = np.asarray(position, dtype=float)
+            vector = canonical(direction)
+            if element == "Plane":
+                offset = np.array([float(position @ vector)])
+            else:
+                offset = position - float(position @ vector) * vector
+            key = (
+                element,
+                tuple(np.round(vector, 2)),
+                tuple(np.round(offset, 2)),
+            )
+            if key in displayed:
+                continue
+            displayed[key] = (element, position, vector, group)
+
+        def point(coordinates):
+            return gp_Pnt(
+                float(coordinates[0]),
+                float(coordinates[1]),
+                float(coordinates[2]),
+            )
+
+        def display_face(corners):
+            polygon = BRepBuilderAPI_MakePolygon(
+                point(corners[0]),
+                point(corners[1]),
+                point(corners[2]),
+                point(corners[3]),
+                True,
+            )
+            face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
+            ais_shape = AIS_Shape(face)
+            ais_shape.SetColor(red_color)
+            ais_shape.SetTransparency(0.6)
+            self.display.Context.Display(ais_shape, True)
+
+        def display_edge(start, end):
+            edge = BRepBuilderAPI_MakeEdge(point(start), point(end)).Edge()
+            ais_shape = AIS_Shape(edge)
+            ais_shape.SetColor(red_color)
+            self.display.Context.Display(ais_shape, True)
+
+        def span(values, margin=0.25):
+            """The extent of a coordinate, padded to stay visible."""
+            low, high = min(values), max(values)
+            if high - low < 1e-6:
+                return low - margin, high + margin
+            return low, high
+
+        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+
+        for element, position, direction, group in displayed.values():
+            if group is None:
+                # The global fit spans the objects within the tolerance.
+                zone_objects = [
+                    one_object
+                    for one_object in objects
+                    if one_object["entity"] in self.alignment["members"]
+                ] or objects
+            else:
+                zone_objects = [objects[index] for index in group]
+
+            # The element spans the axis segments of its member objects.
+            endpoints = [
+                endpoint
+                for one_object in zone_objects
+                for endpoint in (
+                    one_object["center"]
+                    - one_object["main_axis"] * one_object["half_main"],
+                    one_object["center"]
+                    + one_object["main_axis"] * one_object["half_main"],
+                )
+            ]
+
+            if element == "Plane":
+                helper = np.array([1.0, 0.0, 0.0])
+                if abs(float(direction @ helper)) > 0.9:
+                    helper = np.array([0.0, 1.0, 0.0])
+                axis_u = np.cross(direction, helper)
+                axis_u = axis_u / np.linalg.norm(axis_u)
+                axis_v = np.cross(direction, axis_u)
+                us = [float((e - position) @ axis_u) for e in endpoints]
+                vs = [float((e - position) @ axis_v) for e in endpoints]
+                min_u, max_u = span(us)
+                min_v, max_v = span(vs)
+                display_face(
+                    [
+                        position + axis_u * min_u + axis_v * min_v,
+                        position + axis_u * max_u + axis_v * min_v,
+                        position + axis_u * max_u + axis_v * max_v,
+                        position + axis_u * min_u + axis_v * max_v,
+                    ]
+                )
+            elif self._orientation == "Vertical":
+                # The fitted plan line, displayed as its vertical
+                # extrusion.
+                ts = [
+                    float((endpoint[:2] - position) @ direction)
+                    for endpoint in endpoints
+                ]
+                zs = [float(endpoint[2]) for endpoint in endpoints]
+                min_t, max_t = span(ts)
+                min_z, max_z = span(zs)
+
+                def plan_point(t, z):
+                    return np.array(
+                        [
+                            position[0] + direction[0] * t,
+                            position[1] + direction[1] * t,
+                            z,
+                        ]
+                    )
+
+                display_face(
+                    [
+                        plan_point(min_t, min_z),
+                        plan_point(max_t, min_z),
+                        plan_point(max_t, max_z),
+                        plan_point(min_t, max_z),
+                    ]
+                )
+            else:
+                # The fitted 3D line, as an edge.
+                ts = [
+                    float((endpoint - position) @ direction)
+                    for endpoint in endpoints
+                ]
+                min_t, max_t = span(ts)
+                display_edge(
+                    position + direction * min_t, position + direction * max_t
+                )
 
 class SurfaceRecover(RuleCheckTwoObjects):
     """Check that the contact surface between two objects covers an
@@ -3202,6 +3548,350 @@ class OneObjectFace(RuleCheckOneObject):
                 ais_shape = AIS_Shape(fault_face)
                 ais_shape.SetColor(orange_color)
                 self.display.Context.Display(ais_shape, True)
+
+def _triangle_bbox_distance(triangle_a, triangle_b) -> float:
+    """A cheap lower bound of the distance between two triangles: the
+    distance between their axis-aligned bounding boxes (0 when the
+    boxes overlap)."""
+    a = np.asarray(triangle_a, dtype=float)
+    b = np.asarray(triangle_b, dtype=float)
+    delta = np.maximum(
+        np.maximum(a.min(axis=0) - b.max(axis=0), b.min(axis=0) - a.max(axis=0)),
+        0.0,
+    )
+    return float(np.linalg.norm(delta))
+
+
+class TwoObjectsFace(RuleCheckTwoObjects):
+    """Run face-level checks between two object sets (the FaceCheck
+    family).
+
+    The faces of the source objects are selected with
+    Source_Face_Selection. The target provides what they are checked
+    against: the faces selected by Target_Face_Selection when it is
+    provided, the whole target objects (all their faces) when it is
+    omitted. Every source face is paired with every target face, and
+    each pair must pass all the enabled checks: distance
+    (min_distance/max_distance), intersection (crossing deeper than a
+    tolerance) and orientation (angle between the normals). One clash is
+    raised per pair per failed check. See
+    doc/2ObjectsRules/TwoObjectsFace.md.
+
+    Unlike OneObjectFace there is no skip_adjacent: two faces of two
+    different objects never share a mesh vertex, and two objects that
+    touch are exactly what a face-level clearance check must report.
+    """
+
+    def __init__(
+        self,
+        source,
+        target,
+        source_face_selection: dict | None = None,
+        target_face_selection: dict | None = None,
+        distance: bool = False,
+        min_distance: float | None = None,
+        max_distance: float | None = None,
+        intersection: bool = False,
+        intersection_tolerance: float | None = None,
+        orientation: bool = False,
+        angle: float | None = None,
+        angle_tolerance: float | None = None,
+        state: str = "Final",
+    ) -> None:
+        super().__init__(state, source, target)
+        self.type = "TwoObjectsFace"
+
+        self.source_face_selection = clash_utils.validate_face_selection(
+            source_face_selection
+        )
+        self.target_face_selection = clash_utils.validate_face_selection(
+            target_face_selection
+        )
+
+        if not (distance or intersection or orientation):
+            raise ValueError(
+                "TwoObjectsFace needs at least one enabled check: "
+                "distance, intersection or orientation"
+            )
+
+        if distance:
+            for bound_name, bound_value in (
+                ("min_distance", min_distance),
+                ("max_distance", max_distance),
+            ):
+                if bound_value is not None and (
+                    not isinstance(bound_value, (int, float))
+                    or bound_value < 0
+                ):
+                    raise ValueError(
+                        f"{bound_name} must be a positive number (m), "
+                        f"got {bound_value!r}"
+                    )
+            if (
+                min_distance is not None
+                and max_distance is not None
+                and min_distance > max_distance
+            ):
+                raise ValueError(
+                    f"min_distance ({min_distance}) must not exceed "
+                    f"max_distance ({max_distance})"
+                )
+        self.distance = distance
+        self.min_distance = (
+            float(min_distance) if min_distance is not None else None
+        )
+        self.max_distance = (
+            float(max_distance) if max_distance is not None else None
+        )
+
+        if intersection:
+            if intersection_tolerance is None:
+                intersection_tolerance = 0.0
+            if (
+                not isinstance(intersection_tolerance, (int, float))
+                or intersection_tolerance < 0
+            ):
+                raise ValueError(
+                    "intersection_tolerance must be a positive number (m), "
+                    f"got {intersection_tolerance!r}"
+                )
+        self.intersection = intersection
+        self.intersection_tolerance = (
+            float(intersection_tolerance)
+            if intersection and intersection_tolerance is not None
+            else 0.0
+        )
+
+        if orientation:
+            if not isinstance(angle, (int, float)) or not 0.0 <= angle <= 180.0:
+                raise ValueError(
+                    f"angle is mandatory (degrees in [0, 180]) when the "
+                    f"orientation check is enabled, got {angle!r}"
+                )
+            if angle_tolerance is None:
+                angle_tolerance = 0.0
+            if (
+                not isinstance(angle_tolerance, (int, float))
+                or angle_tolerance < 0
+            ):
+                raise ValueError(
+                    "angle_tolerance must be a positive number (degrees), "
+                    f"got {angle_tolerance!r}"
+                )
+        self.orientation = orientation
+        self.angle = float(angle) if angle is not None else None
+        self.angle_tolerance = (
+            float(angle_tolerance) if angle_tolerance is not None else 0.0
+        )
+
+        # Triangulated world meshes only: no OpenCascade shape needed
+        # except for the distance between two triangles.
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set("USE_WORLD_COORDS", True)
+
+    @staticmethod
+    def _triangle_data(triangle):
+        """The normal (unit) and the area of a triangle."""
+        v1 = triangle[1] - triangle[0]
+        v2 = triangle[2] - triangle[0]
+        normal = np.cross(v1, v2)
+        magnitude = np.linalg.norm(normal)
+        if magnitude > 1e-12:
+            normal = normal / magnitude
+        return normal, 0.5 * magnitude
+
+    def _run_checks(self, triangle_a, triangle_b):
+        """The failed checks of one pair, as (check, value) tuples."""
+        failures = []
+
+        if self.distance:
+            if (
+                self.max_distance is None
+                and self.min_distance is not None
+                and _triangle_bbox_distance(triangle_a, triangle_b)
+                >= self.min_distance
+            ):
+                # The bounding boxes are already far enough apart: the
+                # exact distance cannot be below the bound.
+                pass
+            else:
+                measured = clash_utils.distance_between_triangles(
+                    triangle_a, triangle_b
+                )
+                if (
+                    self.min_distance is not None
+                    and measured < self.min_distance
+                ):
+                    failures.append(("distance", measured))
+                elif (
+                    self.max_distance is not None
+                    and measured > self.max_distance
+                ):
+                    failures.append(("distance", measured))
+
+        if self.intersection:
+            if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
+                depth = clash_utils.triangle_penetration_depth(
+                    triangle_a, triangle_b
+                )
+                if depth > self.intersection_tolerance:
+                    failures.append(("intersection", depth))
+
+        if self.orientation:
+            normal_a, _ = self._triangle_data(triangle_a)
+            normal_b, _ = self._triangle_data(triangle_b)
+            dot = float(np.clip(normal_a @ normal_b, -1.0, 1.0))
+            measured = math.degrees(math.acos(dot))
+            if abs(measured - self.angle) > self.angle_tolerance:
+                failures.append(("orientation", measured))
+
+        return failures
+
+    def _collect_faces(self, select, selection):
+        """The selected faces of each element of a selection, in world
+        coordinates, as (entity, triangles) pairs. An empty selection
+        selects all the faces of the element."""
+        element_faces = []
+        for ifc_file in select.dict_elements.keys():
+            included = select.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if not iterator.initialize():
+                continue
+
+            while True:
+                shape = iterator.get()
+                entity = ifc_file.by_id(shape.id)
+                vertices = np.asarray(
+                    get_vertices(shape.geometry), dtype=float
+                )
+                faces = np.asarray(get_faces(shape.geometry))
+                if len(faces) > 0:
+                    material_names = clash_utils.get_element_material_names(
+                        entity
+                    )
+                    triangles = clash_utils.select_faces(
+                        vertices,
+                        faces,
+                        selection,
+                        material_names,
+                    )
+                    if len(triangles) > 0:
+                        element_faces.append((entity, triangles))
+
+                if not iterator.next():
+                    break
+
+        return element_faces
+
+    def run(self):
+        self.select_source.run()
+        self.select_target.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        source_elements = self._collect_faces(
+            self.select_source, self.source_face_selection
+        )
+        target_elements = self._collect_faces(
+            self.select_target, self.target_face_selection
+        )
+
+        for source_entity, source_triangles in source_elements:
+            for target_entity, target_triangles in target_elements:
+                if source_entity == target_entity:
+                    # An element is not checked against itself, even
+                    # when both selections contain it.
+                    continue
+                self._check_pairs(
+                    source_entity,
+                    source_triangles,
+                    target_entity,
+                    target_triangles,
+                )
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        self.end_rule_action()
+
+    def _check_pairs(self, source_entity, source_triangles, target_entity,
+                     target_triangles):
+        """Every source face against every target face, one clash per
+        pair per failed check."""
+        for triangle_a in source_triangles:
+            for triangle_b in target_triangles:
+                for check, value in self._run_checks(triangle_a, triangle_b):
+                    result = ClashResultTwoObjects(
+                        source=source_entity,
+                        target=target_entity,
+                        state=True,
+                    )
+                    result.check = check
+                    result.value = value
+                    normal_a, area_a = self._triangle_data(triangle_a)
+                    normal_b, area_b = self._triangle_data(triangle_b)
+                    result.face_a = {
+                        "normal": tuple(float(v) for v in normal_a),
+                        "area": float(area_a),
+                    }
+                    result.face_b = {
+                        "normal": tuple(float(v) for v in normal_b),
+                        "area": float(area_b),
+                    }
+                    result.source_faces = [triangle_a]
+                    result.target_faces = [triangle_b]
+                    self.result.append(result)
+
+    def _display_result_specific(self):
+        """The faces at fault of each result, orange, on top of the
+        source and target objects: source_faces then target_faces."""
+        from OCC.Core.AIS import AIS_Shape
+        from OCC.Core.BRepBuilderAPI import (
+            BRepBuilderAPI_MakeFace,
+            BRepBuilderAPI_MakePolygon,
+        )
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+
+        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
+
+        for result in self.result:
+            faces = list(getattr(result, "source_faces", [])) + list(
+                getattr(result, "target_faces", [])
+            )
+            for triangle in faces:
+                polygon = BRepBuilderAPI_MakePolygon(
+                    gp_Pnt(
+                        float(triangle[0][0]),
+                        float(triangle[0][1]),
+                        float(triangle[0][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[1][0]),
+                        float(triangle[1][1]),
+                        float(triangle[1][2]),
+                    ),
+                    gp_Pnt(
+                        float(triangle[2][0]),
+                        float(triangle[2][1]),
+                        float(triangle[2][2]),
+                    ),
+                    True,
+                )
+                fault_face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
+                ais_shape = AIS_Shape(fault_face)
+                ais_shape.SetColor(orange_color)
+                self.display.Context.Display(ais_shape, True)
+
 
 class ClearanceForDoors(RuleCheckTwoObjects):
     """Ensure that nothing obstructs the doors: a clearance zone is

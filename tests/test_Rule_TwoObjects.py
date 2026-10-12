@@ -474,6 +474,10 @@ class TestRulesAdvanced(unittest.TestCase):
         self.ifc_file = ifcopenshell.open(self.ifc_path)
 
     def test_alignement_rule(self):
+        """Test Alignement rule. The 8 selected counters (6 tops + 2
+        sink openings) all lie in common free planes: the 6 tops align
+        in their horizontal plane (z=0.931), the 2 sink openings in
+        theirs (z=0.880): no clash."""
 
 
         OneRuleFile = RuleFile()
@@ -488,18 +492,23 @@ class TestRulesAdvanced(unittest.TestCase):
 
         alignement_rule = Alignement(
             counter_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=0.01, min_group=3,state="Display_Result"
+            tolerance=0.01, min_group=2,state="Display_Result"
         )
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 8)
+
+        self.assertEqual(len(alignement_rule.result), 0)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
     def test_alignement_rule_n2(self):
-        #The rule is not workign.
+        """Test Alignement rule on the walls. The walls sharing a plan
+        centerline (exterior and party walls stacked over the storeys,
+        basement walls bridged by vertical-axis walls) form valid groups:
+        37 walls aligned, 19 isolated walls clash."""
+
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
@@ -515,12 +524,19 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 8)
+        self.assertEqual(len(alignement_rule.result), 19)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
     def test_alignement_rule_n3(self):
-        #The rule is not workign.
+        """Test Alignement rule on the slabs. The fitted plane of a
+        group is free but close to the horizontal: the slabs align per
+        level (the finish floors of the ground level, the wood floors
+        of the first floor, the entrance landing bridged to the
+        ground slabs by a gently inclined plane). The roof stands
+        alone on its own level and the inclined entrance slab tilts
+        out of every group: 2 clashes."""
+
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
@@ -530,22 +546,73 @@ class TestRulesAdvanced(unittest.TestCase):
 
         alignement_rule = Alignement(
             source_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=0.1, min_group=3,state="Display_Result"
+            tolerance=0.05, min_group=2,state="Display_Result"
         )
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 8)
+        self.assertEqual(len(alignement_rule.result), 2)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
+    def test_alignement_rule_n4(self):
+        """Test Alignement rule on the walls with Min_Group = 4: only
+        the four stacks of facade walls (one per storey, on the same
+        plan centerline) form valid groups of 4. The 40 other walls
+        clash."""
 
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        source_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        source_select = SelectFacet()
+        source_select.applicability = [source_facet]
+
+        alignement_rule = Alignement(
+            source_select, axis="Vertical", alignment_type="Plane",
+            tolerance=0.01, min_group=4,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [alignement_rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(alignement_rule.result), 40)
+        for result in alignement_rule.result:
+            self.assertIsInstance(result, ClashResultOneObject)
+
+    def test_alignement_rule_n5(self):
+        """Test Alignement rule on the slabs with Min_Group = 4. The
+        fitted plane stays close to the horizontal, so the alignments
+        are per level. The roof and the inclined entrance slab find no
+        group at all, and the two slabs on grade sit 73 mm below the
+        finish floors of their level: no group of 4 on their plane.
+        Four slabs clash: the roof, the entrance slab, the two slabs
+        on grade."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        source_facet = ids.Entity(name="IFCSLAB")
+        source_select = SelectFacet()
+        source_select.applicability = [source_facet]
+
+        alignement_rule = Alignement(
+            source_select, axis="Horizontal", alignment_type="Plane",
+            tolerance=0.05, min_group=4,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [alignement_rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(alignement_rule.result), 4)
+        for result in alignement_rule.result:
+            self.assertIsInstance(result, ClashResultOneObject)
 
     def test_alignement_rule_tolerance(self):
-        """Test Alignement rule with a 1 m tolerance: the two straight
-        runs of counters form a valid group, the 5 counters of the L
-        corners still clash."""
+        """Test Alignement rule with a 1 m tolerance: the 8 counters
+        (tops at z=0.931, sink openings at z=0.880) all fit in one
+        common plane group: no clash."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -565,7 +632,7 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 5)
+        self.assertEqual(len(alignement_rule.result), 0)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
@@ -674,7 +741,7 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        # 24 windows -> 24 x 23 = 552 ordered pairs, 550 blocked.
+        # This rule is not working, the context is not blocking the view.
         self.assertEqual(len(rule.result), 0) #Not working, the context is not blocking the ray
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -700,7 +767,9 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(rule.result), 6)#There is only 6, the circle is ok in the 2 kitchen.
+
+        #We should only find 6 results. The kitchen has the space to fit one.
+        self.assertEqual(len(rule.result), 6)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 

@@ -1572,6 +1572,15 @@ def alignment_clash_flags(offsets: List[float], tolerance: float, min_group: int
 
 # The axes of two objects are parallel when they make less than this angle.
 ALIGNMENT_PARALLEL_COSINE = cos(radians(15))
+# An axis is parallel to a fitted plane when it makes less than 15 degrees
+# with it: the absolute cosine with the plane normal stays under this.
+ALIGNMENT_PLANE_COSINE = cos(radians(75))
+# The fitted plane of a Plane alignment must stay close to the horizontal:
+# the alignment of horizontal objects is about levels (floors, ramps,
+# stair flights), and a steep plane only threads objects of different
+# levels. The plane makes at most 40 degrees with the horizontal, so the
+# absolute Z of its normal stays above this cosine.
+ALIGNMENT_LEVEL_COSINE = cos(radians(40))
 # Two plan projections closer than this are coincident (stacked objects).
 ALIGNMENT_COINCIDENCE = 1e-9
 
@@ -1742,6 +1751,125 @@ def collinear_alignment_groups(
             ) >= tolerance:
                 continue
             members = members_of(origin, direction)
+            if len(members) >= 2:
+                groups.add(members)
+
+    return sorted(groups)
+
+
+def coplanar_alignment_groups(
+    segments: List[Tuple[np.ndarray, np.ndarray]],
+    directions: List[np.ndarray],
+    tolerance: float,
+) -> List[Tuple[int, ...]]:
+    """The alignment groups of a set of 3D axis segments (Plane fit).
+
+    segments: the (start, end) points of the main axis segment of each
+    object. directions: the main axis of each object.
+
+    A group is a set of objects whose axis segments lie in one common
+    plane (or on one common line, the degenerate plane), roughly
+    parallel to it. The candidate planes are seeded by the pairs of
+    parallel objects:
+
+    - two parallel axes on the same line (within the tolerance) seed
+      the common line, fitted on the endpoints of the pair; the members
+      are the parallel objects whose segments stay within the
+      tolerance of the line;
+    - two parallel axes apart seed their common plane (the plane of
+      the two axes); the members are the objects whose segments stay
+      within the tolerance of the plane and whose axis is parallel to
+      the plane.
+
+    The fitted plane is free, but close to the horizontal (at most 40
+    degrees from it): a horizontal set of slabs aligns in its floor
+    plane, a ramp in its inclined plane, but a steep plane threads
+    objects of different levels, whatever the tolerance — the alignment
+    of horizontal objects is about levels. A stack of objects on the
+    same plan line across the levels is the business of the Vertical,
+    plan projection, alignment.
+
+    Returns the groups as sorted tuples of indices, without duplicates.
+    """
+    count = len(segments)
+    if count < 2:
+        return []
+
+    ends = [
+        (np.asarray(segment[0], dtype=float), np.asarray(segment[1], dtype=float))
+        for segment in segments
+    ]
+    dirs = [
+        np.asarray(direction, dtype=float) / np.linalg.norm(direction)
+        for direction in directions
+    ]
+    centers = [(start + end) / 2.0 for start, end in ends]
+
+    def line_members(origin, direction):
+        members = []
+        for index in range(count):
+            if (
+                max(
+                    point_line_distance(endpoint, origin, direction)
+                    for endpoint in ends[index]
+                )
+                > tolerance
+            ):
+                continue
+            if abs(float(dirs[index] @ direction)) < ALIGNMENT_PARALLEL_COSINE:
+                continue
+            members.append(index)
+        return tuple(sorted(members))
+
+    def plane_members(origin, normal):
+        members = []
+        for index in range(count):
+            distances = [
+                abs(float((endpoint - origin) @ normal)) for endpoint in ends[index]
+            ]
+            if max(distances) > tolerance:
+                continue
+            if abs(float(dirs[index] @ normal)) > ALIGNMENT_PLANE_COSINE:
+                continue
+            members.append(index)
+        return tuple(sorted(members))
+
+    groups = set()
+    for i in range(count):
+        for j in range(i + 1, count):
+            if abs(float(dirs[i] @ dirs[j])) < ALIGNMENT_PARALLEL_COSINE:
+                continue
+            direction = dirs[i]
+            connect = centers[j] - centers[i]
+            perpendicular = connect - float(connect @ direction) * direction
+            if np.linalg.norm(perpendicular) <= tolerance:
+                # Two parallel axes on the same line: the degenerate
+                # plane is the line, fitted on the endpoints of the pair.
+                seed_points = ends[i] + ends[j]
+                origin, fitted = least_squares_line_3d(seed_points)
+                if (
+                    max(
+                        point_line_distance(point, origin, fitted)
+                        for point in seed_points
+                    )
+                    >= tolerance
+                ):
+                    continue
+                members = line_members(origin, fitted)
+            else:
+                # The plane of the two parallel axes, close to the
+                # horizontal: the alignment of horizontal objects is
+                # about levels (floors, ramps). A steep plane only
+                # threads objects of different levels, whatever the
+                # tolerance; a stack on the same plan line across the
+                # levels is the business of the Vertical alignment
+                # (plan projection), not of a Plane fit.
+                normal = np.cross(direction, perpendicular)
+                normal = normal / np.linalg.norm(normal)
+                if abs(float(normal[2])) < ALIGNMENT_LEVEL_COSINE:
+                    continue
+                origin = (centers[i] + centers[j]) / 2.0
+                members = plane_members(origin, normal)
             if len(members) >= 2:
                 groups.add(members)
 
