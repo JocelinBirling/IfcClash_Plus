@@ -45,3 +45,6 @@ Toutes les fonctions ne pourraient pas en bénéficier. On peut cependant rapide
 
 12. Nettoyage des tests
 Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bons.
+
+
+13. Faire des tests pour les règles must et les rel ABS 

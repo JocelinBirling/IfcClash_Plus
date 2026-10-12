@@ -1223,7 +1223,7 @@ class AbsoluteOrRelativeChecking:
 
     def run(self, list_of_result: list[GroupResult]):
         for onegroupresult in list_of_result:
-            self.eval_check(onegroupresult)
+            self.eval_check(onegroupresult) #@todo From a Json, this will not work, it's propapbly better to have only one class, and with the type, it choose the function to launch.
 
 
 class AbsoluteChecking(AbsoluteOrRelativeChecking):

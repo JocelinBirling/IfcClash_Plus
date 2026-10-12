@@ -541,6 +541,7 @@ point2 = dist_tool.PointOnShape2()
 | DirectView | 2-Objects + context | ✅ | ✅ | ✅ |
 | FaceCheck (moteur FaceSelection) | 2-Objects (famille) | ⚠️ | ✅ | ✅ |
 | OneObjectFace | 1-Object | ✅ | ✅ | ✅ |
+| TwoObjectsFace | 2-Objects (famille FaceCheck) | ✅ | ✅ | ✅ |
 | ClearanceForDoors | 2-Objects | ✅ | ✅ | ✅ |
 | FreeSpace | Complexe (1-Object + context) | ✅ | ✅ | ✅ |
 
@@ -565,7 +566,7 @@ point2 = dist_tool.PointOnShape2()
 
 4. **New Features** (MEDIUM)
    - AngleBetween rule
-   - FaceCheck member rules (FaceClearance, FaceIntersect, FaceOBB, FaceOrient — engine deployed, specs pending)
+   - FaceCheck member rules (FaceClearance, FaceIntersect, FaceOBB, FaceOrient — family deployed as TwoObjectsFace, member specs pending)
    - EvacuationDistance rule (FindPath not in the deployment list)
 
 5. **Performance** (LOW)

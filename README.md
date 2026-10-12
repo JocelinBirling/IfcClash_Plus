@@ -123,7 +123,7 @@ The last benefit is detecting the front and back of an element. Most of the time
 | [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Two objects | KO | KO | KO |
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Two objects | OK | KO | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Two objects | OK | KO | OK |
-| [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Two objects | KO | KO | KO |
+| [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Two objects | OK | OK | OK |
 | [Inside](doc/2ObjectsRules/Insie.md) | Two objects | KO | KO | KO |
 
 
@@ -250,37 +250,7 @@ Creation of the main structure of the script
 
 
 
-# TODO
-
-0. Finish the documentation
-
-1. Finish the grouping (grouping by)
-
-2. Property extraction
-When using the relative rule, we can extract values from objects in order to sum quantities.
-This has not been tested properly.
-
-3. Orientation rule
-We could make the orientation rule easier to check whether it faces north or south, simply by introducing some text.
 
 
-4. Determine the main side of an OBB
-When looking for the main side of an OBB, the Z face is taken into account.
-For a slab, this can be useful.
-For a wall, this can lead to errors. When a wall is taller than it is long, this can cause inaccuracies.
-
-
-5. Expand the number of rules and create the base rule structure
-
-6. Create the rule association in Python => DONE
-
-7. Study the implementation in ifcclash
-
-8. Review the new rule Alignement, FreeSpace, SurfaceRecover, OneFaceCheck, TwoFaceCheck, DirectView
-None of them is truly functionnal.
-
-9. Refactor Face Display
-Now, a lot of rule can return a triangle (or a face), from the execution. 
-It would be usefull to refactor this fonction to display the result.
 
 

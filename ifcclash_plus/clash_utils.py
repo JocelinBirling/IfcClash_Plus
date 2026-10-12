@@ -1570,6 +1570,184 @@ def alignment_clash_flags(offsets: List[float], tolerance: float, min_group: int
     return [True] * len(offsets)
 
 
+# The axes of two objects are parallel when they make less than this angle.
+ALIGNMENT_PARALLEL_COSINE = cos(radians(15))
+# Two plan projections closer than this are coincident (stacked objects).
+ALIGNMENT_COINCIDENCE = 1e-9
+
+
+def _alignment_seed_direction(direction_i, direction_j, point_i, point_j):
+    """The direction of the candidate line of a pair of objects.
+
+    Two parallel axes give their common direction, a mixed pair (one
+    directed axis, one point projection) gives the directed axis, two
+    distinct points give the line through them. Returns None when no
+    direction can be defined: non-parallel axes, or coincident points.
+    """
+    if direction_i is not None and direction_j is not None:
+        if abs(float(direction_i @ direction_j)) < ALIGNMENT_PARALLEL_COSINE:
+            return None
+        return direction_i
+    if direction_i is not None:
+        return direction_i
+    if direction_j is not None:
+        return direction_j
+    vector = point_j - point_i
+    norm = np.linalg.norm(vector)
+    if norm < ALIGNMENT_COINCIDENCE:
+        return None
+    return vector / norm
+
+
+def plan_alignment_groups(
+    points: List[np.ndarray],
+    directions: List[Optional[np.ndarray]],
+    tolerance: float,
+) -> List[Tuple[int, ...]]:
+    """The alignment groups of a set of plan positions.
+
+    points: the plan projections of the object centers. directions: the
+    plan direction of the main axis of each object, or None when the main
+    axis is vertical (the projection is a point, carrying no direction).
+
+    A group is a set of objects lying on one common line:
+
+    - the candidate lines are seeded by the pairs of objects: the seed
+      direction comes from the pair (see _alignment_seed_direction), the
+      seed position is the least-squares position on the seed pair, and
+      the two seeds must be strictly within the tolerance (a pair at
+      exactly the tolerance does not define an alignment);
+    - the members are the objects within the tolerance of the seed line
+      (limit inclusive) whose direction is None or parallel to the line.
+
+    Coincident projections form groups on their own: stacked objects
+    are aligned whatever the direction of the line.
+
+    Returns the groups as sorted tuples of indices, without duplicates.
+    """
+    count = len(points)
+    if count < 2:
+        return []
+
+    pts = [np.asarray(point, dtype=float) for point in points]
+    dirs = [
+        None if direction is None else np.asarray(direction, dtype=float)
+        for direction in directions
+    ]
+
+    def members_of(origin, direction):
+        members = []
+        for index in range(count):
+            if point_line_distance(pts[index], origin, direction) > tolerance:
+                continue
+            axis = dirs[index]
+            if (
+                axis is not None
+                and abs(float(axis @ direction)) < ALIGNMENT_PARALLEL_COSINE
+            ):
+                continue
+            members.append(index)
+        return tuple(sorted(members))
+
+    groups = set()
+    for i in range(count):
+        for j in range(i + 1, count):
+            direction = _alignment_seed_direction(dirs[i], dirs[j], pts[i], pts[j])
+            if direction is None:
+                continue
+            origin = (pts[i] + pts[j]) / 2.0
+            if (
+                point_line_distance(pts[i], origin, direction) >= tolerance
+                or point_line_distance(pts[j], origin, direction) >= tolerance
+            ):
+                continue
+            members = members_of(origin, direction)
+            if len(members) >= 2:
+                groups.add(members)
+
+    # Coincident projections (stacked objects): aligned in themselves.
+    clustered = [False] * count
+    for i in range(count):
+        if clustered[i]:
+            continue
+        cluster = [i]
+        for j in range(i + 1, count):
+            if not clustered[j] and np.linalg.norm(pts[j] - pts[i]) < (
+                ALIGNMENT_COINCIDENCE
+            ):
+                clustered[j] = True
+                cluster.append(j)
+        if len(cluster) >= 2:
+            groups.add(tuple(sorted(cluster)))
+
+    return sorted(groups)
+
+
+def collinear_alignment_groups(
+    segments: List[Tuple[np.ndarray, np.ndarray]],
+    directions: List[np.ndarray],
+    tolerance: float,
+) -> List[Tuple[int, ...]]:
+    """The alignment groups of a set of 3D axis segments (Line fit).
+
+    segments: the (start, end) points of the main axis segment of each
+    object. directions: the main axis of each object (every object is
+    directed in 3D).
+
+    A group is a set of objects whose axis segments lie on one common
+    line, built like the plan groups of plan_alignment_groups: the
+    candidate lines are seeded by the pairs of parallel objects, fitted
+    on the endpoints of the seed pair, and extended to the objects whose
+    endpoints stay within the tolerance and whose axis is parallel.
+
+    Returns the groups as sorted tuples of indices, without duplicates.
+    """
+    count = len(segments)
+    if count < 2:
+        return []
+
+    ends = [
+        (np.asarray(segment[0], dtype=float), np.asarray(segment[1], dtype=float))
+        for segment in segments
+    ]
+    dirs = [np.asarray(direction, dtype=float) for direction in directions]
+
+    def members_of(origin, direction):
+        members = []
+        for index in range(count):
+            if (
+                max(
+                    point_line_distance(endpoint, origin, direction)
+                    for endpoint in ends[index]
+                )
+                > tolerance
+            ):
+                continue
+            if abs(float(dirs[index] @ direction)) < ALIGNMENT_PARALLEL_COSINE:
+                continue
+            members.append(index)
+        return tuple(sorted(members))
+
+    groups = set()
+    for i in range(count):
+        for j in range(i + 1, count):
+            if abs(float(dirs[i] @ dirs[j])) < ALIGNMENT_PARALLEL_COSINE:
+                continue
+            direction = dirs[i]
+            seed_points = ends[i] + ends[j]
+            origin = np.mean(seed_points, axis=0)
+            if max(
+                point_line_distance(point, origin, direction)
+                for point in seed_points
+            ) >= tolerance:
+                continue
+            members = members_of(origin, direction)
+            if len(members) >= 2:
+                groups.add(members)
+
+    return sorted(groups)
+
+
 # ==== Contact surface helpers for the SurfaceRecover rule
 
 def _plane_basis(direction: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
