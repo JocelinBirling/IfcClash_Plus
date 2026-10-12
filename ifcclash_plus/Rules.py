@@ -4238,16 +4238,21 @@ class FreeSpace(RuleCheckOneObject):
 
     The cylinder must fit entirely inside the footprint of each source
     object (its lowest face is the floor) and must not intersect any
-    Context object (touching is allowed). A regular grid of candidates
-    covers the footprint, refined locally around the best node; the
-    first free placement wins. A clash is raised for each source where
-    no free placement is found. See doc/ComplexRules/FreeSpace.md.
+    Context object (touching is allowed). The free placements are the
+    region of the footprint eroded by the cylinder radius, minus the
+    obstacles projected in the height slab of the cylinder (each
+    projection grown by the radius). A placement exists as soon as
+    this region is not empty; the reported placement is the point of
+    the region with the largest clearance. A clash is raised for each
+    source where no free placement is found. See
+    doc/ComplexRules/FreeSpace.md.
     """
 
-    # The grid step is a fraction of the diameter; the refinement step
-    # is a fraction of the grid step.
-    GRID_FRACTION = 4.0
-    REFINEMENT_FRACTION = 4.0
+    # The mesh deflection of the obstacle projections is a fraction of
+    # the cylinder radius; the touch epsilon keeps the tangential
+    # placements (touching allowed) free.
+    MESH_FRACTION = 25.0
+    TOUCH_EPSILON = 1e-9
 
     def __init__(self, source, context, diameter=1.50, height=None, state="Final"):
         super().__init__(state, source)
@@ -4289,7 +4294,11 @@ class FreeSpace(RuleCheckOneObject):
                 self.display.Context.Display(ais_shape, True)
 
     def _collect_context(self):
-        """The OCC shape of each context object."""
+        """The OCC shape of each context object, with its bounding box
+        (to pre-filter the obstacles of each source)."""
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib
+
         obstacles = []
         for ifc_file in self.select_context.dict_elements.keys():
             included = self.select_context.dict_elements[ifc_file]
@@ -4305,7 +4314,18 @@ class FreeSpace(RuleCheckOneObject):
                 while True:
                     shape = iterator.get()
                     entity = ifc_file.by_id(shape.data.id)
-                    obstacles.append({"entity": entity, "occ": shape.geometry})
+                    box = Bnd_Box()
+                    brepbndlib.Add(shape.geometry, box)
+                    x_min, y_min, z_min, x_max, y_max, z_max = box.Get()
+                    obstacles.append(
+                        {
+                            "entity": entity,
+                            "occ": shape.geometry,
+                            "bounds": (x_min, y_min, x_max, y_max),
+                            "z_min": z_min,
+                            "z_max": z_max,
+                        }
+                    )
                     if not iterator.next():
                         break
         return obstacles
@@ -4322,76 +4342,121 @@ class FreeSpace(RuleCheckOneObject):
             margin = min(margin, dist_tool.Value())
         return float(margin)
 
-    def _is_free(self, x, y, z_base, footprint, obstacles):
-        """A placement is free when the cylinder fits inside the
-        footprint and does not intersect any obstacle (touching
-        allowed: an intersection needs a positive volume)."""
-        radius = self.diameter / 2.0
-        disk = shapely.Point(x, y).buffer(radius, quad_segs=32)
-        if not footprint.contains(disk):
-            return None, None
+    def _obstacle_slab_footprint(self, obstacle, box, z_base):
+        """The 2D projection of the part of an obstacle that lies in
+        the height slab of the cylinder (a shapely polygon, possibly
+        empty): the zone where an obstacle has a positive volume inside
+        the cylinder."""
+        from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+        from OCC.Core.BRep import BRep_Tool
+        from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCC.Core.TopAbs import TopAbs_FACE
+        from OCC.Core.TopExp import TopExp_Explorer
+        from OCC.Core.TopLoc import TopLoc_Location
 
-        cylinder = clash_utils.cylinder_solid(x, y, z_base, radius, self.height)
-        for obstacle in obstacles:
-            dist_tool = BRepExtrema_DistShapeShape()
-            dist_tool.LoadS1(cylinder)
-            dist_tool.LoadS2(obstacle["occ"])
-            dist_tool.Perform()
-            if dist_tool.Value() > 0:
-                continue
-            if clash_utils.shapes_intersect_volume(cylinder, obstacle["occ"]) > 1e-9:
-                return None, None
+        z_low = z_base + self.TOUCH_EPSILON
+        z_high = z_base + self.height - self.TOUCH_EPSILON
+        if z_high <= z_low:
+            return shapely.Polygon()
 
-        margin = self._placement_margin(cylinder, disk, footprint, obstacles)
-        return (x, y), margin
+        x_min, y_min, x_max, y_max = box
+        slab = BRepPrimAPI_MakeBox(
+            gp_Pnt(x_min, y_min, z_low), gp_Pnt(x_max, y_max, z_high)
+        ).Shape()
+        common = BRepAlgoAPI_Common(obstacle["occ"], slab)
+        common.Build()
+        if not common.IsDone():
+            return shapely.Polygon()
+        clipped = common.Shape()
+        if clipped is None or clipped.IsNull():
+            return shapely.Polygon()
+
+        deflection = (self.diameter / 2.0) / self.MESH_FRACTION
+        BRepMesh_IncrementalMesh(clipped, deflection).Perform()
+
+        triangles = []
+        explorer = TopExp_Explorer(clipped, TopAbs_FACE)
+        while explorer.More():
+            face = explorer.Current()
+            location = TopLoc_Location()
+            triangulation = BRep_Tool.Triangulation(face, location)
+            if triangulation is not None:
+                transform = location.Transformation()
+                nodes = [
+                    triangulation.Node(i).Transformed(transform)
+                    for i in range(1, triangulation.NbNodes() + 1)
+                ]
+                for i in range(1, triangulation.NbTriangles() + 1):
+                    a, b, c = triangulation.Triangle(i).Get()
+                    triangle = shapely.Polygon(
+                        [
+                            (nodes[a - 1].X(), nodes[a - 1].Y()),
+                            (nodes[b - 1].X(), nodes[b - 1].Y()),
+                            (nodes[c - 1].X(), nodes[c - 1].Y()),
+                        ]
+                    )
+                    if not triangle.is_empty:
+                        triangles.append(triangle)
+            explorer.Next()
+
+        if not triangles:
+            return shapely.Polygon()
+        return shapely.union_all(triangles)
 
     def _search_placement(self, footprint, z_base, obstacles):
-        """Grid search then local refinement; the first free placement
-        wins. Returns None when no free placement exists."""
+        """The free placements are the region of the footprint eroded
+        by the cylinder radius, minus the obstacle projections of the
+        height slab grown by the radius. The reported placement is the
+        point of the region with the largest clearance. Returns None
+        when no free placement exists."""
         radius = self.diameter / 2.0
-        min_x, min_y, max_x, max_y = footprint.bounds
-
-        step = self.diameter / self.GRID_FRACTION
-        best_score = None
-        best_node = None
-
-        # The grid starts at radius from the walls: the tangent
-        # placements (touching allowed) are candidates like the others.
-        x = min_x + radius
-        while x <= max_x - radius + 1e-9:
-            y = min_y + radius
-            while y <= max_y - radius + 1e-9:
-                found, margin = self._is_free(x, y, z_base, footprint, obstacles)
-                if found is not None:
-                    return found, margin
-
-                # Score the failing node: the distance of the disk
-                # center to the footprint boundary (candidates to
-                # refine around).
-                score = footprint.boundary.distance(shapely.Point(x, y))
-                if best_score is None or score > best_score:
-                    best_score = score
-                    best_node = (x, y)
-                y += step
-            x += step
-
-        if best_node is None:
+        center_region = footprint.buffer(-radius)
+        if center_region.is_empty:
             return None, None
 
-        # Local refinement around the best node.
-        fine = step / self.REFINEMENT_FRACTION
-        center_x, center_y = best_node
-        for x in np.arange(center_x - step, center_x + step + fine / 2.0, fine):
-            for y in np.arange(center_y - step, center_y + step + fine / 2.0, fine):
-                if footprint.boundary.distance(shapely.Point(x, y)) <= radius:
-                    # Deep inside the footprint is already covered by
-                    # the grid pass.
-                    continue
-                found, margin = self._is_free(x, y, z_base, footprint, obstacles)
-                if found is not None:
-                    return found, margin
+        min_x, min_y, max_x, max_y = footprint.bounds
+        # The projection box: an obstacle part farther than the radius
+        # from the footprint cannot block a placement.
+        pad = radius + 0.1
+        box = (min_x - pad, min_y - pad, max_x + pad, max_y + pad)
+        z_top = z_base + self.height
+        for obstacle in obstacles:
+            ox_min, oy_min, ox_max, oy_max = obstacle["bounds"]
+            if ox_max < box[0] or ox_min > box[2] or oy_max < box[1] or oy_min > box[3]:
+                continue
+            if (
+                obstacle["z_max"] < z_base + self.TOUCH_EPSILON
+                or obstacle["z_min"] > z_top - self.TOUCH_EPSILON
+            ):
+                continue
+            projection = self._obstacle_slab_footprint(obstacle, box, z_base)
+            if projection.is_empty:
+                continue
+            # Grown by the radius, shrunk by the touch epsilon: the
+            # tangential placements (touching allowed) stay free.
+            blocked = projection.buffer(radius - self.TOUCH_EPSILON)
+            center_region = center_region.difference(blocked)
+            if center_region.is_empty:
+                return None, None
 
-        return None, None
+        # The placement with the largest clearance: binary search the
+        # deepest erosion that keeps a non-empty region.
+        low, high = 0.0, max(max_x - min_x, max_y - min_y) / 2.0
+        for _ in range(20):
+            middle = (low + high) / 2.0
+            if center_region.buffer(-middle).is_empty:
+                high = middle
+            else:
+                low = middle
+        point = center_region.buffer(-low).representative_point()
+
+        disk = shapely.Point(point.x, point.y).buffer(radius, quad_segs=32)
+        cylinder = clash_utils.cylinder_solid(
+            point.x, point.y, z_base, radius, self.height
+        )
+        margin = self._placement_margin(cylinder, disk, footprint, obstacles)
+        return (point.x, point.y), margin
 
     def run(self):
         self.select_source.run()

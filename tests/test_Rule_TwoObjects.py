@@ -699,7 +699,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         rule = DirectView(
             window_select, window_select, wall_select,
-            ray_source="Both", ray_count=10, threshold="100%",state="Display_Result"
+            ray_source="Both", ray_count=10, threshold="100%"
         )
 
         OneRuleFile.contains = [rule]
@@ -735,7 +735,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         rule = DirectView(
             stair_select, window_select, context_select,
-            ray_source="Source", ray_count=10, threshold="100%",state="Display_Result"
+            ray_source="Source", ray_count=10, threshold="100%"
         )
 
         OneRuleFile.contains = [rule]
