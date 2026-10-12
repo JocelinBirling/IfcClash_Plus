@@ -48,3 +48,35 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 
 
 13. Faire des tests pour les règles must et les rel ABS 
+
+
+14. Law Check (moteur de loi utilisateur, règle mesurée)
+
+**Principe** : une valeur x (primitive géométrique mesurée OU propriété d'un objet)
+confrontée à une limite f(x) saisie par l'utilisateur, via une loi f définie :
+- en polynôme (coefficients a₀…a₅), OU
+
+**Composition** : x = distance, axis_distance, delta_z, angle, projected_area…
+ou property(source/target) ; y = property/quantity ; paramètres : domaine de
+validité [x_min, x_max], marge de sécurité (%), unités (normalisation SI).
+
+**Verdicts** : conforme / dépassement / hors domaine (jamais extrapolé) /
+non évaluable (propriété absente → BCF qualité, pas de faux négatif).
+
+**Sortie** : scalaire (ex. taux de charge = y / f(x)) → criticité, Must
+quantitatifs, regroupements, exceptions ; aux frontières de paliers,
+le segment le plus restrictif est retenu.
+
+**Sécurité** : évaluateur AST en whitelist (pas d'eval() brut) ;
+toutes les primitives en SI.
+
+**Presets** (catalogués avec fiche propre, implémentés sur le moteur) :
+- [ ] Weight Capacity By Distance — grutage, abaque par paliers (2 objets)
+- [ ] Entraxe max entre supports de tuyauterie : f(Ø) constructeur
+- [ ] Épaisseur d'isolant min selon diamètre : e(Ø)
+- [ ] Flèche admissible : f(L) = L/250
+
+** jalons** :
+- [ ] v1 : moteur 1-objet (y = property(source), x = propriété) + preset grutage
+- [ ] v2 : x = primitive géométrique 2-objets (portée, axis_distance)
+- [ ] v3 : Lois par morceaux (multi-segments) et Must groupés par cible

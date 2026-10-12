@@ -8,9 +8,10 @@ Usage : vérifier qu'un fauteuil roulant peut tourner dans un local (cercle de g
 
 1. For each source object (usually an IfcSpace), take its footprint: the cylinder must fit entirely inside it. The base of the cylinder sits at the lowest face of the source (the floor of the space).
 2. Build the obstacles: the objects of the Context set. Every object outside Source and Context is ignored.
-3. Search a free placement: a regular grid of candidate positions covers the footprint (automatic step, a fraction of the diameter), then a local refinement runs around the best node. The first free placement wins; the search stops there.
+3. Compute the region of the free placements: the footprint eroded by the cylinder radius (where the disk center may lie), minus the 2D projection of each obstacle clipped to the height slab of the cylinder [floor, floor + height], each projection grown by the radius. A free placement exists as soon as this region is not empty.
 4. A placement is free if the cylinder fits entirely inside the footprint and does not intersect any Context object. Touching is allowed: a distance of 0 to the footprint or to an obstacle does not fail the placement.
-5. Raise a clash for each source where no free placement is found.
+5. The reported placement is the point of the region with the largest clearance (binary search on the erosion depth of the region).
+6. Raise a clash for each source where no free placement is found.
 
 # Property
 
@@ -49,11 +50,12 @@ A stretcher must be able to maneuver in the corridors: Source = IfcSpace of the 
 
 ## Implementation notes
 
-Conventions left open by this specification, as implemented (2026-10-07):
+Conventions left open by this specification, as implemented (updated 2026-10-12):
 
 - The rule is a one-object rule with an additional Context selection (no target set): RuleCheckComplex is an unusable draft in RuleClass.py.
 - The footprint is the union of the projections of the triangles lying in the lowest slab (1 mm) of the source mesh; its base height is the floor. A source without footprint clashes.
-- Grid step: diameter / 4; refinement step: diameter / 16, around the best failing node (largest distance of the disk center to the footprint boundary). The grid starts at radius from the walls, so tangential placements (touching allowed) are actual candidates.
-- The first free placement wins and stops the search, per source.
-- An obstacle blocks a placement only when the intersection has a positive volume: tangential contacts are free.
+- The free placements are computed exactly as a 2D region (footprint eroded by the radius, minus the obstacle projections of the height slab grown by the radius), not sampled on a grid: no feasible placement, however small, can be missed. The obstacle projection of the slab is the meshed boolean intersection of the obstacle with the slab box (mesh deflection: radius / 25).
+- An obstacle blocks a placement only when the intersection has a positive volume: tangential contacts are free (the blocking zones are shrunk by a touch epsilon).
+- Obstacles are pre-filtered per source by bounding box (horizontal and vertical) before the projection is computed.
+- The reported placement is the point of the free region with the largest clearance (binary search on the erosion depth), not the first one found.
 - Free placements (position on the floor and margin) are exposed in rule.placements per source entity; only the sources without any placement raise a clash result.
