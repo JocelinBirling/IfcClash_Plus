@@ -9,11 +9,12 @@ and the spaces (target). The pairing is then exact: a window never
 belongs to a neighbor space, nor to a space on another floor.
 
 The Must check groups by target (the rule grouping, select_grouping
-"TARGET", produces one group per space) and focuses the target (the
-measured set is the other one, its windows):
-- each space must have at least 2 windows (Absolute_Number, > 2);
+"TARGET", produces one group per space): the operation names the
+measured set, here the source set (the windows of the space):
+- each space must have at least 2 windows (Absolute_Number,
+  "SOURCE>=2");
 - in each space, the summed PSet_Revit_Type_Dimensions.Height of its
-  windows must be above 3 m (Absolute_Quantity, > 3).
+  windows must be above 3 m (Absolute_Quantity, "SOURCE>3").
 
 A third test uses the entity grouping of the rule (select_grouping
 "ENTITY"): the classic grouping produces the groups instead, and each
@@ -68,9 +69,9 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # The pairing rule: one result per (window, space) pair, the
-        # window flush with the space volume. The check focuses the
-        # target (the spaces): one group per space, its windows in the
-        # source set. It runs in the Final state: a Display_Result
+        # window flush with the space volume. The Must check groups
+        # by target (the spaces): one group per space, its windows in
+        # the source set. It runs in the Final state: a Display_Result
         # state would open a viewer window and block the suite.
         source = SelectFacet()
         source.applicability = [ids.Entity(name="IFCWINDOW")]
@@ -89,8 +90,8 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
 
     @staticmethod
     def group_name(group):
-        """The name of the (single) space of one group: the check
-        focuses the target, the groups are keyed by target."""
+        """The name of the (single) space of one group: the groups
+        are keyed by target (one group per space)."""
         return next(iter(group.target_set)).Name
 
     def window_height(self, window):
@@ -101,7 +102,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         )
 
     def apply_check(self, check):
-        """Group the results by target (the focused set) and check
+        """Group the results by target (one group per space) and check
         every group."""
         self.rule.abs_or_rel_check = check
         self.assertTrue(self.rule.run_abs_or_rel())
@@ -123,9 +124,8 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
 
     def test_the_pairing_rule_produces_one_group_per_space(self):
         # 8 spaces have at least one flush window, each group holds
-        # exactly one space (the focused target).
+        # exactly one space.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
         groups = self.apply_check(check)
         self.assertEqual(len(groups), 8)
         for group in groups:
@@ -139,12 +139,10 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
             self.assertNotIn(name, names)
 
     def test_each_space_has_at_least_two_windows(self):
-        # "Each space must have at least 2 windows": focus target,
-        # one group per space, its windows (the source set) counted.
+        # "Each space must have at least 2 windows": one group per
+        # space, its windows (the source set) counted.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "SOURCE>=2"
 
         groups = self.apply_check(check)
         failing, passing = self.verdicts(groups)
@@ -164,14 +162,12 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
 
     def test_the_summed_window_height_of_each_space_is_above_three(self):
         # "In each space, the summed Height of the windows must be
-        # above 3 m": focus target, one group per space, the property
-        # summed over its windows (the source set).
+        # above 3 m": one group per space, the property summed over
+        # its windows (the source set).
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
-        check.focus = "target"
         check.quantity_pset = "PSet_Revit_Type_Dimensions"
         check.quantity_prop = "Height"
-        check.operation = ">"
-        check.aim = 3
+        check.operation = "SOURCE>3"
 
         groups = self.apply_check(check)
         failing, passing = self.verdicts(groups)
@@ -193,11 +189,9 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         # A103 holds one single window of 2.2 m: the measured quantity
         # is its height, and the comparison against 3 fails.
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
-        check.focus = "target"
         check.quantity_pset = "PSet_Revit_Type_Dimensions"
         check.quantity_prop = "Height"
-        check.operation = ">"
-        check.aim = 3
+        check.operation = "SOURCE>3"
 
         groups = self.apply_check(check)
         group = next(
@@ -216,9 +210,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         # printing the verdict of every group: a view of what the Must
         # rule produces on the model.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "SOURCE>=2"
 
         groups = self.apply_check(check)
         for group in sorted(groups, key=self.group_name):
@@ -236,7 +228,8 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         # The entity grouping of the rule (select_grouping "ENTITY"):
         # one group per entity class of the results — the windows on
         # the source side, the spaces on the target side — and each
-        # group measures its own non empty set.
+        # group measures its own non empty set: the operation adds
+        # both sides.
         source = SelectFacet()
         source.applicability = [ids.Entity(name="IFCWINDOW")]
         target = SelectFacet()
@@ -245,8 +238,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         rule = Clearance(source, target, clearance=self.CLEARANCE)
         rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "SOURCE+TARGET>=2"
         rule.abs_or_rel_check = check
 
         rule_file = RuleFile()
@@ -274,7 +266,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
     def test_group_result_content_after_a_full_must_rule_run(self):
         # The real Must path: the check is set BEFORE the run, the
         # grouping and the check happen in manage_result at the end of
-        # the rule run. Every group carries its space (the focused
+        # the rule run. Every group carries its space (the group key,
         # target), its windows (the source set), the pairing results
         # of the group and its verdict.
         source = SelectFacet()
@@ -283,13 +275,11 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         target.applicability = [ids.Entity(name="IFCSPACE")]
 
         rule = Clearance(source, target, clearance=self.CLEARANCE)
-        # The Must path: group by target (one group per space), focus
-        # the target (its windows measured).
+        # The Must path: group by target (one group per space), its
+        # windows measured through the SOURCE keyword.
         rule.select_grouping = "TARGET"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "SOURCE>=2"
         rule.abs_or_rel_check = check
 
         rule_file = RuleFile()
@@ -302,7 +292,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
 
         by_name = {}
         for group in groups:
-            # One space per group (the focused target), one pairing
+            # One space per group (the group key), one pairing
             # result per window of the group.
             self.assertEqual(len(group.target_set), 1)
             space = next(iter(group.target_set))

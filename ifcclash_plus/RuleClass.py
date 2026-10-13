@@ -1325,21 +1325,22 @@ class AbsoluteOrRelativeChecking:
     """The Must rule: an absolute or relative check of the number of
     elements or of a summed property, per group of results.
 
-    The type selects the check through eval_check: it starts with
-    "Relative" (funct 1: the source set of the group against the
-    target set, through source_operation / operation /
-    target_operation) or with "Absolute" (funct 2: the measured set of
-    the group against an aim, through operation). It ends with
-    "Number" (the check counts the elements of the sets) or with
-    "Quantity" (the check sums the property quantity_pset /
-    quantity_prop over the elements of the sets).
+    The type selects the measurement: it ends with "Number" (the
+    check counts the elements of the sets) or with "Quantity" (the
+    check sums the property quantity_pset / quantity_prop over the
+    elements of the sets). The measured sets of a group fill
+    source_number and target_number.
+
+    The operation is the comparison of the check, written with the
+    SOURCE and TARGET keywords: they are replaced by the measured
+    numbers of the group, then the operation is evaluated as the
+    verdict of the group. A relative check relates the two sets
+    ("SOURCE=2*TARGET"), an absolute check compares one set against
+    a requirement ("TARGET<=2").
 
     The grouping comes from the rule: its classic grouping
     (run_grouping, driven by select_grouping) produces the groups, or
-    one group per source object when the rule has no grouping. The
-    focus then selects the measured set of the absolute check:
-    "source" (the target set of the group is measured) or "target"
-    (its source set is measured).
+    one group per source object when the rule has no grouping.
     """
 
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
@@ -1349,19 +1350,14 @@ class AbsoluteOrRelativeChecking:
             )
         self.type = type
 
-        # The focus selects the measured set of the absolute check:
-        # the target set of the group ("source") or its source set
-        # ("target").
-        self.focus: str = "source"  # "source" or "target"
-        self.element_number = None
-        self.operation: str = ""
-        self.aim: float = 0
-
-        # The relative check: the source set against the target set.
+        # The measured numbers of the current group, filled by
+        # number() or quantity() and used by eval_check().
         self.source_number = None
         self.target_number = None
-        self.source_operation: str = ""
-        self.target_operation: str = ""
+
+        # The comparison with the SOURCE and TARGET keywords, e.g.
+        # "SOURCE=2*TARGET" or "TARGET<=2".
+        self.operation: str = None
 
         # The quantity measurement.
         self.quantity_pset: str = None
@@ -1395,11 +1391,6 @@ class AbsoluteOrRelativeChecking:
         """
         if value is None:
             return 0.0
-        if isinstance(value, str):
-            try:
-                return float(value.strip())
-            except ValueError:
-                return 0.0
         try:
             return float(value)
         except (TypeError, ValueError):
@@ -1409,8 +1400,16 @@ class AbsoluteOrRelativeChecking:
         """The summed property values of the two sets of the group.
 
         The values come in any form — a number, a number written as a
-        string or pure text — see _to_number.
+        string or pure text — see _to_number: the unmeasurable values
+        count 0, the check never fails on a value. Without a
+        quantity_pset / quantity_prop, nothing can be measured: both
+        sets count 0.
         """
+        if not self.quantity_pset or not self.quantity_prop:
+            self.source_number = 0.0
+            self.target_number = 0.0
+            return
+
         source_total = 0.0
         for entity in groupresult.source_set:
             value = get_pset(entity, name=self.quantity_pset, prop=self.quantity_prop)
@@ -1430,57 +1429,24 @@ class AbsoluteOrRelativeChecking:
         else:
             self.number(groupresult)
 
-    def absolute_check(self, groupresult: GroupResult):
-        """funct 2: the requirement of the group against the aim.
-
-        The group is keyed by one focused object; the measured set is
-        the other one (the focused set would always count 1, being
-        reduced to its own key). A group holding a single set (a one
-        object rule, or a group of the classic grouping, which fills
-        one side per group) measures that set.
-        """
-        if self.focus == "source":
-            self.element_number = (
-                self.target_number
-                if groupresult.target_set
-                else self.source_number
-            )
-        else:
-            self.element_number = (
-                self.source_number
-                if groupresult.source_set
-                else self.target_number
-            )
-
-        operation_string = str(self.element_number) + str(self.operation) + str(self.aim)
-
-        groupresult.abs_or_rel_check = eval(operation_string)
-
-        return groupresult
-
-    def relative_check(self, groupresult: GroupResult):
-        """funct 1: the source set of the group against the target
-        set."""
-        source_string = str(self.source_number) + self.source_operation
-        target_string = str(self.target_number) + self.target_operation
-
-        source_quantity = eval(source_string)
-        target_quantity = eval(target_string)
-
-        operation_string = str(source_quantity) + self.operation + str(target_quantity)
-
-        groupresult.abs_or_rel_check = eval(operation_string)
-
-        return groupresult
-
     def eval_check(self, groupresult: GroupResult):
-        """The check selected by the type: Relative (funct 1) or
-        Absolute (funct 2)."""
+        """The verdict of the group: the operation with the SOURCE and
+        TARGET keywords replaced by the measured numbers of the group.
+
+        A relative operation compares the two sets ("SOURCE=2*TARGET"),
+        an absolute one only names the measured set ("TARGET<=2").
+        """
         self._measure(groupresult)
 
-        if self.type.startswith("Relative"):
-            return self.relative_check(groupresult)
-        return self.absolute_check(groupresult)
+        operation_string = (
+            str(self.operation)
+            .replace("SOURCE", str(self.source_number))
+            .replace("TARGET", str(self.target_number))
+        )
+
+        groupresult.abs_or_rel_check = eval(operation_string)
+
+        return groupresult
 
 
 # ==== Clash Result

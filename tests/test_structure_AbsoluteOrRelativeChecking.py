@@ -1,18 +1,21 @@
 """
 Test suite for the AbsoluteOrRelativeChecking class of RuleClass.py
-(the Must rules of doc/Rule.md): the run loop, the type dispatch
-between the absolute check (funct 2) and the relative check (funct 1),
-the number and quantity measurements on GroupResult fixtures, and the
-run_abs_or_rel wiring of the two rule base classes.
+(the Must rules of doc/Rule.md): the run loop, the number and quantity
+measurements on GroupResult fixtures, the operation with the SOURCE
+and TARGET keywords, and the run_abs_or_rel wiring of the two rule
+base classes.
 
 The check groups the results of its rule through run: the classic
 grouping of the rule (run_grouping, driven by select_grouping) when it
 has one, one group per source object by default otherwise.
 
-The type selects the check: "Absolute_..." compares the focused set of
-a group against an aim, "Relative_..." compares the source set against
-the target set; "_Number" counts the elements of the sets, "_Quantity"
-sums a property over them. The quantity tests need real IFC entities
+The type selects the measurement: "_Number" counts the elements of
+the sets, "_Quantity" sums a property over them. The measured sets
+fill source_number and target_number, then the operation — written
+with the SOURCE and TARGET keywords — is evaluated as the verdict of
+the group: a relative operation relates the two sets
+("SOURCE=2*TARGET"), an absolute one compares a single set against a
+requirement ("TARGET>=2"). The quantity tests need real IFC entities
 to read a property: the three elements of the in-memory fixture each
 carry a Pset_Test/Value of 2.5 (no geometry).
 
@@ -130,20 +133,20 @@ class SpyChecking(AbsoluteOrRelativeChecking):
         return groupresult
 
 
-class DispatchSpy(AbsoluteOrRelativeChecking):
-    """A check recording which of the two functions the type selects."""
+class MeasureSpy(AbsoluteOrRelativeChecking):
+    """A check recording which measurement the type selects."""
 
     def __init__(self, type_name):
         super().__init__(type_name)
         self.called = []
 
-    def absolute_check(self, groupresult):
-        self.called.append("absolute")
-        return groupresult
+    def number(self, groupresult):
+        self.called.append("number")
+        return super().number(groupresult)
 
-    def relative_check(self, groupresult):
-        self.called.append("relative")
-        return groupresult
+    def quantity(self, groupresult):
+        self.called.append("quantity")
+        return super().quantity(groupresult)
 
 
 class TestBase(unittest.TestCase):
@@ -151,17 +154,12 @@ class TestBase(unittest.TestCase):
 
     def test_defaults(self):
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        # The focus selects the measured set of the absolute check.
-        self.assertEqual(check.focus, "source")
-        # The absolute check fields.
-        self.assertIsNone(check.element_number)
-        self.assertEqual(check.operation, "")
-        self.assertEqual(check.aim, 0)
-        # The relative check fields.
+        self.assertEqual(check.type, "Absolute_Number")
+        # The measured numbers of the current group.
         self.assertIsNone(check.source_number)
         self.assertIsNone(check.target_number)
-        self.assertEqual(check.source_operation, "")
-        self.assertEqual(check.target_operation, "")
+        # The comparison with the SOURCE and TARGET keywords.
+        self.assertIsNone(check.operation)
         # The quantity measurement fields.
         self.assertIsNone(check.quantity_pset)
         self.assertIsNone(check.quantity_prop)
@@ -262,38 +260,63 @@ class TestMeasurements(unittest.TestCase):
         self.assertAlmostEqual(to_number(2), 2.0)
         self.assertAlmostEqual(to_number("1.5"), 1.5)
         self.assertAlmostEqual(to_number(" 2.5 "), 2.5)
+        self.assertAlmostEqual(to_number("-1.5"), -1.5)
+        # Pure text and an empty value cannot be converted: they
+        # count 0.
         self.assertEqual(to_number("Béton"), 0.0)
         self.assertEqual(to_number(""), 0.0)
+        self.assertEqual(to_number("2.5 m"), 0.0)
+        self.assertEqual(to_number("2,5"), 0.0)
         self.assertEqual(to_number(None), 0.0)
         self.assertEqual(to_number(True), 1.0)
 
+    def test_quantity_without_a_configured_property_counts_zero(self):
+        # Without a quantity_pset / quantity_prop, nothing can be
+        # measured: both sets count 0 instead of failing.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        group = GroupResult()
+        for element in ifc_elements():
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        check.quantity(group)
+        self.assertEqual(check.source_number, 0.0)
+        self.assertEqual(check.target_number, 0.0)
+
 
 class TestTypeDispatch(unittest.TestCase):
-    """The selection function of eval_check: Relative (funct 1) or
-    Absolute (funct 2), from the type name."""
+    """The measurement selected by eval_check from the type name:
+    Number (the element counts of the sets) or Quantity (the summed
+    property over them)."""
 
-    def test_absolute_type_selects_the_absolute_check(self):
-        check = DispatchSpy("Absolute_Number")
-        check.eval_check(make_group(2))
-        self.assertEqual(check.called, ["absolute"])
-
-    def test_relative_type_selects_the_relative_check(self):
-        check = DispatchSpy("Relative_Number")
+    def test_number_type_counts_the_elements(self):
+        check = MeasureSpy("Absolute_Number")
+        check.operation = "TARGET>=2"
         check.eval_check(make_group(2, 1))
-        self.assertEqual(check.called, ["relative"])
+        self.assertEqual(check.called, ["number"])
+
+    def test_quantity_type_sums_the_property(self):
+        check = MeasureSpy("Relative_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = "SOURCE>=TARGET"
+        group = GroupResult()
+        elements = ifc_elements()
+        for element in elements[:2]:
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        group.add_target(
+            ClashResultTwoObjects(source=elements[2], target=elements[2], state=True)
+        )
+        check.eval_check(group)
+        self.assertEqual(check.called, ["quantity"])
 
 
 class TestAbsoluteCheck(unittest.TestCase):
-    """The requirement of each focused group against the aim (funct 2).
-
-    The group is keyed by one focused object; the measured set is the
-    other one — the focused set of a group is reduced to its own key.
-    """
+    """The absolute operation: a single measured set of the group
+    compared against a requirement ("TARGET>=3" measures the target
+    set of the group, "SOURCE>=3" its source set)."""
 
     @staticmethod
     def target_group(elements):
-        """A group whose target set holds the elements (the source is
-        the focused object)."""
+        """A group whose target set holds the elements."""
         group = GroupResult()
         for element in elements:
             group.add_target(
@@ -303,81 +326,70 @@ class TestAbsoluteCheck(unittest.TestCase):
 
     @staticmethod
     def source_group(elements):
-        """A group whose source set holds the elements (the target is
-        the focused object)."""
+        """A group whose source set holds the elements."""
         group = GroupResult()
         for element in elements:
             group.add_source(ClashResultOneObject(source=element, state=True))
         return group
 
-    def test_number_measures_the_targets_of_a_source_focused_group(self):
-        # Focus on the source: the group is keyed by the source, its
-        # requirement is measured on the target set. 3 >= 3 is True.
+    def test_number_measures_the_targets_of_the_group(self):
+        # "Each source must have at least 3 targets": the group holds
+        # 1 source and 3 targets, 3 >= 3 is True.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 3
+        check.operation = "TARGET>=3"
         group = make_group(nb_source=1, nb_target=3)
         check.eval_check(group)
-        self.assertEqual(check.element_number, 3)
+        self.assertEqual(check.target_number, 3)
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_number_below_the_aim(self):
-        # "Each focused object must have at least 3 targets": 2 >= 3
-        # is False.
+    def test_number_below_the_requirement(self):
+        # "Each source must have at least 3 targets": 2 >= 3 is False.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 3
+        check.operation = "TARGET>=3"
         group = make_group(nb_source=1, nb_target=2)
         check.eval_check(group)
         self.assertFalse(group.abs_or_rel_check)
 
-    def test_number_focus_target_measures_the_sources(self):
-        # Focus on the target: the group is keyed by the target, its
-        # requirement is measured on the source set. 3 == 3 is True.
+    def test_number_measures_the_sources_of_the_group(self):
+        # "Each target must relate to exactly 3 sources": 3 == 3 is
+        # True.
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = "=="
-        check.aim = 3
+        check.operation = "SOURCE==3"
         group = make_group(nb_source=3, nb_target=1)
         check.eval_check(group)
-        self.assertEqual(check.element_number, 3)
+        self.assertEqual(check.source_number, 3)
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_quantity_sums_the_targets_of_a_source_focused_group(self):
+    def test_quantity_sums_the_targets_of_the_group(self):
         # Three elements at 2.5 each in the target set: 7.5 >= 5 is
         # True, the sum is really accumulated.
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
         check.quantity_pset = "Pset_Test"
         check.quantity_prop = "Value"
-        check.operation = ">="
-        check.aim = 5
+        check.operation = "TARGET>=5"
         group = self.target_group(ifc_elements())
         check.eval_check(group)
-        self.assertAlmostEqual(check.element_number, 7.5)
+        self.assertAlmostEqual(check.target_number, 7.5)
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_quantity_below_the_aim(self):
+    def test_quantity_below_the_requirement(self):
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
         check.quantity_pset = "Pset_Test"
         check.quantity_prop = "Value"
-        check.operation = ">="
-        check.aim = 8
+        check.operation = "TARGET>=8"
         group = self.target_group(ifc_elements())
         check.eval_check(group)
         self.assertFalse(group.abs_or_rel_check)
 
-    def test_quantity_focus_target_sums_the_sources(self):
-        # Focus on the target: the property is summed over the source
-        # set of the group.
+    def test_quantity_sums_the_sources_of_the_group(self):
+        # The property is summed over the source set of the group.
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
-        check.focus = "target"
         check.quantity_pset = "Pset_Test"
         check.quantity_prop = "Value"
-        check.operation = ">="
-        check.aim = 5
+        check.operation = "SOURCE>=5"
         group = self.source_group(ifc_elements())
         check.eval_check(group)
-        self.assertAlmostEqual(check.element_number, 7.5)
+        self.assertAlmostEqual(check.source_number, 7.5)
         self.assertTrue(group.abs_or_rel_check)
 
     def test_quantity_on_non_numeric_values_reaches_the_comparison(self):
@@ -386,24 +398,22 @@ class TestAbsoluteCheck(unittest.TestCase):
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
         check.quantity_pset = "Pset_Text"
         check.quantity_prop = "Value"
-        check.operation = ">="
-        check.aim = 1
+        check.operation = "TARGET>=1"
         group = self.target_group(ifc_text_elements())
         check.eval_check(group)
-        self.assertAlmostEqual(check.element_number, 1.5)
+        self.assertAlmostEqual(check.target_number, 1.5)
         self.assertTrue(group.abs_or_rel_check)
 
     def test_one_object_group_measures_its_own_set(self):
         # A group holding a single set (a one object rule) measures
-        # that set: the own property of the focused object.
+        # that set: its own property.
         check = AbsoluteOrRelativeChecking("Absolute_Quantity")
         check.quantity_pset = "Pset_Test"
         check.quantity_prop = "Value"
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "SOURCE>=2"
         group = self.source_group(ifc_elements()[:1])
         check.eval_check(group)
-        self.assertAlmostEqual(check.element_number, 2.5)
+        self.assertAlmostEqual(check.source_number, 2.5)
         self.assertTrue(group.abs_or_rel_check)
 
     def test_run_checks_every_group(self):
@@ -424,21 +434,29 @@ class TestAbsoluteCheck(unittest.TestCase):
             ),
         ]
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 2
+        check.operation = "TARGET>=2"
         check.run(rule)
         self.assertTrue(rule.grouped_result[0].abs_or_rel_check)
         self.assertFalse(rule.grouped_result[1].abs_or_rel_check)
 
 
-class TestRelativeCheck(unittest.TestCase):
-    """The source set of the group against the target set (funct 1)."""
+class TestRelativeOperation(unittest.TestCase):
+    """The relative operation: the source set of the group against its
+    target set, both named in the operation."""
 
     def test_number_compares_both_sets(self):
-        # "At least twice more sources than targets": 3*2 >= 2 is True.
+        # "At least twice more sources than targets": 3 >= 2*2 is
+        # False, the relation is not reached.
         check = AbsoluteOrRelativeChecking("Relative_Number")
-        check.source_operation = "*2"
-        check.operation = ">="
+        check.operation = "SOURCE>=2*TARGET"
+        group = make_group(nb_source=3, nb_target=2)
+        check.eval_check(group)
+        self.assertFalse(group.abs_or_rel_check)
+
+    def test_number_compares_both_sets_passing(self):
+        # "At least as many sources as targets": 3 >= 2 is True.
+        check = AbsoluteOrRelativeChecking("Relative_Number")
+        check.operation = "SOURCE>=TARGET"
         group = make_group(nb_source=3, nb_target=2)
         check.eval_check(group)
         self.assertTrue(group.abs_or_rel_check)
@@ -446,28 +464,27 @@ class TestRelativeCheck(unittest.TestCase):
     def test_number_below_the_relation(self):
         # "At least as many sources as targets": 1 >= 2 is False.
         check = AbsoluteOrRelativeChecking("Relative_Number")
-        check.operation = ">="
+        check.operation = "SOURCE>=TARGET"
         group = make_group(nb_source=1, nb_target=2)
         check.eval_check(group)
         self.assertFalse(group.abs_or_rel_check)
 
-    def test_number_with_a_target_operation(self):
+    def test_number_with_an_operation_on_the_target_side(self):
         # "The source count must be at least half the target count":
-        # 2 >= 2 (4/2) is True.
+        # 2 >= 4/2 is True.
         check = AbsoluteOrRelativeChecking("Relative_Number")
-        check.target_operation = "/2"
-        check.operation = ">="
+        check.operation = "SOURCE>=TARGET/2"
         group = make_group(nb_source=2, nb_target=4)
         check.eval_check(group)
         self.assertTrue(group.abs_or_rel_check)
 
     def test_quantity_relates_the_two_sums(self):
         # The summed property of the source set against the target
-        # set: 7.5 >= 5.0 is True.
+        # set: 5.0 >= 2.5 is True.
         check = AbsoluteOrRelativeChecking("Relative_Quantity")
         check.quantity_pset = "Pset_Test"
         check.quantity_prop = "Value"
-        check.operation = ">="
+        check.operation = "SOURCE>=TARGET"
         group = GroupResult()
         elements = ifc_elements()
         for element in elements[:2]:
@@ -502,8 +519,7 @@ class TestMustRuleWiring(unittest.TestCase):
             for element in ifc_elements()
         ]
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 1
+        check.operation = "SOURCE>=1"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -521,8 +537,7 @@ class TestMustRuleWiring(unittest.TestCase):
         ]
         rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 3
+        check.operation = "SOURCE>=3"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -547,8 +562,7 @@ class TestMustRuleWiring(unittest.TestCase):
             ),
         ]
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = "=="
-        check.aim = 2
+        check.operation = "TARGET==2"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -561,8 +575,8 @@ class TestMustRuleWiring(unittest.TestCase):
     def test_two_objects_target_grouping_groups_by_target(self):
         # A target grouping of the rule (select_grouping "TARGET"):
         # one group per target object, the sources of its results in
-        # the source set of the group, measured by the check focused
-        # on the target.
+        # the source set of the group, measured by the operation
+        # naming the source side.
         rule = Intersection(SelectFacet(), SelectFacet())
         elements = ifc_elements()
         rule.result = [
@@ -575,9 +589,7 @@ class TestMustRuleWiring(unittest.TestCase):
         ]
         rule.select_grouping = "TARGET"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = "=="
-        check.aim = 2
+        check.operation = "SOURCE==2"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -596,8 +608,7 @@ class TestMustRuleWiring(unittest.TestCase):
             for element in ifc_elements()
         ]
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.operation = ">="
-        check.aim = 1
+        check.operation = "SOURCE>=1"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -622,9 +633,7 @@ class TestMustRuleWiring(unittest.TestCase):
         ]
         rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "target"
-        check.operation = "=="
-        check.aim = 1
+        check.operation = "SOURCE==1"
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
@@ -635,9 +644,8 @@ class TestMustRuleWiring(unittest.TestCase):
         group = rule.grouped_result[0]
         self.assertEqual(group.source_set, {elements[0]})
         self.assertEqual(group.target_set, {elements[1], elements[2]})
-        # The group measures its source set: the focused target group
-        # measures the sources.
-        self.assertEqual(check.element_number, 1)
+        # The operation measures the source set of the group.
+        self.assertEqual(check.source_number, 1)
         self.assertTrue(group.abs_or_rel_check)
 
     def test_two_objects_uses_the_classic_grouping_of_the_rule(self):

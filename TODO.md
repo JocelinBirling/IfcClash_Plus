@@ -23,12 +23,6 @@ For a wall, this can lead to errors. When a wall is taller than it is long, this
 7. Study the implementation in ifcclash
 
 
-9. Refactor Face Display
-Now, a lot of rule can return a triangle (or a face), from the execution. 
-It would be usefull to refactor this fonction to display the result.
-We could have a viewer to display a point, an edge, a face, or an OBB.
-It should be able to display a specific color as well.
-
 10. Etat des lieux des résultats
 Quels sont les données de sorties pour chacune des règles ?
 Il faut uniformiser les possibilités de sorties de chaque règle, afin d'en faciliter l'affichage.
@@ -45,13 +39,12 @@ Toutes les fonctions ne pourraient pas en bénéficier. On peut cependant rapide
 Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bons.
 
 
-13. Faire des tests pour les règles must et les rel ABS 
-
 14. Faire une règle qui vient rechercher les objets les plus proches. => Plutôt une exception ?
 
-15. Faire une règle d'inclusion dans un étage ou un batiment. 
-Dans les Must Rule, je fais le focus soit sur la source ou bien la target. Cela permet uniquement de faire un rassemblement 1 à X.
+15. Faire la règle quality check for One Object
+16. Faire la règle StairQuality
+17. Faire la règle Stability
+18. 
 
-16. Supprimer le run_group dans le rule Check.
-Il faut également ajouter au run_grouping() le cas de figure =Source et =Target pour la TwoRule.
+
 

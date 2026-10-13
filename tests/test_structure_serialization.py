@@ -125,9 +125,7 @@ class TestSerializationRoundTrip(unittest.TestCase):
 
         # Absolute checking on the intersection rule
         abs_check = AbsoluteOrRelativeChecking("Absolute_Number")
-        abs_check.focus = "source"
-        abs_check.operation = ">="
-        abs_check.aim = 1
+        abs_check.operation = "TARGET>=1"
         intersection_rule.abs_or_rel_check = abs_check
 
         # SelectRule chaining the volume rule
@@ -220,9 +218,7 @@ class TestSerializationRoundTrip(unittest.TestCase):
         check = loaded.contains[0].abs_or_rel_check
         self.assertIsInstance(check, AbsoluteOrRelativeChecking)
         self.assertEqual(check.type, "Absolute_Number")
-        self.assertEqual(check.focus, "source")
-        self.assertEqual(check.operation, ">=")
-        self.assertEqual(check.aim, 1)
+        self.assertEqual(check.operation, "TARGET>=1")
 
     def test_string_exception_roundtrip(self):
         wall_select = SelectFacet()

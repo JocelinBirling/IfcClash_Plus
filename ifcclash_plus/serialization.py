@@ -313,13 +313,9 @@ def serialize_abs_or_rel_check(check) -> Dict[str, Any]:
     return {
         "class": type(check).__name__,
         "check_type": check.type,
-        "focus": check.focus,
         "quantity_pset": check.quantity_pset,
         "quantity_prop": check.quantity_prop,
         "operation": check.operation,
-        "aim": check.aim,
-        "source_operation": check.source_operation,
-        "target_operation": check.target_operation,
     }
 
 
@@ -328,8 +324,10 @@ def deserialize_abs_or_rel_check(data: Dict[str, Any]):
     Deserialize an AbsoluteOrRelativeChecking.
 
     The checks used to be two classes (AbsoluteChecking,
-    RelativeChecking): their names are still accepted, the missing
-    fields fall back to the defaults of the merged class.
+    RelativeChecking) and carried separate focus / aim /
+    source_operation / target_operation fields: the old names are
+    still accepted, their fields are merged into the new operation
+    ("SOURCE=2*TARGET" or "TARGET<=2").
 
     Args:
         data: Dictionary representation, or None
@@ -352,13 +350,25 @@ def deserialize_abs_or_rel_check(data: Dict[str, Any]):
         raise ValueError(f"Unknown check class: {class_name}")
 
     check = AbsoluteOrRelativeChecking(data["check_type"])
-    check.focus = data.get("focus", "source")
     check.quantity_pset = data.get("quantity_pset")
     check.quantity_prop = data.get("quantity_prop")
-    check.operation = data.get("operation", "")
-    check.aim = data.get("aim", 0)
-    check.source_operation = data.get("source_operation", "")
-    check.target_operation = data.get("target_operation", "")
+    check.operation = data.get("operation")
+
+    # The old format: no SOURCE or TARGET keyword in the operation,
+    # the comparison was split into focus / operation / aim (absolute)
+    # or source_operation / operation / target_operation (relative).
+    if check.operation is not None and not (
+        "SOURCE" in check.operation or "TARGET" in check.operation
+    ):
+        if data["check_type"].startswith("Relative"):
+            check.operation = (
+                f"SOURCE{data.get('source_operation', '')}"
+                f"{data.get('operation', '')}"
+                f"TARGET{data.get('target_operation', '')}"
+            )
+        else:
+            measured = "TARGET" if data.get("focus", "source") == "source" else "SOURCE"
+            check.operation = f"{measured}{data.get('operation', '')}{data.get('aim', 0)}"
 
     return check
 
