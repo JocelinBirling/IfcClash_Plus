@@ -52,4 +52,6 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 15. Faire une règle d'inclusion dans un étage ou un batiment. 
 Dans les Must Rule, je fais le focus soit sur la source ou bien la target. Cela permet uniquement de faire un rassemblement 1 à X.
 
-Si 
+16. Supprimer le run_group dans le rule Check.
+Il faut également ajouter au run_grouping() le cas de figure =Source et =Target pour la TwoRule.
+

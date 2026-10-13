@@ -451,27 +451,12 @@ class RuleCheck:
         print("Reuse Ifcopenshell")
 
     def group_by_source(self):
-        """The Must check grouping focused on the source: one group
-        per source object."""
-        self._group_abs_or_rel("source")
-
-    def group_by_target(self):
-        """The Must check grouping focused on the target: one group
-        per target object."""
-        self._group_abs_or_rel("target")
-
-    def _group_abs_or_rel(self, focus):
-        """The Must check grouping: one group per object of the
-        focused set (source or target).
-
-        This is the grouping of the abs_or_rel check, whatever the
-        classic grouping configured on the rule: run_grouping (driven
-        by select_grouping) is a separate feature, never triggered by
-        the Must check.
-        """
+        """The default Must check grouping: one group per source
+        object, the targets of its results in the target set of the
+        group."""
         group_dict = {}
         for result in self.result:
-            key = result.source if focus == "source" else getattr(result, "target", None)
+            key = result.source
             if key is None:
                 continue
             if key not in group_dict:
@@ -771,19 +756,11 @@ class RuleCheckOneObject(RuleCheck):
         if self.abs_or_rel_check is None:
             return None
 
-        # The Must check groups by the focused set of the check: the
-        # classic grouping of the rule (run_grouping, driven by
-        # select_grouping) when it focuses "by_grouping", one group
-        # per source object otherwise (a one object rule has no
-        # target).
-        if self.abs_or_rel_check.focus == "by_grouping":
-            # The classic grouping accumulates: reset before grouping.
-            self.grouped_result = []
-            self.run_grouping()
-        else:
-            self.group_by_source()
-
-        self.abs_or_rel_check.run(self.grouped_result)
+        # The Must check groups the results of the rule itself: its
+        # classic grouping (run_grouping, driven by select_grouping),
+        # or one group per source object when it has no grouping (a
+        # one object rule has no target).
+        self.abs_or_rel_check.run(self)
 
         return True
 
@@ -1134,21 +1111,10 @@ class RuleCheckTwoObjects(RuleCheck):
         if self.abs_or_rel_check is None:
             return None
 
-        # The Must check groups by the focused set of the check: the
-        # classic grouping of the rule (run_grouping, driven by
-        # select_grouping) when it focuses "by_grouping", one group
-        # per target object when it focuses the target, one group per
-        # source object otherwise.
-        if self.abs_or_rel_check.focus == "by_grouping":
-            # The classic grouping accumulates: reset before grouping.
-            self.grouped_result = []
-            self.run_grouping()
-        elif self.abs_or_rel_check.focus == "target":
-            self.group_by_target()
-        else:
-            self.group_by_source()
-
-        self.abs_or_rel_check.run(self.grouped_result)
+        # The Must check groups the results of the rule itself: its
+        # classic grouping (run_grouping, driven by select_grouping),
+        # or one group per source object when it has no grouping.
+        self.abs_or_rel_check.run(self)
 
         return True
 
@@ -1368,12 +1334,12 @@ class AbsoluteOrRelativeChecking:
     "Quantity" (the check sums the property quantity_pset /
     quantity_prop over the elements of the sets).
 
-    The focus selects the grouping: "source" (each source object
-    carries the requirement, one group per source object, the target
-    set measured), "target" (the same, focused on the target objects)
-    or "by_grouping" (the classic grouping of the rule, driven by
-    its select_grouping, produces the groups; a group measures its
-    own non empty set).
+    The grouping comes from the rule: its classic grouping
+    (run_grouping, driven by select_grouping) produces the groups, or
+    one group per source object when the rule has no grouping. The
+    focus then selects the measured set of the absolute check:
+    "source" (the target set of the group is measured) or "target"
+    (its source set is measured).
     """
 
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
@@ -1383,11 +1349,10 @@ class AbsoluteOrRelativeChecking:
             )
         self.type = type
 
-        # The focus selects the grouping: the objects of the focused
-        # set each carry the requirement (one group per object, the
-        # other set measured), or the classic grouping of the rule
-        # produces the groups ("by_grouping").
-        self.focus: str = "source"  # "source", "target" or "by_grouping"
+        # The focus selects the measured set of the absolute check:
+        # the target set of the group ("source") or its source set
+        # ("target").
+        self.focus: str = "source"  # "source" or "target"
         self.element_number = None
         self.operation: str = ""
         self.aim: float = 0
@@ -1402,8 +1367,17 @@ class AbsoluteOrRelativeChecking:
         self.quantity_pset: str = None
         self.quantity_prop: str = None
 
-    def run(self, list_of_result: list[GroupResult]):
-        for onegroupresult in list_of_result:
+    def run(self, rule):
+        """The check of the results of a rule, grouped by the
+        grouping of the rule: run_grouping (driven by
+        select_grouping), or one group per source object when the
+        rule has no grouping (or its grouping produces no group)."""
+        rule.grouped_result = []
+        rule.run_grouping()
+        if not rule.grouped_result:
+            rule.group_by_source()
+
+        for onegroupresult in rule.grouped_result:
             self.eval_check(onegroupresult)
 
     def number(self, groupresult: GroupResult):

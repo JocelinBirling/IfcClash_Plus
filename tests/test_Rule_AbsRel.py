@@ -8,15 +8,16 @@ it lights, less than a centimeter away) between the windows (source)
 and the spaces (target). The pairing is then exact: a window never
 belongs to a neighbor space, nor to a space on another floor.
 
-The Must check focuses the target (the spaces): each space forms one
-group, and the measured set is the other one, its windows:
+The Must check groups by target (the rule grouping, select_grouping
+"TARGET", produces one group per space) and focuses the target (the
+measured set is the other one, its windows):
 - each space must have at least 2 windows (Absolute_Number, > 2);
 - in each space, the summed PSet_Revit_Type_Dimensions.Height of its
   windows must be above 3 m (Absolute_Quantity, > 3).
 
-A third test uses the "by_grouping" focus: the classic grouping of the
-rule (select_grouping) produces the groups instead, and each group
-measures its own non empty set.
+A third test uses the entity grouping of the rule (select_grouping
+"ENTITY"): the classic grouping produces the groups instead, and each
+group measures its own non empty set.
 
 The expected verdicts are the ones of the model: 8 spaces hold at
 least one flush window; the two single window spaces (A103, B103)
@@ -77,6 +78,9 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         target.applicability = [ids.Entity(name="IFCSPACE")]
 
         cls.rule = Clearance(source, target, clearance=cls.CLEARANCE)
+        # The Must check groups by target: one group per space, its
+        # windows in the source set.
+        cls.rule.select_grouping = "TARGET"
 
         rule_file = RuleFile()
         rule_file.list_ifc_path = [cls.MODEL]
@@ -229,11 +233,10 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         self.assertEqual(len(passing), 6)
 
     def test_by_grouping_checks_the_entity_classes_of_the_pairing(self):
-        # Focus "by_grouping": the groups come from the classic
-        # grouping of the rule (here ENTITY, one group per entity
-        # class of the results — the windows on the source side, the
-        # spaces on the target side), and each group measures its own
-        # non empty set.
+        # The entity grouping of the rule (select_grouping "ENTITY"):
+        # one group per entity class of the results — the windows on
+        # the source side, the spaces on the target side — and each
+        # group measures its own non empty set.
         source = SelectFacet()
         source.applicability = [ids.Entity(name="IFCWINDOW")]
         target = SelectFacet()
@@ -242,7 +245,6 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         rule = Clearance(source, target, clearance=self.CLEARANCE)
         rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "by_grouping"
         check.operation = ">="
         check.aim = 2
         rule.abs_or_rel_check = check
@@ -281,6 +283,9 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         target.applicability = [ids.Entity(name="IFCSPACE")]
 
         rule = Clearance(source, target, clearance=self.CLEARANCE)
+        # The Must path: group by target (one group per space), focus
+        # the target (its windows measured).
+        rule.select_grouping = "TARGET"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
         check.focus = "target"
         check.operation = ">="

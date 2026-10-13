@@ -5,6 +5,10 @@ between the absolute check (funct 2) and the relative check (funct 1),
 the number and quantity measurements on GroupResult fixtures, and the
 run_abs_or_rel wiring of the two rule base classes.
 
+The check groups the results of its rule through run: the classic
+grouping of the rule (run_grouping, driven by select_grouping) when it
+has one, one group per source object by default otherwise.
+
 The type selects the check: "Absolute_..." compares the focused set of
 a group against an aim, "Relative_..." compares the source set against
 the target set; "_Number" counts the elements of the sets, "_Quantity"
@@ -147,7 +151,7 @@ class TestBase(unittest.TestCase):
 
     def test_defaults(self):
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        # The focus selects the grouping.
+        # The focus selects the measured set of the absolute check.
         self.assertEqual(check.focus, "source")
         # The absolute check fields.
         self.assertIsNone(check.element_number)
@@ -180,14 +184,23 @@ class TestBase(unittest.TestCase):
                     AbsoluteOrRelativeChecking(bad_type)
 
     def test_run_evaluates_every_group_once(self):
+        # The check groups the results of the rule: without a
+        # select_grouping, one group per source object.
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = [
+            ClashResultOneObject(source=element, state=True)
+            for element in ifc_elements()
+        ]
         check = SpyChecking()
-        groups = [make_group(2), make_group(3), make_group(1, 1)]
-        check.run(groups)
-        self.assertEqual(check.evaluated, groups)
+        check.run(rule)
+        self.assertEqual(check.evaluated, rule.grouped_result)
+        self.assertEqual(len(check.evaluated), 3)
 
-    def test_run_on_empty_list_evaluates_nothing(self):
+    def test_run_on_a_rule_without_result_evaluates_nothing(self):
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = []
         check = SpyChecking()
-        check.run([])
+        check.run(rule)
         self.assertEqual(check.evaluated, [])
 
 
@@ -394,14 +407,28 @@ class TestAbsoluteCheck(unittest.TestCase):
         self.assertTrue(group.abs_or_rel_check)
 
     def test_run_checks_every_group(self):
-        # The run() loop reaches the comparison of every group.
+        # The run() loop reaches the comparison of every group: the
+        # first source holds two targets (2 >= 2 is True), the second
+        # one (1 >= 2 is False).
+        rule = Intersection(SelectFacet(), SelectFacet())
+        elements = ifc_elements()
+        rule.result = [
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[1], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[2], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[1], target=elements[2], state=True
+            ),
+        ]
         check = AbsoluteOrRelativeChecking("Absolute_Number")
         check.operation = ">="
         check.aim = 2
-        groups = [make_group(1, 3), make_group(1, 1)]
-        check.run(groups)
-        self.assertTrue(groups[0].abs_or_rel_check)
-        self.assertFalse(groups[1].abs_or_rel_check)
+        check.run(rule)
+        self.assertTrue(rule.grouped_result[0].abs_or_rel_check)
+        self.assertFalse(rule.grouped_result[1].abs_or_rel_check)
 
 
 class TestRelativeCheck(unittest.TestCase):
@@ -456,8 +483,9 @@ class TestRelativeCheck(unittest.TestCase):
 
 class TestMustRuleWiring(unittest.TestCase):
     """The run_abs_or_rel entry points of the two rule base classes:
-    the grouping by source of the results, then the check of every
-    group."""
+    the check groups the results through the grouping of the rule
+    (run_grouping, driven by select_grouping), or by source when the
+    rule has no grouping, then checks every group."""
 
     def test_no_check_returns_none(self):
         rule_one = Volume(SelectFacet(), 0, 10)
@@ -466,7 +494,8 @@ class TestMustRuleWiring(unittest.TestCase):
         self.assertIsNone(rule_two.run_abs_or_rel())
 
     def test_one_object_checks_one_group_per_source(self):
-        # Each source object forms its own group, checked separately.
+        # Without a select_grouping, the default grouping: each source
+        # object forms its own group, checked separately.
         rule = Volume(SelectFacet(), 0, 10)
         rule.result = [
             ClashResultOneObject(source=element, state=True)
@@ -481,29 +510,32 @@ class TestMustRuleWiring(unittest.TestCase):
         self.assertEqual(len(rule.grouped_result), 3)
         self.assertTrue(all(group.abs_or_rel_check for group in rule.grouped_result))
 
-    def test_one_object_must_grouping_ignores_the_classic_grouping(self):
-        # The classic grouping (run_grouping, driven by select_grouping)
-        # is a separate feature: even with an entity grouping
-        # configured, the Must check groups by source.
+    def test_one_object_uses_the_classic_grouping_of_the_rule(self):
+        # With a select_grouping, the Must check groups through the
+        # classic grouping of the rule: an entity grouping gives one
+        # group per entity class holding the three sources.
         rule = Volume(SelectFacet(), 0, 10)
         rule.result = [
             ClashResultOneObject(source=element, state=True)
             for element in ifc_elements()
         ]
-        rule.select_grouping = "ENTITY"  # would give one single group
+        rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
         check.operation = ">="
-        check.aim = 1
+        check.aim = 3
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
-        # Three groups by source, not one group by entity class.
-        self.assertEqual(len(rule.grouped_result), 3)
+        # One group per entity class: the three elements share one.
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(len(group.source_set), 3)
+        self.assertTrue(group.abs_or_rel_check)
 
     def test_two_objects_checks_one_group_per_source(self):
-        # Focus on the source: one group per source object, the
-        # targets of its results in the target set of the group,
-        # measured by the check.
+        # Without a select_grouping, the default grouping: one group
+        # per source object, the targets of its results in the target
+        # set of the group, measured by the check.
         rule = Intersection(SelectFacet(), SelectFacet())
         elements = ifc_elements()
         rule.result = [
@@ -526,10 +558,11 @@ class TestMustRuleWiring(unittest.TestCase):
         self.assertEqual(group.target_set, {elements[1], elements[2]})
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_two_objects_focus_target_groups_by_target(self):
-        # Focus on the target: one group per target object, the
-        # sources of its results in the source set of the group,
-        # measured by the check.
+    def test_two_objects_target_grouping_groups_by_target(self):
+        # A target grouping of the rule (select_grouping "TARGET"):
+        # one group per target object, the sources of its results in
+        # the source set of the group, measured by the check focused
+        # on the target.
         rule = Intersection(SelectFacet(), SelectFacet())
         elements = ifc_elements()
         rule.result = [
@@ -540,6 +573,7 @@ class TestMustRuleWiring(unittest.TestCase):
                 source=elements[1], target=elements[2], state=True
             ),
         ]
+        rule.select_grouping = "TARGET"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
         check.focus = "target"
         check.operation = "=="
@@ -553,50 +587,29 @@ class TestMustRuleWiring(unittest.TestCase):
         self.assertEqual(group.source_set, {elements[0], elements[1]})
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_one_object_focus_by_grouping_uses_the_rule_grouping(self):
-        # Focus "by_grouping": the groups come from the classic
-        # grouping of the rule (select_grouping), here one group per
-        # entity class holding the three sources; the group measures
-        # its own set.
+    def test_one_object_without_select_grouping_defaults_to_the_source(self):
+        # Without a select_grouping, the check falls back to the
+        # grouping by source: one group per source object.
         rule = Volume(SelectFacet(), 0, 10)
         rule.result = [
             ClashResultOneObject(source=element, state=True)
             for element in ifc_elements()
         ]
-        rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "by_grouping"
         check.operation = ">="
-        check.aim = 3
+        check.aim = 1
         rule.abs_or_rel_check = check
 
         self.assertTrue(rule.run_abs_or_rel())
-        # One group per entity class: the three elements share one.
-        self.assertEqual(len(rule.grouped_result), 1)
-        group = rule.grouped_result[0]
-        self.assertEqual(len(group.source_set), 3)
-        self.assertTrue(group.abs_or_rel_check)
+        self.assertEqual(len(rule.grouped_result), 3)
+        self.assertTrue(all(group.abs_or_rel_check for group in rule.grouped_result))
 
-    def test_one_object_by_grouping_without_select_grouping_checks_nothing(self):
-        # Without a select_grouping, the classic grouping produces no
-        # group: the Must rule runs on an empty list.
-        rule = Volume(SelectFacet(), 0, 10)
-        rule.result = [
-            ClashResultOneObject(source=element, state=True)
-            for element in ifc_elements()
-        ]
-        check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "by_grouping"
-        rule.abs_or_rel_check = check
-
-        self.assertTrue(rule.run_abs_or_rel())
-        self.assertEqual(rule.grouped_result, [])
-
-    def test_two_objects_focus_by_grouping_measures_each_group_side(self):
-        # Focus "by_grouping" on a two objects rule: the classic
-        # entity grouping fills one side per group (the sources in the
-        # source class group, the targets in the target class group),
-        # and each group measures its own non empty set.
+    def test_two_objects_entity_grouping_measures_each_group_side(self):
+        # An entity grouping on a two objects rule fills one side per
+        # group (the sources in the source class group, the targets
+        # in the target class group); here every element shares one
+        # class, so a single group holds both sets, and the check
+        # focused on the target measures its source set.
         rule = Intersection(SelectFacet(), SelectFacet())
         elements = ifc_elements()
         rule.result = [
@@ -609,7 +622,7 @@ class TestMustRuleWiring(unittest.TestCase):
         ]
         rule.select_grouping = "ENTITY"
         check = AbsoluteOrRelativeChecking("Absolute_Number")
-        check.focus = "by_grouping"
+        check.focus = "target"
         check.operation = "=="
         check.aim = 1
         rule.abs_or_rel_check = check
@@ -622,14 +635,15 @@ class TestMustRuleWiring(unittest.TestCase):
         group = rule.grouped_result[0]
         self.assertEqual(group.source_set, {elements[0]})
         self.assertEqual(group.target_set, {elements[1], elements[2]})
-        # The group measures its own non empty set: the source set.
+        # The group measures its source set: the focused target group
+        # measures the sources.
         self.assertEqual(check.element_number, 1)
         self.assertTrue(group.abs_or_rel_check)
 
-    def test_two_objects_must_grouping_ignores_the_classic_grouping(self):
-        # Same as the one object rule: the select_grouping of the rule
-        # (here an entity grouping, which would give one single group)
-        # never drives the Must check grouping.
+    def test_two_objects_uses_the_classic_grouping_of_the_rule(self):
+        # Same as the one object rule: the select_grouping of the
+        # rule (here an entity grouping) drives the Must check
+        # grouping, one group per entity class of the results.
         rule = Intersection(SelectFacet(), SelectFacet())
         elements = ifc_elements()
         rule.result = [
@@ -644,8 +658,10 @@ class TestMustRuleWiring(unittest.TestCase):
         rule.abs_or_rel_check = AbsoluteOrRelativeChecking("Absolute_Number")
 
         self.assertTrue(rule.run_abs_or_rel())
-        # One group per source object.
-        self.assertEqual(len(rule.grouped_result), 2)
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(group.source_set, {elements[0], elements[2]})
+        self.assertEqual(group.target_set, {elements[1]})
 
 
 if __name__ == "__main__":
