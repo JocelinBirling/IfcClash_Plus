@@ -47,4 +47,9 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 
 13. Faire des tests pour les règles must et les rel ABS 
 
+14. Faire une règle qui vient rechercher les objets les plus proches. => Plutôt une exception ?
 
+15. Faire une règle d'inclusion dans un étage ou un batiment. 
+Dans les Must Rule, je fais le focus soit sur la source ou bien la target. Cela permet uniquement de faire un rassemblement 1 à X.
+
+Si 

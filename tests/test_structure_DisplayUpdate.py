@@ -312,7 +312,7 @@ class TestDisplayColorMap(unittest.TestCase):
         self.assertGreaterEqual(len(rule.display_items), 1)
         for item in rule.display_items:
             self.assertEqual(item.category, "zone")
-            self.assertEqual(item.color, (1, 0, 0))
+            self.assertEqual(item.color, (0.5, 0, 1))
 
         # SurfaceRecover: the contact triangles of every clash.
         model = os.path.join(self.temp_dir, "contact.ifc")

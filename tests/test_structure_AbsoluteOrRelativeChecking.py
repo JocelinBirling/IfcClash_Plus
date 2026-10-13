@@ -1,0 +1,652 @@
+"""
+Test suite for the AbsoluteOrRelativeChecking class of RuleClass.py
+(the Must rules of doc/Rule.md): the run loop, the type dispatch
+between the absolute check (funct 2) and the relative check (funct 1),
+the number and quantity measurements on GroupResult fixtures, and the
+run_abs_or_rel wiring of the two rule base classes.
+
+The type selects the check: "Absolute_..." compares the focused set of
+a group against an aim, "Relative_..." compares the source set against
+the target set; "_Number" counts the elements of the sets, "_Quantity"
+sums a property over them. The quantity tests need real IFC entities
+to read a property: the three elements of the in-memory fixture each
+carry a Pset_Test/Value of 2.5 (no geometry).
+
+Execution (from the repository root):
+    python -m pytest tests/test_structure_AbsoluteOrRelativeChecking.py -v
+"""
+import sys
+import unittest
+
+sys.path.insert(0, "./ifcclash_plus")
+
+import ifcopenshell
+import ifcopenshell.api
+
+from RuleClass import (
+    AbsoluteOrRelativeChecking,
+    ClashResultOneObject,
+    ClashResultTwoObjects,
+    GroupResult,
+    SelectFacet,
+)
+from Rules import Intersection, Volume
+
+
+def make_group(nb_source=0, nb_target=0):
+    """A GroupResult with nb_source source results and nb_target
+    target results; plain strings stand for the IFC entities."""
+    group = GroupResult()
+    for index in range(nb_source):
+        group.add_source(
+            ClashResultOneObject(source=f"source_{index}", state=True)
+        )
+    for index in range(nb_target):
+        group.add_target(
+            ClashResultTwoObjects(
+                source=f"source_{index}", target=f"target_{index}", state=True
+            )
+        )
+    return group
+
+
+_ELEMENTS = None
+
+
+def ifc_elements():
+    """Three IfcBuildingElementProxy of an in-memory file, each with a
+    Pset_Test/Value property of 2.5. Built once, no geometry needed."""
+    global _ELEMENTS
+    if _ELEMENTS is None:
+        file = ifcopenshell.api.run("project.create_file")
+        ifcopenshell.api.run(
+            "root.create_entity", file, ifc_class="IfcProject", name="P"
+        )
+        elements = []
+        for index in range(3):
+            element = ifcopenshell.api.run(
+                "root.create_entity",
+                file,
+                ifc_class="IfcBuildingElementProxy",
+                name=f"E{index}",
+            )
+            pset = ifcopenshell.api.run(
+                "pset.add_pset", file, product=element, name="Pset_Test"
+            )
+            ifcopenshell.api.run(
+                "pset.edit_pset", file, pset=pset, properties={"Value": 2.5}
+            )
+            elements.append(element)
+        _ELEMENTS = elements
+    return _ELEMENTS
+
+
+_TEXT_ELEMENTS = None
+
+
+def ifc_text_elements():
+    """Three IfcBuildingElementProxy whose property values are not
+    plain numbers: a number written as a string, pure text, and an
+    element without the property."""
+    global _TEXT_ELEMENTS
+    if _TEXT_ELEMENTS is None:
+        file = ifcopenshell.api.run("project.create_file")
+        ifcopenshell.api.run(
+            "root.create_entity", file, ifc_class="IfcProject", name="P"
+        )
+        elements = []
+        for name, value in (("E_str", "1.5"), ("E_text", "Béton"), ("E_none", None)):
+            element = ifcopenshell.api.run(
+                "root.create_entity",
+                file,
+                ifc_class="IfcBuildingElementProxy",
+                name=name,
+            )
+            if value is not None:
+                pset = ifcopenshell.api.run(
+                    "pset.add_pset", file, product=element, name="Pset_Text"
+                )
+                ifcopenshell.api.run(
+                    "pset.edit_pset", file, pset=pset, properties={"Value": value}
+                )
+            elements.append(element)
+        _TEXT_ELEMENTS = elements
+    return _TEXT_ELEMENTS
+
+
+class SpyChecking(AbsoluteOrRelativeChecking):
+    """A check recording the groups its run loop evaluates."""
+
+    def __init__(self):
+        super().__init__("Absolute_Number")
+        self.evaluated = []
+
+    def eval_check(self, groupresult):
+        self.evaluated.append(groupresult)
+        return groupresult
+
+
+class DispatchSpy(AbsoluteOrRelativeChecking):
+    """A check recording which of the two functions the type selects."""
+
+    def __init__(self, type_name):
+        super().__init__(type_name)
+        self.called = []
+
+    def absolute_check(self, groupresult):
+        self.called.append("absolute")
+        return groupresult
+
+    def relative_check(self, groupresult):
+        self.called.append("relative")
+        return groupresult
+
+
+class TestBase(unittest.TestCase):
+    """The constructor, the type validation and the run loop."""
+
+    def test_defaults(self):
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        # The focus selects the grouping.
+        self.assertEqual(check.focus, "source")
+        # The absolute check fields.
+        self.assertIsNone(check.element_number)
+        self.assertEqual(check.operation, "")
+        self.assertEqual(check.aim, 0)
+        # The relative check fields.
+        self.assertIsNone(check.source_number)
+        self.assertIsNone(check.target_number)
+        self.assertEqual(check.source_operation, "")
+        self.assertEqual(check.target_operation, "")
+        # The quantity measurement fields.
+        self.assertIsNone(check.quantity_pset)
+        self.assertIsNone(check.quantity_prop)
+
+    def test_type_is_stored(self):
+        for type_name in (
+            "Absolute_Number",
+            "Absolute_Quantity",
+            "Relative_Number",
+            "Relative_Quantity",
+        ):
+            with self.subTest(type_name=type_name):
+                check = AbsoluteOrRelativeChecking(type_name)
+                self.assertEqual(check.type, type_name)
+
+    def test_invalid_type_raises(self):
+        for bad_type in ("Foo_Number", "Number", "", None, 42):
+            with self.subTest(bad_type=bad_type):
+                with self.assertRaises(ValueError):
+                    AbsoluteOrRelativeChecking(bad_type)
+
+    def test_run_evaluates_every_group_once(self):
+        check = SpyChecking()
+        groups = [make_group(2), make_group(3), make_group(1, 1)]
+        check.run(groups)
+        self.assertEqual(check.evaluated, groups)
+
+    def test_run_on_empty_list_evaluates_nothing(self):
+        check = SpyChecking()
+        check.run([])
+        self.assertEqual(check.evaluated, [])
+
+
+class TestMeasurements(unittest.TestCase):
+    """The number and quantity measurements of the two sets."""
+
+    def test_number_counts_both_sets(self):
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.number(make_group(nb_source=3, nb_target=2))
+        self.assertEqual(check.source_number, 3)
+        self.assertEqual(check.target_number, 2)
+
+    def test_number_on_an_empty_group_is_zero(self):
+        check = AbsoluteOrRelativeChecking("Relative_Number")
+        check.number(GroupResult())
+        self.assertEqual(check.source_number, 0)
+        self.assertEqual(check.target_number, 0)
+
+    def test_quantity_sums_the_property_of_both_sets(self):
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        group = GroupResult()
+        elements = ifc_elements()
+        for element in elements[:2]:
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        group.add_target(
+            ClashResultTwoObjects(source=elements[2], target=elements[2], state=True)
+        )
+        check.quantity(group)
+        self.assertAlmostEqual(check.source_number, 5.0)
+        self.assertAlmostEqual(check.target_number, 2.5)
+
+    def test_quantity_with_a_missing_property_counts_zero(self):
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Other"
+        check.quantity_prop = "Value"
+        group = GroupResult()
+        for element in ifc_elements():
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        check.quantity(group)
+        self.assertAlmostEqual(check.source_number, 0.0)
+
+    def test_quantity_with_a_number_written_as_a_string(self):
+        # "1.5" is parsed as a number and summed.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Text"
+        check.quantity_prop = "Value"
+        group = GroupResult()
+        for element in ifc_text_elements():
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        check.quantity(group)
+        # "1.5" is parsed, "Béton" and the missing property count 0.
+        self.assertAlmostEqual(check.source_number, 1.5)
+
+    def test_to_number_accepts_any_storage(self):
+        to_number = AbsoluteOrRelativeChecking._to_number
+        self.assertAlmostEqual(to_number(2.5), 2.5)
+        self.assertAlmostEqual(to_number(2), 2.0)
+        self.assertAlmostEqual(to_number("1.5"), 1.5)
+        self.assertAlmostEqual(to_number(" 2.5 "), 2.5)
+        self.assertEqual(to_number("Béton"), 0.0)
+        self.assertEqual(to_number(""), 0.0)
+        self.assertEqual(to_number(None), 0.0)
+        self.assertEqual(to_number(True), 1.0)
+
+
+class TestTypeDispatch(unittest.TestCase):
+    """The selection function of eval_check: Relative (funct 1) or
+    Absolute (funct 2), from the type name."""
+
+    def test_absolute_type_selects_the_absolute_check(self):
+        check = DispatchSpy("Absolute_Number")
+        check.eval_check(make_group(2))
+        self.assertEqual(check.called, ["absolute"])
+
+    def test_relative_type_selects_the_relative_check(self):
+        check = DispatchSpy("Relative_Number")
+        check.eval_check(make_group(2, 1))
+        self.assertEqual(check.called, ["relative"])
+
+
+class TestAbsoluteCheck(unittest.TestCase):
+    """The requirement of each focused group against the aim (funct 2).
+
+    The group is keyed by one focused object; the measured set is the
+    other one — the focused set of a group is reduced to its own key.
+    """
+
+    @staticmethod
+    def target_group(elements):
+        """A group whose target set holds the elements (the source is
+        the focused object)."""
+        group = GroupResult()
+        for element in elements:
+            group.add_target(
+                ClashResultTwoObjects(source="focused", target=element, state=True)
+            )
+        return group
+
+    @staticmethod
+    def source_group(elements):
+        """A group whose source set holds the elements (the target is
+        the focused object)."""
+        group = GroupResult()
+        for element in elements:
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        return group
+
+    def test_number_measures_the_targets_of_a_source_focused_group(self):
+        # Focus on the source: the group is keyed by the source, its
+        # requirement is measured on the target set. 3 >= 3 is True.
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = ">="
+        check.aim = 3
+        group = make_group(nb_source=1, nb_target=3)
+        check.eval_check(group)
+        self.assertEqual(check.element_number, 3)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_number_below_the_aim(self):
+        # "Each focused object must have at least 3 targets": 2 >= 3
+        # is False.
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = ">="
+        check.aim = 3
+        group = make_group(nb_source=1, nb_target=2)
+        check.eval_check(group)
+        self.assertFalse(group.abs_or_rel_check)
+
+    def test_number_focus_target_measures_the_sources(self):
+        # Focus on the target: the group is keyed by the target, its
+        # requirement is measured on the source set. 3 == 3 is True.
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.focus = "target"
+        check.operation = "=="
+        check.aim = 3
+        group = make_group(nb_source=3, nb_target=1)
+        check.eval_check(group)
+        self.assertEqual(check.element_number, 3)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_quantity_sums_the_targets_of_a_source_focused_group(self):
+        # Three elements at 2.5 each in the target set: 7.5 >= 5 is
+        # True, the sum is really accumulated.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        check.aim = 5
+        group = self.target_group(ifc_elements())
+        check.eval_check(group)
+        self.assertAlmostEqual(check.element_number, 7.5)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_quantity_below_the_aim(self):
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        check.aim = 8
+        group = self.target_group(ifc_elements())
+        check.eval_check(group)
+        self.assertFalse(group.abs_or_rel_check)
+
+    def test_quantity_focus_target_sums_the_sources(self):
+        # Focus on the target: the property is summed over the source
+        # set of the group.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.focus = "target"
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        check.aim = 5
+        group = self.source_group(ifc_elements())
+        check.eval_check(group)
+        self.assertAlmostEqual(check.element_number, 7.5)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_quantity_on_non_numeric_values_reaches_the_comparison(self):
+        # A number written as a string is measured, the pure text
+        # counts 0: 1.5 >= 1 is True.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Text"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        check.aim = 1
+        group = self.target_group(ifc_text_elements())
+        check.eval_check(group)
+        self.assertAlmostEqual(check.element_number, 1.5)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_one_object_group_measures_its_own_set(self):
+        # A group holding a single set (a one object rule) measures
+        # that set: the own property of the focused object.
+        check = AbsoluteOrRelativeChecking("Absolute_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        check.aim = 2
+        group = self.source_group(ifc_elements()[:1])
+        check.eval_check(group)
+        self.assertAlmostEqual(check.element_number, 2.5)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_run_checks_every_group(self):
+        # The run() loop reaches the comparison of every group.
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = ">="
+        check.aim = 2
+        groups = [make_group(1, 3), make_group(1, 1)]
+        check.run(groups)
+        self.assertTrue(groups[0].abs_or_rel_check)
+        self.assertFalse(groups[1].abs_or_rel_check)
+
+
+class TestRelativeCheck(unittest.TestCase):
+    """The source set of the group against the target set (funct 1)."""
+
+    def test_number_compares_both_sets(self):
+        # "At least twice more sources than targets": 3*2 >= 2 is True.
+        check = AbsoluteOrRelativeChecking("Relative_Number")
+        check.source_operation = "*2"
+        check.operation = ">="
+        group = make_group(nb_source=3, nb_target=2)
+        check.eval_check(group)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_number_below_the_relation(self):
+        # "At least as many sources as targets": 1 >= 2 is False.
+        check = AbsoluteOrRelativeChecking("Relative_Number")
+        check.operation = ">="
+        group = make_group(nb_source=1, nb_target=2)
+        check.eval_check(group)
+        self.assertFalse(group.abs_or_rel_check)
+
+    def test_number_with_a_target_operation(self):
+        # "The source count must be at least half the target count":
+        # 2 >= 2 (4/2) is True.
+        check = AbsoluteOrRelativeChecking("Relative_Number")
+        check.target_operation = "/2"
+        check.operation = ">="
+        group = make_group(nb_source=2, nb_target=4)
+        check.eval_check(group)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_quantity_relates_the_two_sums(self):
+        # The summed property of the source set against the target
+        # set: 7.5 >= 5.0 is True.
+        check = AbsoluteOrRelativeChecking("Relative_Quantity")
+        check.quantity_pset = "Pset_Test"
+        check.quantity_prop = "Value"
+        check.operation = ">="
+        group = GroupResult()
+        elements = ifc_elements()
+        for element in elements[:2]:
+            group.add_source(ClashResultOneObject(source=element, state=True))
+        group.add_target(
+            ClashResultTwoObjects(source=elements[2], target=elements[2], state=True)
+        )
+        check.eval_check(group)
+        self.assertAlmostEqual(check.source_number, 5.0)
+        self.assertAlmostEqual(check.target_number, 2.5)
+        self.assertTrue(group.abs_or_rel_check)
+
+
+class TestMustRuleWiring(unittest.TestCase):
+    """The run_abs_or_rel entry points of the two rule base classes:
+    the grouping by source of the results, then the check of every
+    group."""
+
+    def test_no_check_returns_none(self):
+        rule_one = Volume(SelectFacet(), 0, 10)
+        rule_two = Intersection(SelectFacet(), SelectFacet())
+        self.assertIsNone(rule_one.run_abs_or_rel())
+        self.assertIsNone(rule_two.run_abs_or_rel())
+
+    def test_one_object_checks_one_group_per_source(self):
+        # Each source object forms its own group, checked separately.
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = [
+            ClashResultOneObject(source=element, state=True)
+            for element in ifc_elements()
+        ]
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = ">="
+        check.aim = 1
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        self.assertEqual(len(rule.grouped_result), 3)
+        self.assertTrue(all(group.abs_or_rel_check for group in rule.grouped_result))
+
+    def test_one_object_must_grouping_ignores_the_classic_grouping(self):
+        # The classic grouping (run_grouping, driven by select_grouping)
+        # is a separate feature: even with an entity grouping
+        # configured, the Must check groups by source.
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = [
+            ClashResultOneObject(source=element, state=True)
+            for element in ifc_elements()
+        ]
+        rule.select_grouping = "ENTITY"  # would give one single group
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = ">="
+        check.aim = 1
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        # Three groups by source, not one group by entity class.
+        self.assertEqual(len(rule.grouped_result), 3)
+
+    def test_two_objects_checks_one_group_per_source(self):
+        # Focus on the source: one group per source object, the
+        # targets of its results in the target set of the group,
+        # measured by the check.
+        rule = Intersection(SelectFacet(), SelectFacet())
+        elements = ifc_elements()
+        rule.result = [
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[1], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[2], state=True
+            ),
+        ]
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = "=="
+        check.aim = 2
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(group.source_set, {elements[0]})
+        self.assertEqual(group.target_set, {elements[1], elements[2]})
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_two_objects_focus_target_groups_by_target(self):
+        # Focus on the target: one group per target object, the
+        # sources of its results in the source set of the group,
+        # measured by the check.
+        rule = Intersection(SelectFacet(), SelectFacet())
+        elements = ifc_elements()
+        rule.result = [
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[2], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[1], target=elements[2], state=True
+            ),
+        ]
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.focus = "target"
+        check.operation = "=="
+        check.aim = 2
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(group.target_set, {elements[2]})
+        self.assertEqual(group.source_set, {elements[0], elements[1]})
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_one_object_focus_by_grouping_uses_the_rule_grouping(self):
+        # Focus "by_grouping": the groups come from the classic
+        # grouping of the rule (select_grouping), here one group per
+        # entity class holding the three sources; the group measures
+        # its own set.
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = [
+            ClashResultOneObject(source=element, state=True)
+            for element in ifc_elements()
+        ]
+        rule.select_grouping = "ENTITY"
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.focus = "by_grouping"
+        check.operation = ">="
+        check.aim = 3
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        # One group per entity class: the three elements share one.
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(len(group.source_set), 3)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_one_object_by_grouping_without_select_grouping_checks_nothing(self):
+        # Without a select_grouping, the classic grouping produces no
+        # group: the Must rule runs on an empty list.
+        rule = Volume(SelectFacet(), 0, 10)
+        rule.result = [
+            ClashResultOneObject(source=element, state=True)
+            for element in ifc_elements()
+        ]
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.focus = "by_grouping"
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        self.assertEqual(rule.grouped_result, [])
+
+    def test_two_objects_focus_by_grouping_measures_each_group_side(self):
+        # Focus "by_grouping" on a two objects rule: the classic
+        # entity grouping fills one side per group (the sources in the
+        # source class group, the targets in the target class group),
+        # and each group measures its own non empty set.
+        rule = Intersection(SelectFacet(), SelectFacet())
+        elements = ifc_elements()
+        rule.result = [
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[1], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[2], state=True
+            ),
+        ]
+        rule.select_grouping = "ENTITY"
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.focus = "by_grouping"
+        check.operation = "=="
+        check.aim = 1
+        rule.abs_or_rel_check = check
+
+        self.assertTrue(rule.run_abs_or_rel())
+        # One group per entity class of the results, here a single one
+        # (every element is an IfcBuildingElementProxy), holding both
+        # sets.
+        self.assertEqual(len(rule.grouped_result), 1)
+        group = rule.grouped_result[0]
+        self.assertEqual(group.source_set, {elements[0]})
+        self.assertEqual(group.target_set, {elements[1], elements[2]})
+        # The group measures its own non empty set: the source set.
+        self.assertEqual(check.element_number, 1)
+        self.assertTrue(group.abs_or_rel_check)
+
+    def test_two_objects_must_grouping_ignores_the_classic_grouping(self):
+        # Same as the one object rule: the select_grouping of the rule
+        # (here an entity grouping, which would give one single group)
+        # never drives the Must check grouping.
+        rule = Intersection(SelectFacet(), SelectFacet())
+        elements = ifc_elements()
+        rule.result = [
+            ClashResultTwoObjects(
+                source=elements[0], target=elements[1], state=True
+            ),
+            ClashResultTwoObjects(
+                source=elements[2], target=elements[1], state=True
+            ),
+        ]
+        rule.select_grouping = "ENTITY"
+        rule.abs_or_rel_check = AbsoluteOrRelativeChecking("Absolute_Number")
+
+        self.assertTrue(rule.run_abs_or_rel())
+        # One group per source object.
+        self.assertEqual(len(rule.grouped_result), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

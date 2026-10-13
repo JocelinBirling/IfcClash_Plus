@@ -15,7 +15,7 @@ from ifcopenshell.api import run
 
 sys.path.insert(0, './ifcclash_plus')
 
-from RuleClass import SelectFacet, SelectRule, RuleFile, RuleFolder, AbsoluteChecking
+from RuleClass import SelectFacet, SelectRule, RuleFile, RuleFolder, AbsoluteOrRelativeChecking
 from Rules import Select, Volume, Area,Intersection
 from booleanrule import BooleanLeaf, OrRule
 from ifctester import ids
@@ -124,7 +124,7 @@ class TestSerializationRoundTrip(unittest.TestCase):
         )
 
         # Absolute checking on the intersection rule
-        abs_check = AbsoluteChecking("Absolute_Number")
+        abs_check = AbsoluteOrRelativeChecking("Absolute_Number")
         abs_check.focus = "source"
         abs_check.operation = ">="
         abs_check.aim = 1
@@ -218,7 +218,7 @@ class TestSerializationRoundTrip(unittest.TestCase):
         loaded = self._roundtrip(rule_file)
 
         check = loaded.contains[0].abs_or_rel_check
-        self.assertIsInstance(check, AbsoluteChecking)
+        self.assertIsInstance(check, AbsoluteOrRelativeChecking)
         self.assertEqual(check.type, "Absolute_Number")
         self.assertEqual(check.focus, "source")
         self.assertEqual(check.operation, ">=")

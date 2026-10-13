@@ -450,6 +450,39 @@ class RuleCheck:
     def to_bcf():
         print("Reuse Ifcopenshell")
 
+    def group_by_source(self):
+        """The Must check grouping focused on the source: one group
+        per source object."""
+        self._group_abs_or_rel("source")
+
+    def group_by_target(self):
+        """The Must check grouping focused on the target: one group
+        per target object."""
+        self._group_abs_or_rel("target")
+
+    def _group_abs_or_rel(self, focus):
+        """The Must check grouping: one group per object of the
+        focused set (source or target).
+
+        This is the grouping of the abs_or_rel check, whatever the
+        classic grouping configured on the rule: run_grouping (driven
+        by select_grouping) is a separate feature, never triggered by
+        the Must check.
+        """
+        group_dict = {}
+        for result in self.result:
+            key = result.source if focus == "source" else getattr(result, "target", None)
+            if key is None:
+                continue
+            if key not in group_dict:
+                group_dict[key] = GroupResult()
+            if getattr(result, "target", None) is not None:
+                group_dict[key].add_source_and_target(result)
+            else:
+                group_dict[key].add_source(result)
+
+        self.grouped_result = list(group_dict.values())
+
     # ---- Display geometry registry
     def register_display_item(
         self,
@@ -738,7 +771,19 @@ class RuleCheckOneObject(RuleCheck):
         if self.abs_or_rel_check is None:
             return None
 
-        self.abs_or_rel_check.run()
+        # The Must check groups by the focused set of the check: the
+        # classic grouping of the rule (run_grouping, driven by
+        # select_grouping) when it focuses "by_grouping", one group
+        # per source object otherwise (a one object rule has no
+        # target).
+        if self.abs_or_rel_check.focus == "by_grouping":
+            # The classic grouping accumulates: reset before grouping.
+            self.grouped_result = []
+            self.run_grouping()
+        else:
+            self.group_by_source()
+
+        self.abs_or_rel_check.run(self.grouped_result)
 
         return True
 
@@ -1089,7 +1134,19 @@ class RuleCheckTwoObjects(RuleCheck):
         if self.abs_or_rel_check is None:
             return None
 
-        self.run_grouping(self.abs_or_rel_check.groupby_method)
+        # The Must check groups by the focused set of the check: the
+        # classic grouping of the rule (run_grouping, driven by
+        # select_grouping) when it focuses "by_grouping", one group
+        # per target object when it focuses the target, one group per
+        # source object otherwise.
+        if self.abs_or_rel_check.focus == "by_grouping":
+            # The classic grouping accumulates: reset before grouping.
+            self.grouped_result = []
+            self.run_grouping()
+        elif self.abs_or_rel_check.focus == "target":
+            self.group_by_target()
+        else:
+            self.group_by_source()
 
         self.abs_or_rel_check.run(self.grouped_result)
 
@@ -1298,100 +1355,140 @@ ABSOLUTEORRELATIVECHECK_TYPE = Literal[
 ]
 
 
-@abstractmethod
 class AbsoluteOrRelativeChecking:
+    """The Must rule: an absolute or relative check of the number of
+    elements or of a summed property, per group of results.
+
+    The type selects the check through eval_check: it starts with
+    "Relative" (funct 1: the source set of the group against the
+    target set, through source_operation / operation /
+    target_operation) or with "Absolute" (funct 2: the measured set of
+    the group against an aim, through operation). It ends with
+    "Number" (the check counts the elements of the sets) or with
+    "Quantity" (the check sums the property quantity_pset /
+    quantity_prop over the elements of the sets).
+
+    The focus selects the grouping: "source" (each source object
+    carries the requirement, one group per source object, the target
+    set measured), "target" (the same, focused on the target objects)
+    or "by_grouping" (the classic grouping of the rule, driven by
+    its select_grouping, produces the groups; a group measures its
+    own non empty set).
+    """
+
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
-        self.type = type
-        self.groupby_method: str = (
-            "source"  # In futur, it could be grouped by different means
-        )
-
-    def run(self, list_of_result: list[GroupResult]):
-        for onegroupresult in list_of_result:
-            self.eval_check(
-                onegroupresult
-            )  # @todo From a Json, this will not work, it's propapbly better to have only one class, and with the type, it choose the function to launch.
-
-
-class AbsoluteChecking(AbsoluteOrRelativeChecking):
-    def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
-        super().__init__(type)
+        if not isinstance(type, str) or not type.startswith(("Absolute", "Relative")):
+            raise ValueError(
+                f"type must start with 'Absolute' or 'Relative', got {type!r}"
+            )
         self.type = type
 
-        self.focus: str = "source"  # source or target
+        # The focus selects the grouping: the objects of the focused
+        # set each carry the requirement (one group per object, the
+        # other set measured), or the classic grouping of the rule
+        # produces the groups ("by_grouping").
+        self.focus: str = "source"  # "source", "target" or "by_grouping"
         self.element_number = None
         self.operation: str = ""
         self.aim: float = 0
 
+        # The relative check: the source set against the target set.
+        self.source_number = None
+        self.target_number = None
+        self.source_operation: str = ""
+        self.target_operation: str = ""
+
+        # The quantity measurement.
         self.quantity_pset: str = None
         self.quantity_prop: str = None
 
+    def run(self, list_of_result: list[GroupResult]):
+        for onegroupresult in list_of_result:
+            self.eval_check(onegroupresult)
+
     def number(self, groupresult: GroupResult):
-        if self.focus == "source":
-            self.element_number = len(groupresult.source_set)
-        else:
-            self.element_number = len(groupresult.target_set)
+        """The element counts of the two sets of the group."""
+        self.source_number = len(groupresult.source_set)
+        self.target_number = len(groupresult.target_set)
+
+    @staticmethod
+    def _to_number(value):
+        """A property value as a float, whatever its storage.
+
+        A number is used as is, a number written as a string ("2.5")
+        is parsed, anything else (None, pure text) counts as 0: it
+        cannot be measured.
+        """
+        if value is None:
+            return 0.0
+        if isinstance(value, str):
+            try:
+                return float(value.strip())
+            except ValueError:
+                return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     def quantity(self, groupresult: GroupResult):
-        if self.focus == "source":
-            list = list(groupresult.source_set)
-        else:
-            list = list(groupresult.sourcetarget_set_set)
+        """The summed property values of the two sets of the group.
 
-        for entity in list:
-            # @todo Finish properly the property extraction with all the edge case, we must have at the end a working float to be compared
+        The values come in any form — a number, a number written as a
+        string or pure text — see _to_number.
+        """
+        source_total = 0.0
+        for entity in groupresult.source_set:
             value = get_pset(entity, name=self.quantity_pset, prop=self.quantity_prop)
-            self.element_number = +value
+            source_total += self._to_number(value)
+        self.source_number = source_total
 
-    def eval_check(self, groupresult: GroupResult):
+        target_total = 0.0
+        for entity in groupresult.target_set:
+            value = get_pset(entity, name=self.quantity_pset, prop=self.quantity_prop)
+            target_total += self._to_number(value)
+        self.target_number = target_total
+
+    def _measure(self, groupresult: GroupResult):
+        """The measurement selected by the type: number or quantity."""
         if "Quantity" in self.type:
-            self.quantity()
-        if "Number" in self.type:
-            self.number()
+            self.quantity(groupresult)
+        else:
+            self.number(groupresult)
 
-        operation_string = (
-            str(self.element_number) + str(self.operation) + str(self.aim)
-        )
+    def absolute_check(self, groupresult: GroupResult):
+        """funct 2: the requirement of the group against the aim.
+
+        The group is keyed by one focused object; the measured set is
+        the other one (the focused set would always count 1, being
+        reduced to its own key). A group holding a single set (a one
+        object rule, or a group of the classic grouping, which fills
+        one side per group) measures that set.
+        """
+        if self.focus == "source":
+            self.element_number = (
+                self.target_number
+                if groupresult.target_set
+                else self.source_number
+            )
+        else:
+            self.element_number = (
+                self.source_number
+                if groupresult.source_set
+                else self.target_number
+            )
+
+        operation_string = str(self.element_number) + str(self.operation) + str(self.aim)
 
         groupresult.abs_or_rel_check = eval(operation_string)
 
         return groupresult
 
-
-class RelativeChecking(AbsoluteOrRelativeChecking):
-    def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
-        super().__init__(type)
-        self.type = type
-        self.source_operation: str = ""
-        self.operation: str = ""
-        self.target_operation: str = ""
-
-    def number(self, groupresult: GroupResult):
-        self.source_number = len(groupresult.source_set)
-        self.target_number = len(groupresult.target_set)
-
-    def quantity(self, groupresult: GroupResult):
-        source_list = list(groupresult.source_set)
-        target_list = list(groupresult.target_set)
-
-        for entity in source_list:
-            # @todo Finish properly the property extraction with all the edge case, we must have at the end a working float to be compared
-            value = get_pset(entity, name=self.quantity_pset, prop=self.quantity_prop)
-            self.source_number = +value
-
-        for entity in target_list:
-            # @todo Finish properly the property extraction with all the edge case, we must have at the end a working float to be compared
-            value = get_pset(entity, name=self.quantity_pset, prop=self.quantity_prop)
-            self.target_number = +value
-
-    def eval_check(self, groupresult: GroupResult):
-        if "Quantity" in self.type:
-            self.quantity()
-        if "Number" in self.type:
-            self.number()
-
-        source_string = str(groupresult.number_of_source) + self.source_operation
-        target_string = str(groupresult.number_of_target) + self.target_operation
+    def relative_check(self, groupresult: GroupResult):
+        """funct 1: the source set of the group against the target
+        set."""
+        source_string = str(self.source_number) + self.source_operation
+        target_string = str(self.target_number) + self.target_operation
 
         source_quantity = eval(source_string)
         target_quantity = eval(target_string)
@@ -1401,6 +1498,15 @@ class RelativeChecking(AbsoluteOrRelativeChecking):
         groupresult.abs_or_rel_check = eval(operation_string)
 
         return groupresult
+
+    def eval_check(self, groupresult: GroupResult):
+        """The check selected by the type: Relative (funct 1) or
+        Absolute (funct 2)."""
+        self._measure(groupresult)
+
+        if self.type.startswith("Relative"):
+            return self.relative_check(groupresult)
+        return self.absolute_check(groupresult)
 
 
 # ==== Clash Result

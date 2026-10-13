@@ -294,7 +294,7 @@ def deserialize_activation_rule(data: Any):
 
 def serialize_abs_or_rel_check(check) -> Dict[str, Any]:
     """
-    Serialize an AbsoluteChecking or RelativeChecking.
+    Serialize an AbsoluteOrRelativeChecking.
 
     Args:
         check: The AbsoluteOrRelativeChecking to serialize, or None
@@ -302,36 +302,34 @@ def serialize_abs_or_rel_check(check) -> Dict[str, Any]:
     Returns:
         Dictionary representation, or None
     """
-    from RuleClass import AbsoluteChecking, RelativeChecking
+    from RuleClass import AbsoluteOrRelativeChecking
 
     if check is None:
         return None
 
-    data = {
-        "class": type(check).__name__,
-        "check_type": check.type,
-        "groupby_method": getattr(check, "groupby_method", "source"),
-        "quantity_pset": getattr(check, "quantity_pset", None),
-        "quantity_prop": getattr(check, "quantity_prop", None),
-    }
-
-    if isinstance(check, AbsoluteChecking):
-        data["focus"] = check.focus
-        data["operation"] = check.operation
-        data["aim"] = check.aim
-    elif isinstance(check, RelativeChecking):
-        data["source_operation"] = check.source_operation
-        data["operation"] = check.operation
-        data["target_operation"] = check.target_operation
-    else:
+    if not isinstance(check, AbsoluteOrRelativeChecking):
         raise ValueError(f"Unsupported check type: {type(check)}")
 
-    return data
+    return {
+        "class": type(check).__name__,
+        "check_type": check.type,
+        "focus": check.focus,
+        "quantity_pset": check.quantity_pset,
+        "quantity_prop": check.quantity_prop,
+        "operation": check.operation,
+        "aim": check.aim,
+        "source_operation": check.source_operation,
+        "target_operation": check.target_operation,
+    }
 
 
 def deserialize_abs_or_rel_check(data: Dict[str, Any]):
     """
-    Deserialize an AbsoluteChecking or RelativeChecking.
+    Deserialize an AbsoluteOrRelativeChecking.
+
+    The checks used to be two classes (AbsoluteChecking,
+    RelativeChecking): their names are still accepted, the missing
+    fields fall back to the defaults of the merged class.
 
     Args:
         data: Dictionary representation, or None
@@ -339,29 +337,28 @@ def deserialize_abs_or_rel_check(data: Dict[str, Any]):
     Returns:
         An AbsoluteOrRelativeChecking, or None
     """
-    from RuleClass import AbsoluteChecking, RelativeChecking
+    from RuleClass import AbsoluteOrRelativeChecking
 
     if data is None:
         return None
 
     class_name = data.get("class")
 
-    if class_name == "AbsoluteChecking":
-        check = AbsoluteChecking(data["check_type"])
-        check.focus = data.get("focus", "source")
-        check.operation = data.get("operation", "")
-        check.aim = data.get("aim", 0)
-    elif class_name == "RelativeChecking":
-        check = RelativeChecking(data["check_type"])
-        check.source_operation = data.get("source_operation", "")
-        check.operation = data.get("operation", "")
-        check.target_operation = data.get("target_operation", "")
-    else:
+    if class_name not in (
+        "AbsoluteOrRelativeChecking",
+        "AbsoluteChecking",
+        "RelativeChecking",
+    ):
         raise ValueError(f"Unknown check class: {class_name}")
 
-    check.groupby_method = data.get("groupby_method", "source")
+    check = AbsoluteOrRelativeChecking(data["check_type"])
+    check.focus = data.get("focus", "source")
     check.quantity_pset = data.get("quantity_pset")
     check.quantity_prop = data.get("quantity_prop")
+    check.operation = data.get("operation", "")
+    check.aim = data.get("aim", 0)
+    check.source_operation = data.get("source_operation", "")
+    check.target_operation = data.get("target_operation", "")
 
     return check
 
