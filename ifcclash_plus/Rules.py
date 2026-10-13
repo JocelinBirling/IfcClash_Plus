@@ -3870,17 +3870,6 @@ class OneObjectFace(RuleCheckOneObject):
                 ais_shape.SetColor(orange_color)
                 self.display.Context.Display(ais_shape, True)
 
-def _triangle_bbox_distance(triangle_a, triangle_b) -> float:
-    """A cheap lower bound of the distance between two triangles: the
-    distance between their axis-aligned bounding boxes (0 when the
-    boxes overlap)."""
-    a = np.asarray(triangle_a, dtype=float)
-    b = np.asarray(triangle_b, dtype=float)
-    delta = np.maximum(
-        np.maximum(a.min(axis=0) - b.max(axis=0), b.min(axis=0) - a.max(axis=0)),
-        0.0,
-    )
-    return float(np.linalg.norm(delta))
 
 
 class TwoObjectsFace(RuleCheckTwoObjects):
@@ -4029,7 +4018,7 @@ class TwoObjectsFace(RuleCheckTwoObjects):
             if (
                 self.max_distance is None
                 and self.min_distance is not None
-                and _triangle_bbox_distance(triangle_a, triangle_b)
+                and self._triangle_bbox_distance(triangle_a, triangle_b)
                 >= self.min_distance
             ):
                 # The bounding boxes are already far enough apart: the
@@ -4212,6 +4201,18 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 ais_shape = AIS_Shape(fault_face)
                 ais_shape.SetColor(orange_color)
                 self.display.Context.Display(ais_shape, True)
+
+    def _triangle_bbox_distance(triangle_a, triangle_b) -> float:
+        """A cheap lower bound of the distance between two triangles: the
+        distance between their axis-aligned bounding boxes (0 when the
+        boxes overlap)."""
+        a = np.asarray(triangle_a, dtype=float)
+        b = np.asarray(triangle_b, dtype=float)
+        delta = np.maximum(
+            np.maximum(a.min(axis=0) - b.max(axis=0), b.min(axis=0) - a.max(axis=0)),
+            0.0,
+        )
+        return float(np.linalg.norm(delta))
 
 
 class ClearanceForDoors(RuleCheckTwoObjects):
