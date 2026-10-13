@@ -1334,7 +1334,10 @@ class Above(RuleCheckTwoObjects):
                 if result["is_above"] == "Too_Far":
                     continue
 
+                pair_detected = False
                 for source_face in source_geom:
+                    if pair_detected:
+                        break
                     for point_on_target in result["list_of_point_on_target"]:
                         bottom_direction = gp_Dir(0.0, 0.0, -1.0)
                         ray = gp_Lin(point_on_target, bottom_direction)
@@ -1351,6 +1354,7 @@ class Above(RuleCheckTwoObjects):
                                     state=True,
                                 )
                             )
+                            pair_detected = True
                             break
 
         self.end_rule_action()
@@ -1368,7 +1372,8 @@ class Above(RuleCheckTwoObjects):
                 # If they touch (distance <= tolerance), it's close enough to check if the face is exactly above.
                 if distance <= self.tolerance:
                     # We check if the target point is exactly above the source point.
-                    for i in range(1, dist_tool.NbSolution()):
+                    # OCC solutions are indexed from 1 to NbSolution() inclusive.
+                    for i in range(1, dist_tool.NbSolution() + 1):
                         pt_source = dist_tool.PointOnShape1(i)
                         pt_target = dist_tool.PointOnShape2(i)
 
@@ -1523,7 +1528,10 @@ class Below(RuleCheckTwoObjects):
                 if result["is_below"] == "Too_Far":
                     continue
 
+                pair_detected = False
                 for source_face in source_geom:
+                    if pair_detected:
+                        break
                     for point_on_target in result["list_of_point_on_target"]:
                         bottom_direction = gp_Dir(0.0, 0.0, 1.0)
                         ray = gp_Lin(point_on_target, bottom_direction)
@@ -1540,6 +1548,7 @@ class Below(RuleCheckTwoObjects):
                                     state=True,
                                 )
                             )
+                            pair_detected = True
                             break
 
         self.end_rule_action()
@@ -1557,7 +1566,7 @@ class Below(RuleCheckTwoObjects):
                 # If they touch (distance <= tolerance), it's close enough to check if the face is exactly above.
                 if distance <= self.tolerance:
                     # We check if the target point is exactly above the source point.
-                    for i in range(0, dist_tool.NbSolution()):
+                    for i in range(1, dist_tool.NbSolution()+1):
                         pt_source = dist_tool.PointOnShape1(i)
                         pt_target = dist_tool.PointOnShape2(i)
 
