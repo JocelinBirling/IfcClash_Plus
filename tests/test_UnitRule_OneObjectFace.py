@@ -130,7 +130,7 @@ class TestOneObjectFace(unittest.TestCase):
     def run_rule(self, entity_name="Cube", **parameters):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [self.model]
-        parameters["state"]="Display_Result"
+        parameters["state"]="Final"
         rule = OneObjectFace(self.select(entity_name), **parameters)
         rule_file.contains = [rule]
         rule_file.run()

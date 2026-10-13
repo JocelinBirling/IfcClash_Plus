@@ -133,7 +133,7 @@ class TestRules(unittest.TestCase):
         context_select.applicability = [context_facet]
 
         rule = Ray_Check(
-            first_select, second_select, context_select, 5, state="Display_Result"
+            first_select, second_select, context_select, 5, state="Final"
         )
 
         OneRuleFile.contains = [rule]
@@ -510,7 +510,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.01,
             min_group=2,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -539,7 +539,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.01,
             min_group=2,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -571,7 +571,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.05,
             min_group=2,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -600,7 +600,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.01,
             min_group=4,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -632,7 +632,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.05,
             min_group=4,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -663,7 +663,7 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=1.0,
             min_group=3,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -689,7 +689,7 @@ class TestRulesAdvanced(unittest.TestCase):
         wall_select.applicability = [wall_facet]
 
         rule = ClearanceForDoors(
-            door_select, wall_select, tolerance=0.001, state="Display_Result"
+            door_select, wall_select, tolerance=0.001, state="Final"
         )
 
         OneRuleFile.contains = [rule]
@@ -840,7 +840,7 @@ class TestRulesAdvanced(unittest.TestCase):
             ray_source="Source",
             ray_count=10,
             threshold="10%",
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -876,7 +876,7 @@ class TestRulesAdvanced(unittest.TestCase):
             mode="Perpendicular",
             min_distance=4.5,
             max_distance=5.5,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1046,7 +1046,7 @@ class TestRulesAdvanced(unittest.TestCase):
             source_face_selection={"orientation": "Top", "extreme_faces": True},
             distance=True,
             min_distance=0.9,
-            state="Display_Result",
+            state="Final",
         )
         compliant_rule = TwoObjectsFace(
             cabinet_select,
@@ -1054,7 +1054,7 @@ class TestRulesAdvanced(unittest.TestCase):
             source_face_selection={"orientation": "Top", "extreme_faces": True},
             distance=True,
             min_distance=0.7,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [strict_rule, compliant_rule]
@@ -1100,7 +1100,7 @@ class TestRulesAdvanced(unittest.TestCase):
         roof_select.applicability = [roof_facet]
 
         rule = TwoObjectsFace(
-            skylight_select, roof_select, intersection=True, state="Display_Result"
+            skylight_select, roof_select, intersection=True, state="Final"
         )
 
         OneRuleFile.contains = [rule]
@@ -1154,7 +1154,7 @@ class TestRulesAdvanced(unittest.TestCase):
             orientation=True,
             angle=0.0,
             angle_tolerance=0.0,
-            state="Display_Result",
+            state="Final",
         )
         opposing_rule = TwoObjectsFace(
             skylight_select,
@@ -1163,7 +1163,7 @@ class TestRulesAdvanced(unittest.TestCase):
             orientation=True,
             angle=180.0,
             angle_tolerance=0.0,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [parallel_rule, opposing_rule]
@@ -1206,7 +1206,7 @@ class TestRulesAdvanced(unittest.TestCase):
             furniture_select,
             diameter=1.5,
             height=2.0,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1234,7 +1234,7 @@ class TestRulesAdvanced(unittest.TestCase):
             furniture_select,
             diameter=0.2,
             height=2.0,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1262,7 +1262,7 @@ class TestRulesAdvanced(unittest.TestCase):
             furniture_select,
             diameter=3,
             height=2.0,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1295,7 +1295,7 @@ class TestRulesAdvanced(unittest.TestCase):
             reference="Source",
             tolerance=0.05,
             min_covering="101%",
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1326,7 +1326,7 @@ class TestRulesAdvanced(unittest.TestCase):
             tolerance=0.05,
             min_covering=0.3,
             max_covering=1.0,
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]
@@ -1362,7 +1362,7 @@ class TestRulesAdvanced(unittest.TestCase):
             reference="Source",
             tolerance=0.01,
             min_covering="50%",
-            state="Display_Result",
+            state="Final",
         )
 
         OneRuleFile.contains = [rule]

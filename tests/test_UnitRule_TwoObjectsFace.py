@@ -117,7 +117,7 @@ class TestTwoObjectsFace(unittest.TestCase):
     def run_rule(self, source_name="Near", target_name="Far", **parameters):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [self.model]
-        parameters["state"] = "Display_Result"
+        parameters["state"] = "Final"
         rule = TwoObjectsFace(
             self.select(source_name), self.select(target_name), **parameters
         )
