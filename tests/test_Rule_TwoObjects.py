@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check,Alignement,ClearanceForDoors,DirectView,FreeSpace,SurfaceRecover,ClearanceAxisToAxis
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check,Alignement,ClearanceForDoors,DirectView,FreeSpace,SurfaceRecover,ClearanceAxisToAxis,TwoObjectsFace
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
 from ifctester import ids
 
@@ -465,8 +465,8 @@ class TestRulesOBB(unittest.TestCase):
 class TestRulesAdvanced(unittest.TestCase):
     """
     Test cases for the Alignement, ClearanceForDoors,
-    ClearanceAxisToAxis, DirectView, FreeSpace and SurfaceRecover
-    rules, on the Duplex maquette.
+    ClearanceAxisToAxis, DirectView, FreeSpace, SurfaceRecover and
+    TwoObjectsFace rules, on the Duplex maquette.
     """
 
     def setUp(self):
@@ -953,6 +953,161 @@ class TestRulesAdvanced(unittest.TestCase):
             self.assertEqual(result.axis_mode, "Fallback")
             self.assertTrue(result.axis_degraded)
             self.assertGreater(result.distance_between, 0.0)
+
+    def test_two_objects_face_distance_rule(self):
+        """Test TwoObjectsFace distance check. The extreme top faces
+        of the 8 tall cabinets stand 0.81 to 0.90 m below the faces
+        of the slabs over them (the wood joist floors on the ground
+        floor, the roof on the first floor). With a 0.9 m minimum
+        distance every top-face/slab-face pair clashes (80 results,
+        one per face pair); with a 0.7 m requirement the clearance is
+        respected: no clash."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        cabinet_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["M_Tall Cabinet-Single Door.*"]}),
+        )
+        cabinet_select = SelectFacet()
+        cabinet_select.applicability = [cabinet_facet]
+
+        slab_facet = ids.Entity(name="IFCSLAB")
+        slab_select = SelectFacet()
+        slab_select.applicability = [slab_facet]
+
+        strict_rule = TwoObjectsFace(
+            cabinet_select, slab_select,
+            source_face_selection={"orientation": "Top", "extreme_faces": True},
+            distance=True, min_distance=0.9,state="Display_Result"
+        )
+        compliant_rule = TwoObjectsFace(
+            cabinet_select, slab_select,
+            source_face_selection={"orientation": "Top", "extreme_faces": True},
+            distance=True, min_distance=0.7,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [strict_rule, compliant_rule]
+        OneRuleFile.run()
+
+        # The tightest gap between a cabinet top face and a slab face.
+        self.assertEqual(len(strict_rule.result), 80)
+        for result in strict_rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.check, "distance")
+            self.assertGreaterEqual(result.value, 0.81)
+            self.assertLess(result.value, 0.9)
+        self.assertAlmostEqual(
+            min(result.value for result in strict_rule.result),
+            0.81405, places=4,
+        )
+
+        # 0.7 m is respected everywhere: no clash.
+        self.assertEqual(len(compliant_rule.result), 0)
+
+    def test_two_objects_face_intersection_rule(self):
+        """Test TwoObjectsFace intersection check. The skylight boxes
+        sit in the openings of the roof slab and their faces cross
+        the faces of the slab: 173 crossing face pairs clash, each by
+        more than 0.4 m of penetration depth."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        skylight_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["M_Skylight.*"]}),
+        )
+        skylight_select = SelectFacet()
+        skylight_select.applicability = [skylight_facet]
+
+        roof_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["Basic Roof.*"]}),
+        )
+        roof_select = SelectFacet()
+        roof_select.applicability = [roof_facet]
+
+        rule = TwoObjectsFace(skylight_select, roof_select, intersection=True,state="Display_Result")
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 173)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.check, "intersection")
+            self.assertGreater(result.value, 0.0)
+        # The result carries the two faces of the pair (normal, area).
+        one_result = rule.result[0]
+        self.assertIn("normal", one_result.face_a)
+        self.assertIn("area", one_result.face_a)
+        self.assertIn("normal", one_result.face_b)
+        self.assertIn("area", one_result.face_b)
+        self.assertAlmostEqual(
+            min(result.value for result in rule.result), 0.4, places=3
+        )
+
+    def test_two_objects_face_orientation_rule(self):
+        """Test TwoObjectsFace orientation check. The sloped faces of
+        the skylight curbs are not parallel to the top face of the
+        roof: with a 0 degree target angle all the 5040 face pairs
+        deviate (measured angles 90, 125, 145 degrees, and the 1872
+        pairs whose skylight face points toward the roof at 180
+        degrees). With a 180 degree target those 1872 opposing pairs
+        pass and only the 3168 remaining pairs clash."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        skylight_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["M_Skylight.*"]}),
+        )
+        skylight_select = SelectFacet()
+        skylight_select.applicability = [skylight_facet]
+
+        roof_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["Basic Roof.*"]}),
+        )
+        roof_select = SelectFacet()
+        roof_select.applicability = [roof_facet]
+
+        parallel_rule = TwoObjectsFace(
+            skylight_select, roof_select,
+            target_face_selection={"orientation": "Top", "extreme_faces": True},
+            orientation=True, angle=0.0, angle_tolerance=0.0,state="Display_Result"
+        )
+        opposing_rule = TwoObjectsFace(
+            skylight_select, roof_select,
+            target_face_selection={"orientation": "Top", "extreme_faces": True},
+            orientation=True, angle=180.0, angle_tolerance=0.0,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [parallel_rule, opposing_rule]
+        OneRuleFile.run()
+
+        from collections import Counter
+
+        self.assertEqual(len(parallel_rule.result), 5040)
+        measured = Counter(
+            round(result.value) for result in parallel_rule.result
+        )
+        self.assertEqual(
+            measured, Counter({90: 2304, 180: 1872, 125: 576, 145: 288})
+        )
+        for result in parallel_rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.check, "orientation")
+
+        # At 180 degrees the 1872 opposing pairs pass, the rest clashes.
+        self.assertEqual(len(opposing_rule.result), 3168)
+        self.assertEqual(
+            {round(result.value) for result in opposing_rule.result},
+            {90, 125, 145},
+        )
 
     def test_free_space_rule(self):
         """Test FreeSpace rule. 7 of the 21 spaces cannot host a free

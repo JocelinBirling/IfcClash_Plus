@@ -465,6 +465,7 @@ class RuleCheck:
 
 
 
+
 class RuleCheckOneObject(RuleCheck):
     def __init__(self, state, source):
         super().__init__(state, source)

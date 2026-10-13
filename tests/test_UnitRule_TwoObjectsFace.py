@@ -117,7 +117,7 @@ class TestTwoObjectsFace(unittest.TestCase):
     def run_rule(self, source_name="Near", target_name="Far", **parameters):
         rule_file = RuleFile()
         rule_file.list_ifc_path = [self.model]
-        parameters["state"] = "Final"
+        parameters["state"] = "Display_Result"
         rule = TwoObjectsFace(
             self.select(source_name), self.select(target_name), **parameters
         )
@@ -331,6 +331,101 @@ class TestTwoObjectsFace(unittest.TestCase):
             "Near", "Near", distance=True, min_distance=0.1
         )
         self.assertEqual(len(rule.result), 0)
+
+    # ---- Selection modes: ObjetVsFace and FaceVsFace
+    #
+    # A side of the rule is used as its whole object when no
+    # FaceSelection is provided, and as its selected faces only
+    # otherwise. The nominal section covers FaceVsFace and the
+    # whole-target section covers FaceVsObjet; the tests below pin
+    # ObjetVsFace (the whole source against selected target faces)
+    # and the exact pairing of FaceVsFace.
+
+    def test_object_vs_face_distance_min(self):
+        """ObjetVsFace: without Source_Face_Selection the whole Near
+        object (12 triangles) is checked against the faces of Far
+        oriented toward Near (2 triangles): 24 pairs, the ones
+        holding the 2 m gap clash under a 2.10 m requirement (the
+        mirror image of the whole-target test)."""
+        rule = self.run_rule(
+            target_face_selection=self.toward_source(),
+            distance=True,
+            min_distance=2.10,
+        )
+
+        self.assertEqual(len(rule.result), 19)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.source.Name, "Near")
+            self.assertEqual(result.target.Name, "Far")
+            self.assertEqual(result.check, "distance")
+            self.assertAlmostEqual(result.value, 2.0, places=6)
+
+    def test_object_vs_face_distance_within_bounds(self):
+        """ObjetVsFace: every pair of the whole Near object against
+        the faces of Far oriented toward Near lies within [1.5, 3.5]:
+        no clash."""
+        rule = self.run_rule(
+            target_face_selection=self.toward_source(),
+            distance=True,
+            min_distance=1.5,
+            max_distance=3.5,
+        )
+        self.assertEqual(len(rule.result), 0)
+
+    def test_object_vs_face_orientation(self):
+        """ObjetVsFace: the normals of the whole Near object (12
+        triangles) against the faces of Far oriented toward Near (2
+        triangles). Against the -X normal of Far, the +X face of Near
+        measures 180 degrees (4 pairs), the -X face 0 degrees (4
+        pairs) and the 4 side faces 90 degrees (16 pairs). Under a
+        180 degree requirement only the opposing pairs pass: 20
+        clashes; under a 90 degree requirement the side pairs pass:
+        8 clashes (4 at 180 degrees, 4 at 0 degrees)."""
+        rule = self.run_rule(
+            target_face_selection=self.toward_source(),
+            orientation=True,
+            angle=180,
+            angle_tolerance=0,
+        )
+        self.assertEqual(len(rule.result), 20)
+        self.assertEqual({result.check for result in rule.result}, {"orientation"})
+
+        rule = self.run_rule(
+            target_face_selection=self.toward_source(),
+            orientation=True,
+            angle=90,
+            angle_tolerance=0,
+        )
+        self.assertEqual(len(rule.result), 8)
+        measured = {}
+        for result in rule.result:
+            measured[round(result.value)] = (
+                measured.get(round(result.value), 0) + 1
+            )
+        self.assertEqual(measured, {180: 4, 0: 4})
+
+    def test_face_vs_face_pairs_only_the_selected_faces(self):
+        """FaceVsFace: each side keeps its 2 facing triangles, so the
+        rule pairs exactly 2 x 2 = 4 faces. With a 0 m requirement
+        every pair clashes: any face leaking out of a selection would
+        raise the count above 4."""
+        rule = self.run_rule(
+            source_face_selection=self.toward_target(),
+            target_face_selection=self.toward_source(),
+            distance=True,
+            max_distance=0.0,
+        )
+
+        self.assertEqual(len(rule.result), 4)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.source.Name, "Near")
+            self.assertEqual(result.target.Name, "Far")
+            self.assertAlmostEqual(result.face_a["normal"][0], 1.0, places=6)
+            self.assertAlmostEqual(result.face_b["normal"][0], -1.0, places=6)
+            self.assertAlmostEqual(result.face_a["area"], 0.5, places=6)
+            self.assertAlmostEqual(result.face_b["area"], 0.5, places=6)
 
     # ---- Invalid parameters
 
