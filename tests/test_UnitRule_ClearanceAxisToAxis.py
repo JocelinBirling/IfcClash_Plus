@@ -229,7 +229,7 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         valid below 0.15 in MinDistance mode."""
         rule = self.run_rule(
             self.end_to_end_model, "PipeA", "PipeB", mode="MinDistance",
-            min_distance=0.05, max_distance=0.15,
+            min_distance=0.05, max_distance=0.15
         )
         self.assertEqual(len(rule.result), 0)
 

@@ -4,12 +4,13 @@ Test suite for the display update of the base functions of RuleClass.py.
 The GUI itself (init_display) cannot run headless: this file tests the
 data the display functions are built on — the green/red color map of
 the selections, the unique result pairs and the one-color-per-pair
-assignment. The zone hooks (_display_input_zone) are checked for
-existence: the zone construction of ClearanceForDoors and FreeSpace is
-covered by their own test files.
+assignment, the display hooks removal (everything goes through the
+display registry, filled during run()) and the centralized
+Display_Input handling of end_rule_action. The registry itself is
+covered by test_structure_DisplayRegistry.py.
 
 Execution (from the repository root):
-    python -m pytest tests/test_DisplayUpdate.py -v
+    python -m pytest tests/test_structure_DisplayUpdate.py -v
 """
 import os
 import random
@@ -220,32 +221,125 @@ class TestDisplayColorMap(unittest.TestCase):
         pairs = rule._result_pairs()
         self.assertEqual(len(pairs), 1)
 
-    def test_zone_and_context_hooks(self):
-        """Only ClearanceForDoors and FreeSpace override the zone hook;
-        only the rules with a context (DirectView, FreeSpace) override
-        the context hook; the other rules inherit the empty ones."""
+    def test_no_display_hooks_left(self):
+        """The display hooks are gone: no rule overrides one, the base
+        classes do not define them anymore. Every auxiliary geometry
+        goes through the display registry, filled during run()."""
         from Rules import DirectView
 
-        self.assertIn("_display_input_zone", ClearanceForDoors.__dict__)
-        self.assertIn("_display_input_zone", FreeSpace.__dict__)
-        self.assertNotIn("_display_input_zone", Alignement.__dict__)
-        self.assertNotIn("_display_input_zone", SurfaceRecover.__dict__)
-        self.assertNotIn("_display_input_zone", DirectView.__dict__)
+        for rule_class in (
+            Alignement,
+            ClearanceForDoors,
+            SurfaceRecover,
+            FreeSpace,
+            DirectView,
+        ):
+            self.assertNotIn("_display_input_zone", rule_class.__dict__)
+            self.assertNotIn("_display_input_context", rule_class.__dict__)
+            self.assertNotIn("_display_result_specific", rule_class.__dict__)
 
-        self.assertIn("_display_input_context", DirectView.__dict__)
-        self.assertIn("_display_input_context", FreeSpace.__dict__)
-        self.assertNotIn("_display_input_context", Alignement.__dict__)
-        self.assertNotIn("_display_input_context", SurfaceRecover.__dict__)
-        self.assertNotIn("_display_input_context", ClearanceForDoors.__dict__)
+        from RuleClass import RuleCheck, RuleCheckOneObject, RuleCheckTwoObjects
 
-        # The base hooks display nothing: callable without a viewer.
-        source = select_by_name("Room")
-        context = SelectFacet()
-        rule = FreeSpace(source, context, diameter=1.5, height=1.4)
-        from RuleClass import RuleCheck
+        for base in (RuleCheck, RuleCheckOneObject, RuleCheckTwoObjects):
+            self.assertNotIn("_display_input_zone", base.__dict__)
+            self.assertNotIn("_display_input_context", base.__dict__)
+            self.assertNotIn("_display_result_specific", base.__dict__)
+            self.assertNotIn("_display_input_specific", base.__dict__)
 
-        RuleCheck._display_input_zone(rule)
-        RuleCheck._display_input_context(rule)
+    def test_display_input_centralized_in_end_rule_action(self):
+        """end_rule_action owns the Display_Input state: it displays
+        the generic input plus the registry, then stops the rule. The
+        run() of the rules holds no display logic anymore."""
+        import RuleClass as rule_class_module
+
+        calls = []
+
+        class FakeContext:
+            def __init__(self):
+                self.displayed = []
+
+            def Display(self, ais_shape, update):
+                self.displayed.append(ais_shape)
+
+        class FakeDisplay:
+            Context = FakeContext()
+
+            def FitAll(self):
+                calls.append("FitAll")
+
+            def start_display(self):
+                calls.append("start_display")
+
+        fake_display = FakeDisplay()
+
+        def fake_init_display():
+            return fake_display, fake_display.start_display, None, None
+
+        original = rule_class_module.init_display
+        rule_class_module.init_display = fake_init_display
+        try:
+            rule = Alignement(SelectFacet(), tolerance=0.1, state="Display_Input")
+            rule.register_display_item("zone", ("edge", (0, 0, 0), (1, 0, 0)))
+            rule.end_rule_action()
+        finally:
+            rule_class_module.init_display = original
+
+        self.assertEqual(calls, ["FitAll", "start_display"])
+        # The registered zone item has been displayed by the registry.
+        self.assertEqual(len(fake_display.Context.displayed), 1)
+
+    def test_pilot_rules_fill_the_registry(self):
+        """The migrated rules register their auxiliary geometries
+        during run(), in the Final state: the display is a read-only
+        consumer of the registry."""
+
+        # Alignement: the fitted element of every valid group.
+        model = os.path.join(self.temp_dir, "row.ifc")
+        make_model(
+            model,
+            [("IfcColumn", "C0", 0, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C1", 2, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C2", 4, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C3", 8, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C4", 10, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C5", 12, 0, 0, 0.3, 0.3, 3),
+                ("IfcColumn", "C_offset", 6, 0.5, 0, 0.3, 0.3, 3)],
+        )
+        rule = self.run_rule(
+            model, Alignement(select_by_class("IFCCOLUMN"), tolerance=0.15)
+        )
+        self.assertEqual(rule.available_display_categories(), {"zone"})
+        self.assertGreaterEqual(len(rule.display_items), 1)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "zone")
+            self.assertEqual(item.color, (1, 0, 0))
+
+        # SurfaceRecover: the contact triangles of every clash.
+        model = os.path.join(self.temp_dir, "contact.ifc")
+        make_model(
+            model,
+            [
+                ("IfcSlab", "SlabA", 2, 0, 2.9, 3, 3, 0.1),
+                ("IfcSlab", "SlabB", 2, 0.3, 2.9, 3, 3, 0.1),
+                ("IfcBuildingElementProxy", "Cuboid", 2, 0, 0, 2, 1, 2.0),
+            ],
+        )
+        rule = self.run_rule(
+            model,
+            SurfaceRecover(
+                select_by_class("IFCSLAB"),
+                select_by_class("IFCBUILDINGELEMENTPROXY"),
+                direction="Bottom",
+                reference="Source",
+                tolerance=1.0,
+                min_covering="101%",
+            ),
+        )
+        self.assertGreater(len(rule.result), 0)
+        self.assertEqual(rule.available_display_categories(), {"face"})
+        for item in rule.display_items:
+            self.assertEqual(item.category, "face")
+            self.assertEqual(item.color, (1, 0.5, 0))
 
 
 if __name__ == "__main__":

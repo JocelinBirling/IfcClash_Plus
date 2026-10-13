@@ -48,9 +48,6 @@ class Volume(RuleCheckOneObject):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
 
-        if self.state == "Display_Input":
-            self._display_input_generic()
-
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
                 self.geom_settings,
@@ -74,9 +71,7 @@ class Volume(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -93,9 +88,6 @@ class Area(RuleCheckOneObject):
     def run(self):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -119,9 +111,7 @@ class Area(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -140,6 +130,7 @@ class TopOrBottomSurface(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
+        self.display_items.clear()
         if self.top_or_bot_method == "Top":
             direction = (0.0, 0.0, 1)
         if self.top_or_bot_method == "Bottom":
@@ -147,9 +138,6 @@ class TopOrBottomSurface(RuleCheckOneObject):
 
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -170,9 +158,11 @@ class TopOrBottomSurface(RuleCheckOneObject):
 
                     area = result["total_area"]
 
-                    if self.state == "Display_Input":
-                        for face in result["extrem_faces"]:
-                            self._add_face_to_display(face, (1, 0, 0))
+                    # The extreme faces, kept in the display registry.
+                    for face in result["extrem_faces"]:
+                        self.register_display_item(
+                            "face", face, (0.5,0,1), 0.2, element=entity
+                        )
 
                     if self.surface_min < area < self.surface_max:
                         result = ClashResultOneObject(source=entity, state=True)
@@ -184,9 +174,7 @@ class TopOrBottomSurface(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -202,9 +190,6 @@ class LateralSurface(RuleCheckOneObject):
     def run(self):  # @todo Check if the result is trustworthy
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -233,9 +218,7 @@ class LateralSurface(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -251,9 +234,6 @@ class ProjectedSurface(RuleCheckOneObject):
     def run(self):  # @todo Check if the result is trustworthy
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -282,9 +262,7 @@ class ProjectedSurface(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -298,11 +276,9 @@ class ObbHigh(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -328,8 +304,10 @@ class ObbHigh(RuleCheckOneObject):
 
                     value_to_check = max_z - min_z
 
-                    if self.state == "Display_Input":
-                        self._add_obb_to_display(obb, (1, 0, 0))
+                    # The OBB, kept in the display registry.
+                    self.register_display_item(
+                        "obb", obb, (0.5,0,1), 0.2, element=entity
+                    )
 
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)
@@ -341,9 +319,7 @@ class ObbHigh(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -360,11 +336,9 @@ class ObbLength(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             iterator = ifcopenshell.geom.iterator(
@@ -381,8 +355,10 @@ class ObbLength(RuleCheckOneObject):
                     entity = ifc_file.by_id(shape.data.id)
                     obb = create_obb_from_TopoDs_Shape(geom)
 
-                    if self.state == "Display_Input":
-                        self._add_obb_to_display(obb, (1, 0, 0))
+                    # The OBB, kept in the display registry.
+                    self.register_display_item(
+                        "obb", obb, (0.5,0,1), 0.2, element=entity
+                    )
 
                     x_size = obb.XHSize() * 2
                     y_size = obb.YHSize() * 2
@@ -416,9 +392,7 @@ class ObbLength(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -446,10 +420,8 @@ class Orientation(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
-
+        self.display_items.clear()
         self.select_source.run()
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         occ_orientation = gp_Dir(
             self.orientation[0], self.orientation[1], self.orientation[2]
@@ -477,9 +449,20 @@ class Orientation(RuleCheckOneObject):
                         dir1, self.angular_tolerance
                     )
 
-                    if self.state == "Display_Input":
-                        self._add_gp_Dir_to_display(geom, dir1, (1, 0, 0))
-                        self._add_gp_Dir_to_display(geom, occ_orientation, (0, 1, 0))
+                    # The main direction of the OBB and the expected
+                    # orientation, kept in the display registry.
+                    center = self._shape_center(geom)
+                    self.register_display_item(
+                        "axis", ("axis", center, dir1, 0.5), (0.5,0,1), 0.2,
+                        element=entity,
+                    )
+                    self.register_display_item(
+                        "axis",
+                        ("axis", center, occ_orientation, 0.5),
+                        (0, 1, 0),
+                        0.2,
+                        element=entity,
+                    )
 
                     if self.direction_method == "Parrallel":
                         check_direction = is_parrallel
@@ -496,9 +479,7 @@ class Orientation(RuleCheckOneObject):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -544,12 +525,10 @@ class AngleBetween(RuleCheckTwoObjects):
         return angle_diff <= self.angle_tolerance
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         # Collect source objects with their main directions
         source_objects = []
@@ -569,8 +548,16 @@ class AngleBetween(RuleCheckTwoObjects):
                         geom, self.direction_method_for_source
                     )
                     source_objects.append({"entity": entity, "direction": direction})
-                    if self.state == "Display_Input":
-                        self._add_gp_Dir_to_display(geom, direction, (1, 0, 0))
+
+                    # The main direction of the object, kept in the
+                    # display registry.
+                    self.register_display_item(
+                        "axis",
+                        ("axis", self._shape_center(geom), direction, 0.5),
+                        (0.5,0,1),
+                        0.2,
+                        element=entity,
+                    )
 
                     if not iterator.next():
                         break
@@ -593,8 +580,16 @@ class AngleBetween(RuleCheckTwoObjects):
                         geom, self.direction_method_for_target
                     )
                     target_objects.append({"entity": entity, "direction": direction})
-                    if self.state == "Display_Input":
-                        self._add_gp_Dir_to_display(geom, direction, (1, 0, 0))
+
+                    # The main direction of the object, kept in the
+                    # display registry.
+                    self.register_display_item(
+                        "axis",
+                        ("axis", self._shape_center(geom), direction, 0.5),
+                        (0.5,0,1),
+                        0.2,
+                        element=entity,
+                    )
                     if not iterator.next():
                         break
 
@@ -612,9 +607,7 @@ class AngleBetween(RuleCheckTwoObjects):
                     self.result.append(result)
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         self.end_rule_action()
 
@@ -633,9 +626,6 @@ class Intersection(RuleCheckTwoObjects):
 
         source_elements = []
         target_elements = []
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         self.add_to_tree(self.select_source, "BVH")
         self.add_to_tree(self.select_target, "BVH")
@@ -683,9 +673,7 @@ class Intersection(RuleCheckTwoObjects):
 
         self.result = list_result
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -703,9 +691,6 @@ class Clearance(RuleCheckTwoObjects):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
@@ -745,9 +730,7 @@ class Clearance(RuleCheckTwoObjects):
             )
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -933,33 +916,32 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         return float(distance_tool.Value())
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         source_objects = self._collect_axes(self.select_source)
         target_objects = self._collect_axes(self.select_target)
 
-        if self.state == "Display_Input":
-            from OCC.Core.gp import gp_Dir
-
-            for objects, color in (
-                (source_objects, (1, 0, 0)),
-                (target_objects, (0, 0, 1)),
-            ):
-                for one_object in objects:
-                    direction = one_object["direction"]
-                    self._add_gp_Dir_to_display(
-                        one_object["geom"],
-                        gp_Dir(
-                            float(direction[0]),
-                            float(direction[1]),
-                            float(direction[2]),
-                        ),
-                        color,
-                    )
+        # The support segments (the axes), kept in the display
+        # registry: center +/- direction * half length.
+        for objects, color in (
+            (source_objects, (0.5,0,1)),
+            (target_objects, (0.5,0,1)),
+        ):
+            for one_object in objects:
+                direction = one_object["direction"]
+                self.register_display_item(
+                    "axis",
+                    (
+                        "edge",
+                        one_object["center"] - direction * one_object["half_length"],
+                        one_object["center"] + direction * one_object["half_length"],
+                    ),
+                    color,
+                    0.2,
+                    element=one_object["entity"],
+                )
 
         for source_obj in source_objects:
             for target_obj in target_objects:
@@ -1024,9 +1006,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                     self.result.append(result)
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -1041,9 +1021,6 @@ class Collision(RuleCheckTwoObjects):
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
@@ -1081,9 +1058,7 @@ class Collision(RuleCheckTwoObjects):
             )
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -1094,43 +1069,6 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context: Select = context
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
-
-    def display_result(self):
-        # Ray_Check also displays its context elements
-        self._display_result_generic()
-        self._display_context()
-
-        self.display.FitAll()
-        self.start_display()
-
-    def _display_context(self):
-
-        # Imports for center calculation and edge display
-        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-        from OCC.Core.Bnd import Bnd_Box
-        from OCC.Core.BRepBndLib import brepbndlib
-        from OCC.Core.gp import gp_Pnt
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-        from OCC.Display.SimpleGui import init_display
-
-        def add_to_display(entity, geom_settings, color):
-            shape = ifcopenshell.geom.create_shape(geom_settings, entity)
-            geom = shape.geometry
-
-            ais_shape = AIS_Shape(geom)
-
-            ais_shape.SetColor(color)
-            ais_shape.SetTransparency(0.9)
-            self.display.Context.Display(ais_shape, True)
-
-        geom_settings = ifcopenshell.geom.settings()
-        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
-
-        grey = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
-
-        for element in self.select_context.list_of_elements:
-            add_to_display(element, geom_settings, grey)
 
     def _get_elements_centers(self, select: Select, geom_settings):
         """Compute the center of the bounding box of each selected element,
@@ -1155,6 +1093,7 @@ class Ray_Check(RuleCheckTwoObjects):
         return centers
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
@@ -1163,13 +1102,16 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
 
+        # The context elements, kept in the display registry.
+        for elements in self.select_context.dict_elements.values():
+            for element in elements or []:
+                self.register_display_item(
+                    "context", ("entity", element), (0.5, 0.5, 0.5), 0.9
+                )
+
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
         self.select_context.create_list_of_element()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
-            self._display_context()
 
         self.add_to_tree(self.select_context, "UB")
 
@@ -1240,9 +1182,7 @@ class Ray_Check(RuleCheckTwoObjects):
                     )
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
 
@@ -1266,12 +1206,10 @@ class Above(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         sources_data = []
         targets_data = []
@@ -1309,9 +1247,12 @@ class Above(RuleCheckTwoObjects):
                             shape=geom, direction=source_direction
                         )
                     )
-                    if self.state == "Display_Input":
-                        for face in extrem_faces["visible_faces"]:
-                            self._add_face_to_display(face, (1, 0, 0))
+
+                    # The extreme faces, kept in the display registry.
+                    for face in extrem_faces["visible_faces"]:
+                        self.register_display_item(
+                            "face", face, (0.5,0,1), 0.2, element=entity
+                        )
 
                     dict = {
                         "entity": entity,
@@ -1345,9 +1286,11 @@ class Above(RuleCheckTwoObjects):
                         )
                     )
 
-                    if self.state == "Display_Input":
-                        for face in extrem_faces["visible_faces"]:
-                            self._add_face_to_display(face, (1, 0, 0))
+                    # The extreme faces, kept in the display registry.
+                    for face in extrem_faces["visible_faces"]:
+                        self.register_display_item(
+                            "face", face, (0.5,0,1), 0.2, element=entity
+                        )
 
                     dict = {
                         "entity": entity,
@@ -1360,9 +1303,7 @@ class Above(RuleCheckTwoObjects):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         # Check if part of extrem faces are close to each other
         for source in sources_data:
             flag_is_above = False
@@ -1458,12 +1399,10 @@ class Below(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         sources_data = []
         targets_data = []
@@ -1501,9 +1440,12 @@ class Below(RuleCheckTwoObjects):
                             shape=geom, direction=source_direction
                         )
                     )
-                    if self.state == "Display_Input":
-                        for face in extrem_faces["visible_faces"]:
-                            self._add_face_to_display(face, (1, 0, 0))
+
+                    # The extreme faces, kept in the display registry.
+                    for face in extrem_faces["visible_faces"]:
+                        self.register_display_item(
+                            "face", face, (0.5,0,1), 0.2, element=entity
+                        )
 
                     dict = {
                         "entity": entity,
@@ -1536,9 +1478,12 @@ class Below(RuleCheckTwoObjects):
                             shape=geom, direction=target_direction
                         )
                     )
-                    if self.state == "Display_Input":
-                        for face in extrem_faces["visible_faces"]:
-                            self._add_face_to_display(face, (1, 0, 0))
+
+                    # The extreme faces, kept in the display registry.
+                    for face in extrem_faces["visible_faces"]:
+                        self.register_display_item(
+                            "face", face, (0.5,0,1), 0.2, element=entity
+                        )
 
                     dict = {
                         "entity": entity,
@@ -1551,9 +1496,7 @@ class Below(RuleCheckTwoObjects):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         # Check if part of extrem faces are close to each other
         for source in sources_data:
@@ -1633,39 +1576,6 @@ class Below(RuleCheckTwoObjects):
 
         return dict_to_return
 
-    def _display_input_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-
-        color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Solid()
-
-                    ais_shape = AIS_Shape(compound)
-                    ais_shape.SetColor(color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
 class Template(RuleCheckTwoObjects):
@@ -1675,15 +1585,6 @@ class Template(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings(USE_WORLD_COORDS=False)
 
     def run(self):
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
-
-        if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
-
         self.end_rule_action()
 
 
@@ -1695,12 +1596,10 @@ class OBB_Above(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1722,8 +1621,10 @@ class OBB_Above(RuleCheckTwoObjects):
                     obb = create_obb_from_TopoDs_Shape(geom)  # Why not use
                     clash_obb = obb.detach_top_by_extrude(self.tolerance)
 
-                    if self.state == "Display_Input":
-                        self._add_obb_to_display(clash_obb)
+                    # The detection zone, kept in the display registry.
+                    self.register_display_item(
+                        "obb", clash_obb, (0.5,0,1), 0.2, element=entity
+                    )
 
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
@@ -1734,9 +1635,7 @@ class OBB_Above(RuleCheckTwoObjects):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
@@ -1785,39 +1684,6 @@ class OBB_Above(RuleCheckTwoObjects):
                     self.result.append(result)
         self.end_rule_action()
 
-    def _display_input_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-
-        color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Solid()
-
-                    ais_shape = AIS_Shape(compound)
-                    ais_shape.SetColor(color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
 class OBB_Below(RuleCheckTwoObjects):
@@ -1828,12 +1694,10 @@ class OBB_Below(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -1855,8 +1719,10 @@ class OBB_Below(RuleCheckTwoObjects):
                     obb = create_obb_from_TopoDs_Shape(geom)
                     clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
 
-                    if self.state == "Display_Input":
-                        self._add_obb_to_display(clash_obb)
+                    # The detection zone, kept in the display registry.
+                    self.register_display_item(
+                        "obb", clash_obb, (0.5,0,1), 0.2, element=entity
+                    )
 
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
@@ -1866,9 +1732,7 @@ class OBB_Below(RuleCheckTwoObjects):
                     if not iterator.next():
                         break
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         # Get target geometries
         target_geoms = []
         for ifc_file in self.select_target.dict_elements.keys():
@@ -1916,39 +1780,6 @@ class OBB_Below(RuleCheckTwoObjects):
                     self.result.append(result)
         self.end_rule_action()
 
-    def _display_input_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-
-        color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
-                    compound = clash_obb.to_TopoDS_Solid()
-
-                    ais_shape = AIS_Shape(compound)
-                    ais_shape.SetColor(color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
 class OBB_Front_And_Back(RuleCheckTwoObjects):
@@ -1962,12 +1793,10 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         self.direction_method = method
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         # Create OBBs for source objects (these serve as detection zones)
         source_obbs = []
@@ -2002,10 +1831,13 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         main_directions[1], self.tolerance
                     )
 
-                    if self.state == "Display_Input":
-                        color = (1, 0, 0)
-                        self._add_obb_to_display(clash_obb_1, color)
-                        self._add_obb_to_display(clash_obb_2, color)
+                    # The detection zones, kept in the display registry.
+                    self.register_display_item(
+                        "obb", clash_obb_1, (0.5,0,1), 0.2, element=entity
+                    )
+                    self.register_display_item(
+                        "obb", clash_obb_2, (0.5,0,1), 0.2, element=entity
+                    )
 
                     compound_1 = clash_obb_1.to_TopoDS_Solid()
                     compound_2 = clash_obb_2.to_TopoDS_Solid()
@@ -2020,9 +1852,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         # Get target geometries
         target_geoms = []
@@ -2068,55 +1898,6 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
 
         self.end_rule_action()
 
-    def _display_input_specific(self):
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        settings = ifcopenshell.geom.settings()
-        settings.set("USE_WORLD_COORDS", True)
-
-        color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-            color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    # obb =create_obb_with_fixed_z(geom)
-                    main_directions = obb.get_two_main_direction_OBB_shape(
-                        self.direction_method
-                    )
-                    clash_obb_1 = obb.detach_side_by_extrude(
-                        main_directions[0], self.tolerance
-                    )
-                    clash_obb_2 = obb.detach_side_by_extrude(
-                        main_directions[1], self.tolerance
-                    )
-
-                    compound_1 = clash_obb_1.to_TopoDS_Solid()
-                    compound_2 = clash_obb_2.to_TopoDS_Solid()
-
-                    ais_shape = AIS_Shape(compound_1)
-                    ais_shape.SetColor(color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    ais_shape = AIS_Shape(compound_2)
-                    ais_shape.SetColor(color)
-                    ais_shape.SetTransparency(0.2)
-                    self.display.Context.Display(ais_shape, True)
-
-                    if not iterator.next():
-                        break
 
 
 class OBB_Custom(RuleCheckTwoObjects):
@@ -2127,12 +1908,10 @@ class OBB_Custom(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         # Create OBBs for source objects (these serve as detection zones)
         source_geoms = []
@@ -2156,9 +1935,11 @@ class OBB_Custom(RuleCheckTwoObjects):
                             {"entity": entity, "geom": compound, "obb": clash_obb}
                         )
 
-                        if self.state == "Display_Input":
-                            color = (1, 0, 0)
-                            self._add_obb_to_display(clash_obb, color)
+                        # The detection zones, kept in the display
+                        # registry.
+                        self.register_display_item(
+                            "obb", clash_obb, (0.5,0,1), 0.2, element=entity
+                        )
 
                     if not iterator.next():
                         break
@@ -2186,9 +1967,7 @@ class OBB_Custom(RuleCheckTwoObjects):
                         break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         # Check for clashes between source OBBs (detection zones) and target geometries
         for source_data in source_geoms:
@@ -2318,21 +2097,21 @@ class Alignement(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
 
-        if self.state == "Display_Input":
-            self._display_input_generic()
-
         objects = self._collect_axis_data()
-
-        if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
-
         offsets = self._compute_offsets(objects)
         groups = self._compute_groups(objects)
         self.alignment = self._build_alignment_info(objects, offsets, groups)
+
+        # The fitted element of every valid group (the clash detection
+        # zone), kept in the display registry.
+        for shape, transparency in self._fitted_zone_shapes(objects, groups):
+            self.register_display_item("zone", shape, (0.5,0,1), transparency)
+
+        if self.state == "Display_Input":
+            return self.end_rule_action()
 
         for one_object, clash, offset in zip(
             objects, self._clash_flags(objects, groups), offsets
@@ -2631,33 +2410,22 @@ class Alignement(RuleCheckOneObject):
             "members": members,
         }
 
-    def _display_input_zone(self):
-        """The fitted element of every valid alignment group (the
-        clash detection zones), displayed red translucent on top of
-        the source selection in Display_Input.
+    def _fitted_zone_shapes(self, objects, groups):
+        """The fitted element of every valid alignment group (the clash
+        detection zones), as display shapes.
 
-        The alignment is computed as in run(): each valid group is
-        displayed with its fitted element — the fitted plane (a Plane
-        fit) as a rectangle spanning the member objects, the fitted
-        line (a Line fit) as an edge, the fitted plan line of the
-        Vertical orientation as its vertical extrusion. Groups
-        sharing the same element are displayed once; the global fit is
-        displayed when no valid group exists.
+        The fitted plane (a Plane fit) is a rectangle spanning the
+        member objects, the fitted line (a Line fit) an edge, the
+        fitted plan line of the Vertical orientation its vertical
+        extrusion. Groups sharing the same element appear once; the
+        global fit is returned alone when no valid group exists.
+
+        Returns (shape, transparency) pairs, the shape a
+        ("face", corners) or ("edge", start, end) tuple for the
+        display registry.
         """
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.BRepBuilderAPI import (
-            BRepBuilderAPI_MakeEdge,
-            BRepBuilderAPI_MakeFace,
-            BRepBuilderAPI_MakePolygon,
-        )
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        objects = self._collect_axis_data()
         if not objects:
-            return
-        offsets = self._compute_offsets(objects)
-        groups = self._compute_groups(objects)
-        self.alignment = self._build_alignment_info(objects, offsets, groups)
+            return []
 
         # One fitted element per valid group, or the global fit alone
         # when no group is valid.
@@ -2690,8 +2458,8 @@ class Alignement(RuleCheckOneObject):
             return vector
 
         # The same fitted element shared by several groups (a pair and
-        # the group it extends to) is displayed once. The signature of
-        # an element: its direction, and its position reduced to its
+        # the group it extends to) appears once. The signature of an
+        # element: its direction, and its position reduced to its
         # invariant — the offset along the normal for a plane, the
         # component perpendicular to the direction for a line.
         displayed = {}
@@ -2711,33 +2479,6 @@ class Alignement(RuleCheckOneObject):
                 continue
             displayed[key] = (element, position, vector, group)
 
-        def point(coordinates):
-            return gp_Pnt(
-                float(coordinates[0]),
-                float(coordinates[1]),
-                float(coordinates[2]),
-            )
-
-        def display_face(corners):
-            polygon = BRepBuilderAPI_MakePolygon(
-                point(corners[0]),
-                point(corners[1]),
-                point(corners[2]),
-                point(corners[3]),
-                True,
-            )
-            face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
-            ais_shape = AIS_Shape(face)
-            ais_shape.SetColor(red_color)
-            ais_shape.SetTransparency(0.6)
-            self.display.Context.Display(ais_shape, True)
-
-        def display_edge(start, end):
-            edge = BRepBuilderAPI_MakeEdge(point(start), point(end)).Edge()
-            ais_shape = AIS_Shape(edge)
-            ais_shape.SetColor(red_color)
-            self.display.Context.Display(ais_shape, True)
-
         def span(values, margin=0.25):
             """The extent of a coordinate, padded to stay visible."""
             low, high = min(values), max(values)
@@ -2745,8 +2486,7 @@ class Alignement(RuleCheckOneObject):
                 return low - margin, high + margin
             return low, high
 
-        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
+        shapes = []
         for element, position, direction, group in displayed.values():
             if group is None:
                 # The global fit spans the objects within the tolerance.
@@ -2781,17 +2521,22 @@ class Alignement(RuleCheckOneObject):
                 vs = [float((e - position) @ axis_v) for e in endpoints]
                 min_u, max_u = span(us)
                 min_v, max_v = span(vs)
-                display_face(
-                    [
-                        position + axis_u * min_u + axis_v * min_v,
-                        position + axis_u * max_u + axis_v * min_v,
-                        position + axis_u * max_u + axis_v * max_v,
-                        position + axis_u * min_u + axis_v * max_v,
-                    ]
+                shapes.append(
+                    (
+                        (
+                            "face",
+                            [
+                                position + axis_u * min_u + axis_v * min_v,
+                                position + axis_u * max_u + axis_v * min_v,
+                                position + axis_u * max_u + axis_v * max_v,
+                                position + axis_u * min_u + axis_v * max_v,
+                            ],
+                        ),
+                        0.6,
+                    )
                 )
             elif self._orientation == "Vertical":
-                # The fitted plan line, displayed as its vertical
-                # extrusion.
+                # The fitted plan line, as its vertical extrusion.
                 ts = [
                     float((endpoint[:2] - position) @ direction)
                     for endpoint in endpoints
@@ -2809,13 +2554,19 @@ class Alignement(RuleCheckOneObject):
                         ]
                     )
 
-                display_face(
-                    [
-                        plan_point(min_t, min_z),
-                        plan_point(max_t, min_z),
-                        plan_point(max_t, max_z),
-                        plan_point(min_t, max_z),
-                    ]
+                shapes.append(
+                    (
+                        (
+                            "face",
+                            [
+                                plan_point(min_t, min_z),
+                                plan_point(max_t, min_z),
+                                plan_point(max_t, max_z),
+                                plan_point(min_t, max_z),
+                            ],
+                        ),
+                        0.6,
+                    )
                 )
             else:
                 # The fitted 3D line, as an edge.
@@ -2823,7 +2574,19 @@ class Alignement(RuleCheckOneObject):
                     float((endpoint - position) @ direction) for endpoint in endpoints
                 ]
                 min_t, max_t = span(ts)
-                display_edge(position + direction * min_t, position + direction * max_t)
+                shapes.append(
+                    (
+                        (
+                            "edge",
+                            position + direction * min_t,
+                            position + direction * max_t,
+                        ),
+                        0.0,
+                    )
+                )
+
+        return shapes
+
 
 
 class SurfaceRecover(RuleCheckTwoObjects):
@@ -2983,19 +2746,15 @@ class SurfaceRecover(RuleCheckTwoObjects):
         return elements
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         sources = self._collect_geometry(self.select_source)
         targets = self._collect_geometry(self.select_target)
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         for source in sources:
             for target in targets:
@@ -3104,44 +2863,18 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     }
                     self.result.append(result)
 
+                    # The contact surfaces of the clash, kept in the
+                    # display registry (one face per contact triangle).
+                    for triangle in contact_triangles:
+                        self.register_display_item(
+                            "face",
+                            ("face", [tuple(vertex) for vertex in triangle]),
+                            (1, 0.5, 0),
+                            0.0,
+                            element=source["entity"],
+                        )
+
         self.end_rule_action()
-
-    def _display_result_specific(self):
-        """The contact surfaces of each result, orange, midway
-        between the two objects."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.BRepBuilderAPI import (
-            BRepBuilderAPI_MakeFace,
-            BRepBuilderAPI_MakePolygon,
-        )
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
-
-        for result in self.result:
-            for triangle in getattr(result, "source_faces", []):
-                polygon = BRepBuilderAPI_MakePolygon(
-                    gp_Pnt(
-                        float(triangle[0][0]),
-                        float(triangle[0][1]),
-                        float(triangle[0][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[1][0]),
-                        float(triangle[1][1]),
-                        float(triangle[1][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[2][0]),
-                        float(triangle[2][1]),
-                        float(triangle[2][2]),
-                    ),
-                    True,
-                )
-                face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
-                ais_shape = AIS_Shape(face)
-                ais_shape.SetColor(orange_color)
-                self.display.Context.Display(ais_shape, True)
 
     @staticmethod
     def _auto_direction(dist_tool):
@@ -3248,49 +2981,6 @@ class DirectView(RuleCheckTwoObjects):
         # The emitting and receiving faces come from the world meshes.
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
-
-    def _display_input_context(self):
-        """The context objects (the obstacles of the view), grey
-        translucent on top of the two selections."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        grey_color = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
-        geom_settings = ifcopenshell.geom.settings()
-        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
-
-        for elements in self.select_context.dict_elements.values():
-            for element in elements or []:
-                shape = ifcopenshell.geom.create_shape(geom_settings, element)
-                ais_shape = AIS_Shape(shape.geometry)
-                ais_shape.SetColor(grey_color)
-                ais_shape.SetTransparency(0.85)
-                self.display.Context.Display(ais_shape, True)
-
-    def _display_result_specific(self):
-        """The rays actually cast for each result: green when the ray
-        reached the other object, red when a context object blocked it."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        hit_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
-        blocked_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        def display_segment(origin, aim, color):
-            edge = BRepBuilderAPI_MakeEdge(
-                gp_Pnt(float(origin[0]), float(origin[1]), float(origin[2])),
-                gp_Pnt(float(aim[0]), float(aim[1]), float(aim[2])),
-            ).Edge()
-            ais_shape = AIS_Shape(edge)
-            ais_shape.SetColor(color)
-            self.display.Context.Display(ais_shape, True)
-
-        for result in self.result:
-            for origin, aim in result.hit_segments:
-                display_segment(origin, aim, hit_color)
-            for origin, aim in result.blocked_segments:
-                display_segment(origin, aim, blocked_color)
 
     def _collect_meshes(self, select):
         """The triangulated world mesh of each selected element."""
@@ -3424,6 +3114,7 @@ class DirectView(RuleCheckTwoObjects):
         return len(hits) == 0
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
 
@@ -3432,8 +3123,13 @@ class DirectView(RuleCheckTwoObjects):
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
 
-        if self.state == "Display_Input":
-            self._display_input_generic()
+        # The context objects (the obstacles of the view), kept in the
+        # display registry.
+        for elements in self.select_context.dict_elements.values():
+            for element in elements or []:
+                self.register_display_item(
+                    "context", ("entity", element), (0.5, 0.5, 0.5), 0.85
+                )
 
         self.tree = ifcopenshell.geom.tree()
         self.add_to_tree(self.select_context, "UB")
@@ -3442,9 +3138,7 @@ class DirectView(RuleCheckTwoObjects):
         target_meshes = self._collect_meshes(self.select_target)
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
 
         if self.ray_source == "Both":
             emitters_of = lambda source_mesh, target_mesh: [
@@ -3506,6 +3200,26 @@ class DirectView(RuleCheckTwoObjects):
                     result.hit_segments = hit_segments
                     result.blocked_segments = blocked_segments
                     self.result.append(result)
+
+                    # The rays actually cast, kept in the display
+                    # registry: green when the ray reached the other
+                    # object, red when a context object blocked it.
+                    for origin, aim in hit_segments:
+                        self.register_display_item(
+                            "segment",
+                            ("edge", origin, aim),
+                            (0, 1, 0),
+                            0.0,
+                            element=source_entity,
+                        )
+                    for origin, aim in blocked_segments:
+                        self.register_display_item(
+                            "segment",
+                            ("edge", origin, aim),
+                            (0.5,0,1),
+                            0.0,
+                            element=source_entity,
+                        )
 
         self.end_rule_action()
 
@@ -3666,10 +3380,8 @@ class OneObjectFace(RuleCheckOneObject):
         return failures
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         for ifc_file in self.select_source.dict_elements.keys():
             included = self.select_source.dict_elements[ifc_file]
@@ -3711,9 +3423,7 @@ class OneObjectFace(RuleCheckOneObject):
                     break
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
     def _check_pairs(self, entity, group_a, group_b):
@@ -3751,45 +3461,17 @@ class OneObjectFace(RuleCheckOneObject):
                     result.target_faces = [triangle_b]
                     self.result.append(result)
 
-    def _display_result_specific(self):
-        """The faces at fault of each result, orange, on top of the
-        source object: source_faces then target_faces."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.BRepBuilderAPI import (
-            BRepBuilderAPI_MakeFace,
-            BRepBuilderAPI_MakePolygon,
-        )
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+                    # The faces at fault, kept in the display registry:
+                    # source_faces then target_faces.
+                    for triangle in (triangle_a, triangle_b):
+                        self.register_display_item(
+                            "face",
+                            ("face", [tuple(vertex) for vertex in triangle]),
+                            (1, 0.5, 0),
+                            0.0,
+                            element=entity,
+                        )
 
-        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
-
-        for result in self.result:
-            faces = list(getattr(result, "source_faces", [])) + list(
-                getattr(result, "target_faces", [])
-            )
-            for triangle in faces:
-                polygon = BRepBuilderAPI_MakePolygon(
-                    gp_Pnt(
-                        float(triangle[0][0]),
-                        float(triangle[0][1]),
-                        float(triangle[0][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[1][0]),
-                        float(triangle[1][1]),
-                        float(triangle[1][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[2][0]),
-                        float(triangle[2][1]),
-                        float(triangle[2][2]),
-                    ),
-                    True,
-                )
-                fault_face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
-                ais_shape = AIS_Shape(fault_face)
-                ais_shape.SetColor(orange_color)
-                self.display.Context.Display(ais_shape, True)
 
 
 class TwoObjectsFace(RuleCheckTwoObjects):
@@ -4005,9 +3687,6 @@ class TwoObjectsFace(RuleCheckTwoObjects):
         self.select_source.run()
         self.select_target.run()
 
-        if self.state == "Display_Input":
-            self._display_input_generic()
-
         source_elements = self._collect_faces(
             self.select_source, self.source_face_selection
         )
@@ -4029,9 +3708,7 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 )
 
         if self.state == "Display_Input":
-            self.display.FitAll()
-            self.start_display()
-            return 0
+            return self.end_rule_action()
         self.end_rule_action()
 
     def _check_pairs(
@@ -4063,45 +3740,6 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                     result.target_faces = [triangle_b]
                     self.result.append(result)
 
-    def _display_result_specific(self):
-        """The faces at fault of each result, orange, on top of the
-        source and target objects: source_faces then target_faces."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.BRepBuilderAPI import (
-            BRepBuilderAPI_MakeFace,
-            BRepBuilderAPI_MakePolygon,
-        )
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        orange_color = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
-
-        for result in self.result:
-            faces = list(getattr(result, "source_faces", [])) + list(
-                getattr(result, "target_faces", [])
-            )
-            for triangle in faces:
-                polygon = BRepBuilderAPI_MakePolygon(
-                    gp_Pnt(
-                        float(triangle[0][0]),
-                        float(triangle[0][1]),
-                        float(triangle[0][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[1][0]),
-                        float(triangle[1][1]),
-                        float(triangle[1][2]),
-                    ),
-                    gp_Pnt(
-                        float(triangle[2][0]),
-                        float(triangle[2][1]),
-                        float(triangle[2][2]),
-                    ),
-                    True,
-                )
-                fault_face = BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
-                ais_shape = AIS_Shape(fault_face)
-                ais_shape.SetColor(orange_color)
-                self.display.Context.Display(ais_shape, True)
 
     def _triangle_bbox_distance(triangle_a, triangle_b) -> float:
         """A cheap lower bound of the distance between two triangles: the
@@ -4377,17 +4015,22 @@ class ClearanceForDoors(RuleCheckTwoObjects):
         return zones
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
-
-        if self.state == "Display_Input":
-            self._display_input_generic()
 
         targets = self._collect_targets()
 
         for ifc_file in self.select_source.dict_elements.keys():
             for door in self.select_source.dict_elements[ifc_file] or []:
                 zones = self._build_zones(door)
+
+                # The clearance zones (the clash detection zones), kept
+                # in the display registry.
+                for zone in zones:
+                    self.register_display_item(
+                        "zone", zone["solid"], (0.5,0,1), 0.6, element=door
+                    )
 
                 for target in targets:
                     worst = None
@@ -4425,22 +4068,6 @@ class ClearanceForDoors(RuleCheckTwoObjects):
                         self.result.append(result)
 
         self.end_rule_action()
-
-    def _display_input_zone(self):
-        """The clearance zones of every door (the clash detection zone),
-        red translucent on top of the two selections."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for doors in self.select_source.dict_elements.values():
-            for door in doors or []:
-                for zone in self._build_zones(door):
-                    ais_shape = AIS_Shape(zone["solid"])
-                    ais_shape.SetColor(red_color)
-                    ais_shape.SetTransparency(0.6)
-                    self.display.Context.Display(ais_shape, True)
 
 
 class FreeSpace(RuleCheckOneObject):
@@ -4485,24 +4112,6 @@ class FreeSpace(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
-
-    def _display_input_context(self):
-        """The context objects (the obstacles of the free space search),
-        grey translucent on top of the source selection."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        grey_color = Quantity_Color(0.5, 0.5, 0.5, Quantity_TOC_RGB)
-        geom_settings = ifcopenshell.geom.settings()
-        geom_settings.set("USE_PYTHON_OPENCASCADE", True)
-
-        for elements in self.select_context.dict_elements.values():
-            for element in elements or []:
-                shape = ifcopenshell.geom.create_shape(geom_settings, element)
-                ais_shape = AIS_Shape(shape.geometry)
-                ais_shape.SetColor(grey_color)
-                ais_shape.SetTransparency(0.85)
-                self.display.Context.Display(ais_shape, True)
 
     def _collect_context(self):
         """The OCC shape of each context object, with its bounding box
@@ -4670,16 +4279,25 @@ class FreeSpace(RuleCheckOneObject):
         return (point.x, point.y), margin
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
 
         self.select_context.list_ifc_path = self.select_source.list_ifc_path
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
 
-        if self.state == "Display_Input":
-            self._display_input_generic()
-
         obstacles = self._collect_context()
+
+        # The context objects (the obstacles of the free space search),
+        # kept in the display registry.
+        for obstacle in obstacles:
+            self.register_display_item(
+                "context",
+                obstacle["occ"],
+                (0.5, 0.5, 0.5),
+                0.85,
+                element=obstacle["entity"],
+            )
 
         for ifc_file in self.select_source.dict_elements.keys():
             for source in self.select_source.dict_elements[ifc_file] or []:
@@ -4704,44 +4322,32 @@ class FreeSpace(RuleCheckOneObject):
                 found, margin = self._search_placement(footprint, z_base, obstacles)
                 if found is None:
                     self.result.append(ClashResultOneObject(source=source, state=True))
+                    # No free placement: the probe stays at the center
+                    # of the footprint in the display registry.
+                    center = footprint.representative_point()
+                    probe_position = (center.x, center.y)
                 else:
                     self.placements[source] = {
                         "position": (found[0], found[1], z_base),
                         "margin": margin,
                     }
+                    probe_position = found
+
+                # The probe cylinder (the clash detection zone), kept
+                # in the display registry.
+                self.register_display_item(
+                    "zone",
+                    clash_utils.cylinder_solid(
+                        probe_position[0],
+                        probe_position[1],
+                        z_base,
+                        self.diameter / 2.0,
+                        self.height,
+                    ),
+                    (0.5,0,1),
+                    0.6,
+                    element=source,
+                )
 
         self.end_rule_action()
 
-    def _display_input_zone(self):
-        """The free space probe cylinder (the clash detection zone),
-        red translucent at the center of each source footprint."""
-        from OCC.Core.AIS import AIS_Shape
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-
-        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
-
-        for ifc_file, sources in self.select_source.dict_elements.items():
-            for source in sources or []:
-                iterator = ifcopenshell.geom.iterator(
-                    self.mesh_settings,
-                    ifc_file,
-                    multiprocessing.cpu_count(),
-                    include=[source],
-                )
-                if not iterator.initialize():
-                    continue
-                shape = iterator.get()
-                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
-                faces = np.asarray(get_faces(shape.geometry))
-                footprint, z_base = clash_utils.lowest_footprint(vertices, faces)
-                if footprint.is_empty:
-                    continue
-
-                center = footprint.representative_point()
-                cylinder = clash_utils.cylinder_solid(
-                    center.x, center.y, z_base, self.diameter / 2.0, self.height
-                )
-                ais_shape = AIS_Shape(cylinder)
-                ais_shape.SetColor(red_color)
-                ais_shape.SetTransparency(0.6)
-                self.display.Context.Display(ais_shape, True)

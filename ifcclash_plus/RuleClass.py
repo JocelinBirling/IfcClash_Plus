@@ -16,6 +16,7 @@ from ifctester.facet import (
 from typing import Literal, TypedDict, Union
 
 from abc import abstractmethod
+from dataclasses import dataclass
 
 from booleanrule import BooleanRule, BooleanLeaf
 
@@ -63,6 +64,41 @@ from OCC.Core.BRepCheck import BRepCheck_Analyzer
 from OCC.Core.TopoDS import TopoDS_Shape
 from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
 from OCC.Core.BRepBndLib import brepbndlib
+
+
+# ==== Display geometry registry
+DISPLAY_CATEGORY = Literal[
+    "axis", "face", "obb", "zone", "context", "segment", "point"
+]
+
+DISPLAY_CATEGORIES = (
+    "axis",
+    "face",
+    "obb",
+    "zone",
+    "context",
+    "segment",
+    "point",
+)
+
+
+@dataclass
+class DisplayItem:
+    """One auxiliary geometry produced by a rule, kept for display.
+
+    The shape is either a TopoDS_Shape (or a custom OBB, converted to
+    its compound at display time), or a lightweight representation
+    converted by RuleCheck._item_shape: an ("edge", start, end) tuple,
+    a ("face", corners) tuple, an ("axis", center, direction, length)
+    tuple. The element, when set, links the item to its IFC entity for
+    a per-result coloring.
+    """
+
+    category: DISPLAY_CATEGORY
+    shape: object
+    color: tuple = (1, 0, 0)
+    transparency: float = 0.6
+    element: object = None
 
 
 class RuleFile:
@@ -269,15 +305,30 @@ class RuleCheck:
 
         self.grouped_result: list[GroupResult] = []
 
+        # The display geometry registry: filled during run() as a
+        # by-product of the computation, read by the generic display.
+        self.display_items: list[DisplayItem] = []
+        self.display_options: dict[DISPLAY_CATEGORY, bool] = {
+            category: True for category in DISPLAY_CATEGORIES
+        }
+        self.keep_display_items: bool = True
+
     def end_rule_action(self):
         self.run_exception()
 
-        # @todo Verify if we can refactor Display_Input in this function.
-
+        if self.state == "Display_Input":
+            self._display_input_generic()
+            self.display.FitAll()
+            self.start_display()
+            return
         if self.state == "Display_Result":
             self.display_result()
         if self.state == "Final":
             self.manage_result()
+            if not self.keep_display_items:
+                # The registry is a temporary by-product: free the
+                # memory on the big models when it is not kept.
+                self.display_items.clear()
         if self.state == "Select":
             self.produce_select()
 
@@ -399,66 +450,117 @@ class RuleCheck:
     def to_bcf():
         print("Reuse Ifcopenshell")
 
-    def _add_obb_to_display(self, geom, color):
-        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
-        compound = geom.to_TopoDS_Compound()  # @todo Replace with TopoDs_Solid
-        ais_shape = AIS_Shape(compound)
-        ais_shape.SetColor(the_color)
-        ais_shape.SetTransparency(0.2)
-        self.display.Context.Display(ais_shape, True)
+    # ---- Display geometry registry
+    def register_display_item(
+        self,
+        category: DISPLAY_CATEGORY,
+        shape,
+        color: tuple = (1, 0, 0),
+        transparency: float = 0.6,
+        element=None,
+    ):
+        """Add one auxiliary geometry to the registry of the rule."""
+        if category not in DISPLAY_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {DISPLAY_CATEGORIES}, got '{category}'"
+            )
+        self.display_items.append(
+            DisplayItem(
+                category=category,
+                shape=shape,
+                color=color,
+                transparency=transparency,
+                element=element,
+            )
+        )
 
-    def _add_face_to_display(self, geom, color):
-        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
-        ais_shape = AIS_Shape(geom)
-        ais_shape.SetColor(the_color)
-        ais_shape.SetTransparency(0.2)
-        self.display.Context.Display(ais_shape, True)
+    def available_display_categories(self) -> set:
+        """The categories actually present in the registry."""
+        return {item.category for item in self.display_items}
 
-    def _add_gp_Dir_to_display(self, geom, dir, color):
+    @staticmethod
+    def _display_point(value):
+        """A gp_Pnt from a gp_Pnt or a 3-value sequence."""
+        if isinstance(value, gp_Pnt):
+            return value
+        return gp_Pnt(float(value[0]), float(value[1]), float(value[2]))
 
-        def edge_from_point_dir(point, direction, length):
-            """Arête partant de `point`, dans `direction`, de longueur `length`."""
-            end = point.Translated(gp_Vec(direction).Multiplied(length))
-            return BRepBuilderAPI_MakeEdge(point, end).Edge()
+    @staticmethod
+    def _display_dir(value):
+        """A gp_Dir from a gp_Dir or a 3-value sequence."""
+        if isinstance(value, gp_Dir):
+            return value
+        return gp_Dir(float(value[0]), float(value[1]), float(value[2]))
 
+    @staticmethod
+    def _shape_center(shape):
+        """The center of the bounding box of a TopoDS shape."""
         bbox = Bnd_Box()
-        brepbndlib.Add(geom, bbox)
-
+        brepbndlib.Add(shape, bbox)
         corner_min = bbox.CornerMin()
         corner_max = bbox.CornerMax()
-
-        center = gp_Pnt(
+        return gp_Pnt(
             (corner_min.X() + corner_max.X()) / 2.0,
             (corner_min.Y() + corner_max.Y()) / 2.0,
             (corner_min.Z() + corner_max.Z()) / 2.0,
         )
 
-        vector_to_print = edge_from_point_dir(center, dir, 0.5)
+    def _item_shape(self, item: DisplayItem):
+        """The TopoDS_Shape of one registry item.
 
-        the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
-        ais_shape = AIS_Shape(vector_to_print)
-        ais_shape.SetColor(the_color)
-        ais_shape.SetTransparency(0.2)
-        self.display.Context.Display(ais_shape, True)
-
-    def _display_input_zone(self):
-        """The clash detection zone of the rule, displayed on top of the
-        two selections in Display_Input.
-
-        Only the rules with an explicit zone override this (for now the
-        clearance zones of ClearanceForDoors and the probe cylinder of
-        FreeSpace); the others show nothing.
+        A TopoDS_Shape is displayed as is, a custom OBB is converted to
+        its compound; the lightweight representations are converted
+        here, at display time only: ("edge", start, end),
+        ("face", corners) and ("axis", center, direction, length).
         """
-        pass
+        shape = item.shape
 
-    def _display_input_context(self):
-        """The context elements, displayed grey translucent on top of
-        the two selections in Display_Input.
+        if isinstance(shape, TopoDS_Shape):
+            return shape
 
-        A rule with a context selection overrides this method to show
-        it (DirectView, FreeSpace); the base shows nothing.
-        """
-        pass
+        if hasattr(shape, "to_TopoDS_Compound"):
+            return shape.to_TopoDS_Compound()
+
+        if isinstance(shape, tuple) and shape:
+            kind, data = shape[0], shape[1:]
+            if kind == "edge":
+                start, end = data
+                return BRepBuilderAPI_MakeEdge(
+                    self._display_point(start), self._display_point(end)
+                ).Edge()
+            if kind == "axis":
+                center = self._display_point(data[0])
+                direction = self._display_dir(data[1])
+                length = data[2] if len(data) > 2 else 0.5
+                end = center.Translated(gp_Vec(direction).Multiplied(length))
+                return BRepBuilderAPI_MakeEdge(center, end).Edge()
+            if kind == "face":
+                corners = data[0]
+                polygon = BRepBuilderAPI_MakePolygon(*[
+                    self._display_point(corner) for corner in corners
+                ])
+                polygon.Close()
+                return BRepBuilderAPI_MakeFace(polygon.Wire()).Face()
+            if kind == "entity":
+                # An IFC entity: the shape is created at display time
+                # only, as for the objects of the selections.
+                geom_settings = ifcopenshell.geom.settings()
+                geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+                return ifcopenshell.geom.create_shape(geom_settings, data[0]).geometry
+
+        raise TypeError(f"Unsupported display item shape: {type(shape)}")
+
+    def _display_registered_items(self):
+        """The registry items, filtered by display_options."""
+        for item in self.display_items:
+            if not self.display_options.get(item.category, True):
+                continue
+            ais_shape = AIS_Shape(self._item_shape(item))
+            ais_shape.SetColor(
+                Quantity_Color(item.color[0], item.color[1], item.color[2], Quantity_TOC_RGB)
+            )
+            ais_shape.SetTransparency(item.transparency)
+            self.display.Context.Display(ais_shape, True)
 
 
 class RuleCheckOneObject(RuleCheck):
@@ -681,10 +783,8 @@ class RuleCheckOneObject(RuleCheck):
             for element in list_of_elements:
                 add_to_display(element, geom_settings, blue_color)
 
-        # The context elements, when the rule overrides the method.
-        self._display_input_context()
-        # The clash detection zone of the rule, when it has one.
-        self._display_input_zone()
+        # The geometries registered during run(), by category.
+        self._display_registered_items()
 
     def _result_color_map(self):
         """The display color of every source object of the selection:
@@ -730,14 +830,10 @@ class RuleCheckOneObject(RuleCheck):
                 red_color if is_clashing else green_color,
             )
 
-    def _display_result_specific(self):
-        pass
-
     def display_result(self):
 
         self._display_result_generic()
-        self._display_result_specific()
-        self._display_input_context()
+        self._display_registered_items()
 
         self.display.FitAll()
         self.start_display()
@@ -1139,14 +1235,10 @@ class RuleCheckTwoObjects(RuleCheck):
                 pair_colors[pair],
             )
 
-    def _display_result_specific(self):
-        pass
-
     def display_result(self):
 
         self._display_result_generic()
-        self._display_result_specific()
-        self._display_input_context()
+        self._display_registered_items()
 
         self.display.FitAll()
         self.start_display()
@@ -1175,7 +1267,7 @@ class RuleCheckTwoObjects(RuleCheck):
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
         blue_color = Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
-        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
+        orange = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
 
         for ifc_file in self.select_source.dict_elements.keys():
             list_of_elements = self.select_source.dict_elements[ifc_file]
@@ -1185,15 +1277,10 @@ class RuleCheckTwoObjects(RuleCheck):
         for ifc_file in self.select_target.dict_elements.keys():
             list_of_elements = self.select_target.dict_elements[ifc_file]
             for element in list_of_elements:
-                add_to_display(element, geom_settings, green_color)
+                add_to_display(element, geom_settings, orange)
 
-        # The context elements, when the rule overrides the method.
-        self._display_input_context()
-        # The clash detection zone of the rule, when it has one.
-        self._display_input_zone()
-
-    def _display_input_specific(self):
-        pass
+        # The geometries registered during run(), by category.
+        self._display_registered_items()
 
 
 class RuleCheckComplex(RuleCheck):
