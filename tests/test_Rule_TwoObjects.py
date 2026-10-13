@@ -767,11 +767,60 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-
-        #We should only find 6 results. The kitchen has the space to fit one.
         self.assertEqual(len(rule.result), 6)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
+
+    def test_free_space_rule_2(self):
+
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        space_facet = ids.Entity(name="IFCSPACE")
+        space_select = SelectFacet()
+        space_select.applicability = [space_facet]
+
+        furniture_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
+        furniture_select = SelectFacet()
+        furniture_select.applicability = [furniture_facet]
+
+        rule = FreeSpace(space_select, furniture_select, diameter=0.2, height=2.0,state="Display_Result")
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+
+        self.assertEqual(len(rule.result), 0)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultOneObject)
+
+
+    def test_free_space_rule_3(self):
+
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        space_facet = ids.Entity(name="IFCSPACE")
+        space_select = SelectFacet()
+        space_select.applicability = [space_facet]
+
+        furniture_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
+        furniture_select = SelectFacet()
+        furniture_select.applicability = [furniture_facet]
+
+        rule = FreeSpace(space_select, furniture_select, diameter=3, height=2.0,state="Display_Result")
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+
+        self.assertEqual(len(rule.result), 18)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultOneObject)
+
+
 
     def test_surface_recover_rule(self):
         """Test SurfaceRecover rule. The furniture stands on the slabs;
