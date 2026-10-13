@@ -18,18 +18,16 @@ For a slab, this can be useful.
 For a wall, this can lead to errors. When a wall is taller than it is long, this can cause inaccuracies.
 
 
-5. Expand the number of rules and create the base rule structure
 
-6. Create the rule association in Python => DONE
 
 7. Study the implementation in ifcclash
 
-8. Review the new rule Alignement, FreeSpace, SurfaceRecover, OneFaceCheck, TwoFaceCheck, DirectView
-None of them is truly functionnal.
 
 9. Refactor Face Display
 Now, a lot of rule can return a triangle (or a face), from the execution. 
 It would be usefull to refactor this fonction to display the result.
+We could have a viewer to display a point, an edge, a face, or an OBB.
+It should be able to display a specific color as well.
 
 10. Etat des lieux des résultats
 Quels sont les données de sorties pour chacune des règles ?

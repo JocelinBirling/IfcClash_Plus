@@ -17,7 +17,7 @@ from typing import Literal, TypedDict, Union
 
 from abc import abstractmethod
 
-from booleanrule import BooleanRule,BooleanLeaf
+from booleanrule import BooleanRule, BooleanLeaf
 
 from ifctester.facet import Entity, Attribute
 import ifcopenshell.geom
@@ -179,16 +179,18 @@ class SelectFacet(Select):
 
         # The facets other than Entity need a list of elements to filter
         FACETS_REQUIRING_ELEMENTS = (
-            Attribute, Property, Classification, PartOf, Material
+            Attribute,
+            Property,
+            Classification,
+            PartOf,
+            Material,
         )
 
         result = []
         for onefile in self.list_ifc_file:
             for one_applicability in self.applicability:
                 if self.dict_elements[onefile] is None:
-                    if isinstance(
-                        one_applicability, FACETS_REQUIRING_ELEMENTS
-                    ):
+                    if isinstance(one_applicability, FACETS_REQUIRING_ELEMENTS):
                         result = one_applicability.filter(
                             onefile, onefile.by_type("IfcProduct")
                         )
@@ -212,9 +214,8 @@ class SelectRule(Select):
 
         self.type: str = "Rule"
         self.rule: RuleCheck
-        self.element_to_pass: str = "source" #by default, can be changed
-        self.element_state_to_pass: bool = True # by defaut 
-
+        self.element_to_pass: str = "source"  # by default, can be changed
+        self.element_state_to_pass: bool = True  # by defaut
 
     def run(self, state="Select"):
         # element_to_pass: "source" or "target", only for a two objects rule
@@ -239,7 +240,6 @@ class SelectRule(Select):
 
 @abstractmethod
 class RuleCheck:
-
     # The relation exceptions, usable as select_exception
     EXCEPTION_METHOD = ("Same_IfcSystem", "Same_Building", "Same_Storey", "Same_Space")
 
@@ -254,7 +254,7 @@ class RuleCheck:
 
         self.result_fail_source: list[ifcopenshell.entity_instance] = []
 
-        self.select_exception: BooleanLeaf|str|None = None
+        self.select_exception: BooleanLeaf | str | None = None
 
         self.select_source: Select = source
         self.select_grouping: SelectFacet | str = None
@@ -272,7 +272,7 @@ class RuleCheck:
     def end_rule_action(self):
         self.run_exception()
 
-        #@todo Verify if we can refactor Display_Input in this function.
+        # @todo Verify if we can refactor Display_Input in this function.
 
         if self.state == "Display_Result":
             self.display_result()
@@ -317,47 +317,45 @@ class RuleCheck:
                         systems.add(group)
             return systems
 
+        def exception_same_building(self, result) -> bool:
+            ...
+            # @todo do exception for same building, with 2 objects, it's tricky...
 
-        def exception_same_building(self,result)->bool:
+        def exception_same_storey(self, result) -> bool:
             ...
-            #@todo do exception for same building, with 2 objects, it's tricky...
-        def exception_same_storey(self,result)->bool:
-            ...
-            #@todo do exception for same storey, with 2 objects, it's tricky...
-        def exception_same_space(self,result)->bool:
-            ...
-            #@todo do exception for same space, with 2 objects, it's tricky...
+            # @todo do exception for same storey, with 2 objects, it's tricky...
 
+        def exception_same_space(self, result) -> bool:
+            ...
+            # @todo do exception for same space, with 2 objects, it's tricky...
 
         # The exception is a BooleanLeaf evaluated result by result: the
         # rule of the leaf runs on the pair of elements of the result
         # and the result is invalidated when the exception applies.
-        if self.select_exception==None:
+        if self.select_exception == None:
             return
-        
+
         if isinstance(self.select_exception, BooleanLeaf):
             for one_result in self.result:
                 if self.select_exception.evaluate_result(one_result):
                     one_result.status = False
-        
-        if self.select_exception in self.EXCEPTION_METHOD and isinstance(self,RuleCheckTwoObjects):
-            if self.select_exception=="Same_IfcSystem":
+
+        if self.select_exception in self.EXCEPTION_METHOD and isinstance(
+            self, RuleCheckTwoObjects
+        ):
+            if self.select_exception == "Same_IfcSystem":
                 for one_result in self.result:
                     if exception_same_ifcsystem(one_result):
                         one_result.status = False
-            
-            if self.select_exception=="Same_Building":
+
+            if self.select_exception == "Same_Building":
                 exception_same_building()
-            
-            if self.select_exception=="Same_Storey":
+
+            if self.select_exception == "Same_Storey":
                 exception_same_storey()
-            
-            if self.select_exception=="Same_Space":
-                exception_same_space()          
 
-
-
-
+            if self.select_exception == "Same_Space":
+                exception_same_space()
 
     def add_to_tree(self, Select, type_of_tree):
         for ifc_file in Select.dict_elements.keys():
@@ -403,7 +401,7 @@ class RuleCheck:
 
     def _add_obb_to_display(self, geom, color):
         the_color = Quantity_Color(color[0], color[1], color[2], Quantity_TOC_RGB)
-        compound = geom.to_TopoDS_Compound() #@todo Replace with TopoDs_Solid
+        compound = geom.to_TopoDS_Compound()  # @todo Replace with TopoDs_Solid
         ais_shape = AIS_Shape(compound)
         ais_shape.SetColor(the_color)
         ais_shape.SetTransparency(0.2)
@@ -461,9 +459,6 @@ class RuleCheck:
         it (DirectView, FreeSpace); the base shows nothing.
         """
         pass
-
-
-
 
 
 class RuleCheckOneObject(RuleCheck):
@@ -786,7 +781,9 @@ class RuleCheckTwoObjects(RuleCheck):
 
         # Elements of the input selection absent from the results
         selection = (
-            self.select_source if self.element_to_pass == "source" else self.select_target
+            self.select_source
+            if self.element_to_pass == "source"
+            else self.select_target
         )
         # The entity_instance equality is value based, so a set of elements
         # works even if the file wrappers of the results are different
@@ -1224,7 +1221,9 @@ class AbsoluteOrRelativeChecking:
 
     def run(self, list_of_result: list[GroupResult]):
         for onegroupresult in list_of_result:
-            self.eval_check(onegroupresult) #@todo From a Json, this will not work, it's propapbly better to have only one class, and with the type, it choose the function to launch.
+            self.eval_check(
+                onegroupresult
+            )  # @todo From a Json, this will not work, it's propapbly better to have only one class, and with the type, it choose the function to launch.
 
 
 class AbsoluteChecking(AbsoluteOrRelativeChecking):
@@ -1320,11 +1319,11 @@ class RelativeChecking(AbsoluteOrRelativeChecking):
 # ==== Clash Result
 class ClashResult:
     def __init__(self, source, state, type="OneObjectResult"):
-        #@todo ClashResult, complete all the data.
+        # @todo ClashResult, complete all the data.
         self.id: str
         self.type: str = type
         self.source: ifcopenshell.entity_instance = source
-        self.rule_name: str = None 
+        self.rule_name: str = None
 
         self.status: bool = state
         self.criticity: list[str] = []
@@ -1343,8 +1342,8 @@ class ClashResultTwoObjects(ClashResult):
     def __init__(self, source, target, state, type="TwoObjectsResult"):
         super().__init__(source, state, type)
         self.target: ifcopenshell.entity_instance = target
-        self.distance_between : float = None
-        self.penetration_depth : float = None
+        self.distance_between: float = None
+        self.penetration_depth: float = None
         self.volume_intersection: float = None
         self.volume_ratio: float = None
         self.containement_ratio: float = None

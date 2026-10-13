@@ -816,9 +816,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                     f"got {bound_value!r}"
                 )
         if min_distance is None and max_distance is None:
-            raise ValueError(
-                "at least one of min_distance or max_distance must be set"
-            )
+            raise ValueError("at least one of min_distance or max_distance must be set")
         if (
             min_distance is not None
             and max_distance is not None
@@ -832,18 +830,13 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             raise ValueError(
                 f"tolerance must be a positive number (m), got {tolerance!r}"
             )
-        if (
-            not isinstance(linearity_ratio, (int, float))
-            or linearity_ratio < 1.0
-        ):
+        if not isinstance(linearity_ratio, (int, float)) or linearity_ratio < 1.0:
             raise ValueError(
-                f"linearity_ratio must be a number >= 1, "
-                f"got {linearity_ratio!r}"
+                f"linearity_ratio must be a number >= 1, got {linearity_ratio!r}"
             )
         if on_non_linear not in ("Skip", "Fallback"):
             raise ValueError(
-                f"on_non_linear must be 'Skip' or 'Fallback', "
-                f"got {on_non_linear!r}"
+                f"on_non_linear must be 'Skip' or 'Fallback', got {on_non_linear!r}"
             )
         if (
             not isinstance(parallel_tolerance, (int, float))
@@ -855,12 +848,8 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             )
 
         self.mode = mode
-        self.min_distance = (
-            float(min_distance) if min_distance is not None else None
-        )
-        self.max_distance = (
-            float(max_distance) if max_distance is not None else None
-        )
+        self.min_distance = float(min_distance) if min_distance is not None else None
+        self.max_distance = float(max_distance) if max_distance is not None else None
         self.tolerance = float(tolerance)
         self.linearity_ratio = float(linearity_ratio)
         self.on_non_linear = on_non_linear
@@ -899,8 +888,8 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                 geom = shape.geometry
                 entity = ifc_file.by_id(shape.data.id)
                 obb = create_obb_from_TopoDs_Shape(geom)
-                center, direction, half_length, thickness = (
-                    clash_utils.obb_long_axis(obb)
+                center, direction, half_length, thickness = clash_utils.obb_long_axis(
+                    obb
                 )
                 objects.append(
                     {
@@ -1003,17 +992,13 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                         # extent of the axis: center ± half length.
                         distance = clash_utils.segment_segment_distance(
                             source_obj["center"]
-                            - source_obj["direction"]
-                            * source_obj["half_length"],
+                            - source_obj["direction"] * source_obj["half_length"],
                             source_obj["center"]
-                            + source_obj["direction"]
-                            * source_obj["half_length"],
+                            + source_obj["direction"] * source_obj["half_length"],
                             target_obj["center"]
-                            - target_obj["direction"]
-                            * target_obj["half_length"],
+                            - target_obj["direction"] * target_obj["half_length"],
                             target_obj["center"]
-                            + target_obj["direction"]
-                            * target_obj["half_length"],
+                            + target_obj["direction"] * target_obj["half_length"],
                         )
                         mode_used = "MinDistance"
                     degraded = False
@@ -2399,9 +2384,7 @@ class Alignement(RuleCheckOneObject):
                 objects.append(
                     {
                         "entity": entity,
-                        "center": np.array(
-                            [center.X(), center.Y(), center.Z()]
-                        ),
+                        "center": np.array([center.X(), center.Y(), center.Z()]),
                         "main_axis": np.array(
                             [
                                 main_direction.X(),
@@ -2463,9 +2446,7 @@ class Alignement(RuleCheckOneObject):
 
         if orientation == "Vertical":
             plan_points = [one_object["center"][:2] for one_object in objects]
-            line_origin, line_direction = clash_utils.least_squares_line_2d(
-                plan_points
-            )
+            line_origin, line_direction = clash_utils.least_squares_line_2d(plan_points)
             self._fitted = {
                 "element": "Line",
                 "origin": line_origin,
@@ -2478,9 +2459,7 @@ class Alignement(RuleCheckOneObject):
 
         segments = self._axis_segments(objects)
         if self.alignment_type == "Plane":
-            all_endpoints = [
-                endpoint for segment in segments for endpoint in segment
-            ]
+            all_endpoints = [endpoint for segment in segments for endpoint in segment]
             plane_origin, plane_normal = clash_utils.least_squares_plane_3d(
                 all_endpoints
             )
@@ -2501,9 +2480,7 @@ class Alignement(RuleCheckOneObject):
 
         # Horizontal, Line: collinear axes in 3D
         all_endpoints = [endpoint for segment in segments for endpoint in segment]
-        line_origin, line_direction = clash_utils.least_squares_line_3d(
-            all_endpoints
-        )
+        line_origin, line_direction = clash_utils.least_squares_line_3d(all_endpoints)
         self._fitted = {
             "element": "Line",
             "origin": line_origin,
@@ -2521,8 +2498,10 @@ class Alignement(RuleCheckOneObject):
         """The main axis segment (start, end) of each object."""
         return [
             (
-                one_object["center"] - one_object["main_axis"] * one_object["half_main"],
-                one_object["center"] + one_object["main_axis"] * one_object["half_main"],
+                one_object["center"]
+                - one_object["main_axis"] * one_object["half_main"],
+                one_object["center"]
+                + one_object["main_axis"] * one_object["half_main"],
             )
             for one_object in objects
         ]
@@ -2553,9 +2532,7 @@ class Alignement(RuleCheckOneObject):
                 else:
                     plan_axis = np.asarray(axis[:2], dtype=float)
                     directions.append(plan_axis / np.linalg.norm(plan_axis))
-            return clash_utils.plan_alignment_groups(
-                points, directions, self.tolerance
-            )
+            return clash_utils.plan_alignment_groups(points, directions, self.tolerance)
 
         segments = self._axis_segments(objects)
         directions = [one_object["main_axis"] for one_object in objects]
@@ -2599,18 +2576,12 @@ class Alignement(RuleCheckOneObject):
             position, direction = clash_utils.least_squares_line_2d(points)
             return "Line", position, direction
 
-        endpoints = [
-            endpoint for index in indices for endpoint in segments[index]
-        ]
+        endpoints = [endpoint for index in indices for endpoint in segments[index]]
 
         if self.alignment_type == "Plane":
-            line_origin, line_direction = clash_utils.least_squares_line_3d(
-                endpoints
-            )
+            line_origin, line_direction = clash_utils.least_squares_line_3d(endpoints)
             collinear = all(
-                clash_utils.point_line_distance(
-                    endpoint, line_origin, line_direction
-                )
+                clash_utils.point_line_distance(endpoint, line_origin, line_direction)
                 <= self.tolerance
                 for endpoint in endpoints
             )
@@ -2634,9 +2605,7 @@ class Alignement(RuleCheckOneObject):
         if not objects:
             return None
 
-        valid_groups = [
-            group for group in groups if len(group) >= self.min_group
-        ]
+        valid_groups = [group for group in groups if len(group) >= self.min_group]
         if valid_groups:
             best = max(valid_groups, key=len)
             members = [objects[index]["entity"] for index in best]
@@ -2692,9 +2661,7 @@ class Alignement(RuleCheckOneObject):
 
         # One fitted element per valid group, or the global fit alone
         # when no group is valid.
-        valid_groups = [
-            group for group in groups if len(group) >= self.min_group
-        ]
+        valid_groups = [group for group in groups if len(group) >= self.min_group]
         if valid_groups:
             elements = [
                 (self._fit_group_element(objects, group), group)
@@ -2853,13 +2820,11 @@ class Alignement(RuleCheckOneObject):
             else:
                 # The fitted 3D line, as an edge.
                 ts = [
-                    float((endpoint - position) @ direction)
-                    for endpoint in endpoints
+                    float((endpoint - position) @ direction) for endpoint in endpoints
                 ]
                 min_t, max_t = span(ts)
-                display_edge(
-                    position + direction * min_t, position + direction * max_t
-                )
+                display_edge(position + direction * min_t, position + direction * max_t)
+
 
 class SurfaceRecover(RuleCheckTwoObjects):
     """Check that the contact surface between two objects covers an
@@ -2911,8 +2876,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
             and np.linalg.norm(direction) > 1e-12
         ):
             self.direction = tuple(
-                np.asarray(direction, dtype=float)
-                / np.linalg.norm(direction)
+                np.asarray(direction, dtype=float) / np.linalg.norm(direction)
             )
         else:
             raise ValueError(
@@ -3010,9 +2974,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
                             "obb": create_obb_from_TopoDs_Shape(occ_shape),
                             "vertices": np.asarray(vertices, dtype=float),
                             "faces": np.asarray(faces),
-                            "centroid": np.asarray(vertices, dtype=float).mean(
-                                axis=0
-                            ),
+                            "centroid": np.asarray(vertices, dtype=float).mean(axis=0),
                         }
                     )
                     if not iterator.next():
@@ -3040,10 +3002,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
                 # The OBB prefilter keeps the pairs whose bounding boxes
                 # are within the tolerance, the exact distance is checked
                 # afterwards.
-                if (
-                    source["obb"].min_distance_to_obb(target["obb"])
-                    > self.tolerance
-                ):
+                if source["obb"].min_distance_to_obb(target["obb"]) > self.tolerance:
                     continue
 
                 dist_tool = BRepExtrema_DistShapeShape()
@@ -3222,6 +3181,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
             return None
         return vector / norm
 
+
 class DirectView(RuleCheckTwoObjects):
     """Determine if the direct view between two objects is free, by
     casting rays between them.
@@ -3265,9 +3225,7 @@ class DirectView(RuleCheckTwoObjects):
         try:
             threshold_value = float(threshold[:-1])
         except ValueError:
-            raise ValueError(
-                f"threshold must be a percentage, got {threshold!r}"
-            )
+            raise ValueError(f"threshold must be a percentage, got {threshold!r}")
         if not 0.0 <= threshold_value <= 100.0:
             raise ValueError(
                 f"threshold must be between 0% and 100%, got {threshold!r}"
@@ -3282,9 +3240,7 @@ class DirectView(RuleCheckTwoObjects):
         self.ray_source = ray_source
         self.ray_count = ray_count
         self.threshold = threshold_value
-        self.max_distance = (
-            float(max_distance) if max_distance is not None else None
-        )
+        self.max_distance = float(max_distance) if max_distance is not None else None
 
         # The context goes into the ray tree (triangulated, world coords).
         self.geom_settings = ifcopenshell.geom.settings()
@@ -3356,9 +3312,7 @@ class DirectView(RuleCheckTwoObjects):
             while True:
                 shape = iterator.get()
                 entity = ifc_file.by_id(shape.id)
-                vertices = np.asarray(
-                    get_vertices(shape.geometry), dtype=float
-                )
+                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
                 faces = np.asarray(get_faces(shape.geometry))
                 if len(faces) > 0:
                     triangles = vertices[faces]
@@ -3407,12 +3361,8 @@ class DirectView(RuleCheckTwoObjects):
         their area, each aimed at a sampled point of a receiving face
         (area-weighted). The sampling is deterministic (R2 sequence).
         """
-        emitter_faces = self._faces_toward(
-            emitter_mesh, receiver_mesh["centroid"]
-        )
-        receiver_faces = self._faces_toward(
-            receiver_mesh, emitter_mesh["centroid"]
-        )
+        emitter_faces = self._faces_toward(emitter_mesh, receiver_mesh["centroid"])
+        receiver_faces = self._faces_toward(receiver_mesh, emitter_mesh["centroid"])
 
         if len(emitter_faces) == 0 or len(receiver_faces) == 0:
             return
@@ -3424,9 +3374,7 @@ class DirectView(RuleCheckTwoObjects):
             ),
             axis=1,
         )
-        counts = clash_utils.plan_ray_counts(
-            list(emitter_areas), self.ray_count
-        )
+        counts = clash_utils.plan_ray_counts(list(emitter_areas), self.ray_count)
 
         receiver_areas = 0.5 * np.linalg.norm(
             np.cross(
@@ -3504,13 +3452,9 @@ class DirectView(RuleCheckTwoObjects):
                 (target_mesh, source_mesh),
             ]
         elif self.ray_source == "Source":
-            emitters_of = lambda source_mesh, target_mesh: [
-                (source_mesh, target_mesh)
-            ]
+            emitters_of = lambda source_mesh, target_mesh: [(source_mesh, target_mesh)]
         else:
-            emitters_of = lambda source_mesh, target_mesh: [
-                (target_mesh, source_mesh)
-            ]
+            emitters_of = lambda source_mesh, target_mesh: [(target_mesh, source_mesh)]
 
         threshold_fraction = self.threshold / 100.0
 
@@ -3519,9 +3463,7 @@ class DirectView(RuleCheckTwoObjects):
                 if source_entity == target_entity:
                     continue
 
-                planned = self.ray_count * len(
-                    emitters_of(source_mesh, target_mesh)
-                )
+                planned = self.ray_count * len(emitters_of(source_mesh, target_mesh))
                 hits = 0
                 casts = 0
                 hit_segments = []
@@ -3567,6 +3509,7 @@ class DirectView(RuleCheckTwoObjects):
 
         self.end_rule_action()
 
+
 class OneObjectFace(RuleCheckOneObject):
     """Run face-level checks within a single object.
 
@@ -3599,12 +3542,8 @@ class OneObjectFace(RuleCheckOneObject):
         super().__init__(state, source)
         self.type = "OneObjectFace"
 
-        self.face_a_selection = clash_utils.validate_face_selection(
-            face_a_selection
-        )
-        self.face_b_selection = clash_utils.validate_face_selection(
-            face_b_selection
-        )
+        self.face_a_selection = clash_utils.validate_face_selection(face_a_selection)
+        self.face_b_selection = clash_utils.validate_face_selection(face_b_selection)
 
         if not (distance or intersection or orientation):
             raise ValueError(
@@ -3618,8 +3557,7 @@ class OneObjectFace(RuleCheckOneObject):
                 ("max_distance", max_distance),
             ):
                 if bound_value is not None and (
-                    not isinstance(bound_value, (int, float))
-                    or bound_value < 0
+                    not isinstance(bound_value, (int, float)) or bound_value < 0
                 ):
                     raise ValueError(
                         f"{bound_name} must be a positive number (m), "
@@ -3639,12 +3577,8 @@ class OneObjectFace(RuleCheckOneObject):
                     f"skip_adjacent must be a boolean, got {skip_adjacent!r}"
                 )
         self.distance = distance
-        self.min_distance = (
-            float(min_distance) if min_distance is not None else None
-        )
-        self.max_distance = (
-            float(max_distance) if max_distance is not None else None
-        )
+        self.min_distance = float(min_distance) if min_distance is not None else None
+        self.max_distance = float(max_distance) if max_distance is not None else None
         self.skip_adjacent = skip_adjacent if distance else True
 
         if intersection:
@@ -3673,17 +3607,16 @@ class OneObjectFace(RuleCheckOneObject):
                 )
             if angle_tolerance is None:
                 angle_tolerance = 0.0
-            if (
-                not isinstance(angle_tolerance, (int, float))
-                or angle_tolerance < 0
-            ):
+            if not isinstance(angle_tolerance, (int, float)) or angle_tolerance < 0:
                 raise ValueError(
                     "angle_tolerance must be a positive number (degrees), "
                     f"got {angle_tolerance!r}"
                 )
         self.orientation = orientation
         self.angle = float(angle) if angle is not None else None
-        self.angle_tolerance = float(angle_tolerance) if angle_tolerance is not None else 0.0
+        self.angle_tolerance = (
+            float(angle_tolerance) if angle_tolerance is not None else 0.0
+        )
 
         # Triangulated world meshes only: no OpenCascade shape needed
         # except for the distance between two triangles.
@@ -3711,22 +3644,14 @@ class OneObjectFace(RuleCheckOneObject):
                 measured = clash_utils.distance_between_triangles(
                     triangle_a, triangle_b
                 )
-                if (
-                    self.min_distance is not None
-                    and measured < self.min_distance
-                ):
+                if self.min_distance is not None and measured < self.min_distance:
                     failures.append(("distance", measured))
-                elif (
-                    self.max_distance is not None
-                    and measured > self.max_distance
-                ):
+                elif self.max_distance is not None and measured > self.max_distance:
                     failures.append(("distance", measured))
 
         if self.intersection:
             if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
-                depth = clash_utils.triangle_penetration_depth(
-                    triangle_a, triangle_b
-                )
+                depth = clash_utils.triangle_penetration_depth(triangle_a, triangle_b)
                 if depth > self.intersection_tolerance:
                     failures.append(("intersection", depth))
 
@@ -3763,14 +3688,10 @@ class OneObjectFace(RuleCheckOneObject):
             while True:
                 shape = iterator.get()
                 entity = ifc_file.by_id(shape.id)
-                vertices = np.asarray(
-                    get_vertices(shape.geometry), dtype=float
-                )
+                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
                 faces = np.asarray(get_faces(shape.geometry))
                 if len(faces) > 0:
-                    material_names = clash_utils.get_element_material_names(
-                        entity
-                    )
+                    material_names = clash_utils.get_element_material_names(entity)
                     group_a = clash_utils.select_faces(
                         vertices,
                         faces,
@@ -3871,7 +3792,6 @@ class OneObjectFace(RuleCheckOneObject):
                 self.display.Context.Display(ais_shape, True)
 
 
-
 class TwoObjectsFace(RuleCheckTwoObjects):
     """Run face-level checks between two object sets (the FaceCheck
     family).
@@ -3930,8 +3850,7 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 ("max_distance", max_distance),
             ):
                 if bound_value is not None and (
-                    not isinstance(bound_value, (int, float))
-                    or bound_value < 0
+                    not isinstance(bound_value, (int, float)) or bound_value < 0
                 ):
                     raise ValueError(
                         f"{bound_name} must be a positive number (m), "
@@ -3947,12 +3866,8 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                     f"max_distance ({max_distance})"
                 )
         self.distance = distance
-        self.min_distance = (
-            float(min_distance) if min_distance is not None else None
-        )
-        self.max_distance = (
-            float(max_distance) if max_distance is not None else None
-        )
+        self.min_distance = float(min_distance) if min_distance is not None else None
+        self.max_distance = float(max_distance) if max_distance is not None else None
 
         if intersection:
             if intersection_tolerance is None:
@@ -3980,10 +3895,7 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 )
             if angle_tolerance is None:
                 angle_tolerance = 0.0
-            if (
-                not isinstance(angle_tolerance, (int, float))
-                or angle_tolerance < 0
-            ):
+            if not isinstance(angle_tolerance, (int, float)) or angle_tolerance < 0:
                 raise ValueError(
                     "angle_tolerance must be a positive number (degrees), "
                     f"got {angle_tolerance!r}"
@@ -4028,22 +3940,14 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 measured = clash_utils.distance_between_triangles(
                     triangle_a, triangle_b
                 )
-                if (
-                    self.min_distance is not None
-                    and measured < self.min_distance
-                ):
+                if self.min_distance is not None and measured < self.min_distance:
                     failures.append(("distance", measured))
-                elif (
-                    self.max_distance is not None
-                    and measured > self.max_distance
-                ):
+                elif self.max_distance is not None and measured > self.max_distance:
                     failures.append(("distance", measured))
 
         if self.intersection:
             if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
-                depth = clash_utils.triangle_penetration_depth(
-                    triangle_a, triangle_b
-                )
+                depth = clash_utils.triangle_penetration_depth(triangle_a, triangle_b)
                 if depth > self.intersection_tolerance:
                     failures.append(("intersection", depth))
 
@@ -4079,14 +3983,10 @@ class TwoObjectsFace(RuleCheckTwoObjects):
             while True:
                 shape = iterator.get()
                 entity = ifc_file.by_id(shape.id)
-                vertices = np.asarray(
-                    get_vertices(shape.geometry), dtype=float
-                )
+                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
                 faces = np.asarray(get_faces(shape.geometry))
                 if len(faces) > 0:
-                    material_names = clash_utils.get_element_material_names(
-                        entity
-                    )
+                    material_names = clash_utils.get_element_material_names(entity)
                     triangles = clash_utils.select_faces(
                         vertices,
                         faces,
@@ -4134,8 +4034,9 @@ class TwoObjectsFace(RuleCheckTwoObjects):
             return 0
         self.end_rule_action()
 
-    def _check_pairs(self, source_entity, source_triangles, target_entity,
-                     target_triangles):
+    def _check_pairs(
+        self, source_entity, source_triangles, target_entity, target_triangles
+    ):
         """Every source face against every target face, one clash per
         pair per failed check."""
         for triangle_a in source_triangles:
@@ -4260,17 +4161,14 @@ class ClearanceForDoors(RuleCheckTwoObjects):
             ("height", height),
         ):
             if dimension_value is not None and (
-                not isinstance(dimension_value, (int, float))
-                or dimension_value <= 0
+                not isinstance(dimension_value, (int, float)) or dimension_value <= 0
             ):
                 raise ValueError(
                     f"{dimension_name} must be None or a positive number, "
                     f"got {dimension_value!r}"
                 )
         if not isinstance(tolerance, (int, float)) or tolerance < 0:
-            raise ValueError(
-                f"tolerance must be a positive number, got {tolerance!r}"
-            )
+            raise ValueError(f"tolerance must be a positive number, got {tolerance!r}")
 
         self.zone_shape = zone_shape
         self.sides = sides
@@ -4303,9 +4201,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
             if not iterator.initialize():
                 break
             shape = iterator.get()
-            vertices = np.asarray(
-                get_vertices(shape.geometry), dtype=float
-            )
+            vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
             return (
                 float(vertices[:, 0].max() - vertices[:, 0].min()),
                 float(vertices[:, 1].max() - vertices[:, 1].min()),
@@ -4368,9 +4264,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
         Each zone is a dict: leaf, side ("Front"/"Back"), shape
         ("Arc"/"Rectangle"), dimensions and the OpenCascade solid.
         """
-        origin, x_axis, y_axis, z_axis = clash_utils.get_local_placement_axes(
-            door
-        )
+        origin, x_axis, y_axis, z_axis = clash_utils.get_local_placement_axes(door)
         width, thickness, door_height = self._door_dimensions(door)
 
         operation = clash_utils.parse_door_operation(
@@ -4381,9 +4275,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
 
         zone_width = self.width if self.width is not None else leaf_width
         zone_depth = self.depth if self.depth is not None else leaf_width
-        zone_height = (
-            self.height if self.height is not None else max(door_height, 0.0)
-        )
+        zone_height = self.height if self.height is not None else max(door_height, 0.0)
 
         zones = []
 
@@ -4459,13 +4351,9 @@ class ClearanceForDoors(RuleCheckTwoObjects):
             # Rectangles in front of each leaf.
             for leaf_index, hinge_side in enumerate(operation["hinges"], start=1):
                 if hinge_side == "left":
-                    leaf_origin = origin + x_axis * (
-                        (leaf_index - 1) * leaf_width
-                    )
+                    leaf_origin = origin + x_axis * ((leaf_index - 1) * leaf_width)
                 else:
-                    leaf_origin = origin + x_axis * (
-                        (leaf_index - 1) * leaf_width
-                    )
+                    leaf_origin = origin + x_axis * ((leaf_index - 1) * leaf_width)
                 if self.sides in ("Swing", "Both", "Front"):
                     add_rectangle(1.0, "Front", leaf_index)
                 if self.sides in ("Both", "Back"):
@@ -4553,6 +4441,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
                     ais_shape.SetColor(red_color)
                     ais_shape.SetTransparency(0.6)
                     self.display.Context.Display(ais_shape, True)
+
 
 class FreeSpace(RuleCheckOneObject):
     """Check whether a cylinder of free space of a given diameter and
@@ -4803,28 +4692,18 @@ class FreeSpace(RuleCheckOneObject):
                 footprint, z_base = shapely.Polygon(), 0.0
                 if iterator.initialize():
                     shape = iterator.get()
-                    vertices = np.asarray(
-                        get_vertices(shape.geometry), dtype=float
-                    )
+                    vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
                     faces = np.asarray(get_faces(shape.geometry))
-                    footprint, z_base = clash_utils.lowest_footprint(
-                        vertices, faces
-                    )
+                    footprint, z_base = clash_utils.lowest_footprint(vertices, faces)
 
                 if footprint.is_empty:
                     # No footprint: no placement can be evaluated.
-                    self.result.append(
-                        ClashResultOneObject(source=source, state=True)
-                    )
+                    self.result.append(ClashResultOneObject(source=source, state=True))
                     continue
 
-                found, margin = self._search_placement(
-                    footprint, z_base, obstacles
-                )
+                found, margin = self._search_placement(footprint, z_base, obstacles)
                 if found is None:
-                    self.result.append(
-                        ClashResultOneObject(source=source, state=True)
-                    )
+                    self.result.append(ClashResultOneObject(source=source, state=True))
                 else:
                     self.placements[source] = {
                         "position": (found[0], found[1], z_base),
@@ -4852,13 +4731,9 @@ class FreeSpace(RuleCheckOneObject):
                 if not iterator.initialize():
                     continue
                 shape = iterator.get()
-                vertices = np.asarray(
-                    get_vertices(shape.geometry), dtype=float
-                )
+                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
                 faces = np.asarray(get_faces(shape.geometry))
-                footprint, z_base = clash_utils.lowest_footprint(
-                    vertices, faces
-                )
+                footprint, z_base = clash_utils.lowest_footprint(vertices, faces)
                 if footprint.is_empty:
                     continue
 

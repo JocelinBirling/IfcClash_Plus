@@ -1,12 +1,33 @@
 """
 Test suite for Rules classes in Rules.py
 """
+
 import unittest
 import ifcopenshell
 import sys
-sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check,Alignement,ClearanceForDoors,DirectView,FreeSpace,SurfaceRecover,ClearanceAxisToAxis,TwoObjectsFace
-from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
+
+sys.path.insert(0, "./ifcclash_plus")
+from Rules import (
+    Intersection,
+    Above,
+    Below,
+    OBB_Above,
+    Clearance,
+    Collision,
+    OBB_Below,
+    AngleBetween,
+    OBB_Custom,
+    OBB_Front_And_Back,
+    Ray_Check,
+    Alignement,
+    ClearanceForDoors,
+    DirectView,
+    FreeSpace,
+    SurfaceRecover,
+    ClearanceAxisToAxis,
+    TwoObjectsFace,
+)
+from RuleClass import SelectFacet, RuleFile, ClashResultOneObject, ClashResultTwoObjects
 from ifctester import ids
 
 
@@ -25,9 +46,7 @@ class TestRules(unittest.TestCase):
         """Test Intersection rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
-
-
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
         first_select = SelectFacet()
@@ -37,14 +56,11 @@ class TestRules(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
+        intersection_rule = Intersection(first_select, second_select, 0.01)
 
-
-        intersection_rule = Intersection(first_select, second_select, 0.01) 
-
-        OneRuleFile.contains=[intersection_rule]
+        OneRuleFile.contains = [intersection_rule]
         OneRuleFile.run()
 
- 
         self.assertEqual(len(intersection_rule.result), 1)
         for result in intersection_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -53,20 +69,18 @@ class TestRules(unittest.TestCase):
         """Test collision rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
         first_facet = ids.Entity(name="IFCDOOR")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
-
 
         second_facet = ids.Entity(name="IFCSLAB")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
+        rule = Collision(first_select, second_select, False)
 
-        rule = Collision(first_select, second_select, False) 
-
-        OneRuleFile.contains=[rule]
+        OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
         self.assertEqual(len(rule.result), 24)
@@ -77,19 +91,18 @@ class TestRules(unittest.TestCase):
         """Test Intersection rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
         first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
-
 
         second_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        intersection_rule = Clearance(first_select, second_select, 0.5) 
+        intersection_rule = Clearance(first_select, second_select, 0.5)
 
-        OneRuleFile.contains=[intersection_rule]
+        OneRuleFile.contains = [intersection_rule]
         OneRuleFile.run()
 
         for result in intersection_rule.result:
@@ -101,9 +114,7 @@ class TestRules(unittest.TestCase):
         """Test Intersection rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
-
-
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCDOOR")
         first_select = SelectFacet()
@@ -112,7 +123,7 @@ class TestRules(unittest.TestCase):
         second_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
-        
+
         context_facet = ids.Entity(
             name=ids.Restriction(
                 options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
@@ -121,24 +132,22 @@ class TestRules(unittest.TestCase):
         context_select = SelectFacet()
         context_select.applicability = [context_facet]
 
+        rule = Ray_Check(
+            first_select, second_select, context_select, 5, state="Display_Result"
+        )
 
-
-        rule = Ray_Check(first_select, second_select,context_select, 5,state="Display_Result") 
-
-        OneRuleFile.contains=[rule]
+        OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
         self.assertEqual(len(rule.result), 21)
 
-
-
     def test_above_rule_Max_To_Min(self):
         """Test Above rule"""
 
-        #The high cabinet are 0.8m below the slab. We should find 8 of them.
+        # The high cabinet are 0.8m below the slab. We should find 8 of them.
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         first_select = SelectFacet()
@@ -148,25 +157,28 @@ class TestRules(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-
-        above_rule = Above(source=first_select, target=second_select, tolerance=0.85, above_type="Above_MaxToMin") #0.81 should work.
+        above_rule = Above(
+            source=first_select,
+            target=second_select,
+            tolerance=0.85,
+            above_type="Above_MaxToMin",
+        )  # 0.81 should work.
         above_rule.run()
 
-        OneRuleFile.contains=[above_rule]
+        OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
 
         self.assertEqual(len(above_rule.result), 8)
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-
     def test_above_rule_MaxToMax(self):
         """Test Above rule"""
 
-        #The high cabinet are 0.8m below the slab. We should find 8 of them.
+        # The high cabinet are 0.8m below the slab. We should find 8 of them.
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
         first_select = SelectFacet()
@@ -176,20 +188,22 @@ class TestRules(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-
-        above_rule = Above(source=first_select, target=second_select, tolerance=1.0, above_type="Above_MaxToMax")
+        above_rule = Above(
+            source=first_select,
+            target=second_select,
+            tolerance=1.0,
+            above_type="Above_MaxToMax",
+        )
         above_rule.run()
 
-        OneRuleFile.contains=[above_rule]
+        OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
-
 
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-        self.assertEqual(len(above_rule.result), 13) #It's 13 because one windows is badly modelized.
-
-
-
+        self.assertEqual(
+            len(above_rule.result), 13
+        )  # It's 13 because one windows is badly modelized.
 
     def test_angle_between_rule(self):
         """Test AngleBetween rule with walls and doors"""
@@ -198,7 +212,7 @@ class TestRules(unittest.TestCase):
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
         # Select walls as source
-        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_facet = ids.Attribute(name="GlobalId", value="2O2Fr$t4X7Zf8NOew3FLQD")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
@@ -215,9 +229,9 @@ class TestRules(unittest.TestCase):
             direction_method_for_source="Wide",
             direction_method_for_target="Wide",
             angle_difference=0.0,
-            angle_tolerance=1.0
+            angle_tolerance=1.0,
         )
-       
+
         OneRuleFile.contains = [angle_between_rule]
         OneRuleFile.run()
 
@@ -227,7 +241,6 @@ class TestRules(unittest.TestCase):
 
         # Should find some walls and doors that are parrallels to that one walls.
         self.assertEqual(len(angle_between_rule.result), 4)
-        
 
     def test_angle_between_rule2(self):
         """Test AngleBetween rule with walls and doors"""
@@ -236,7 +249,7 @@ class TestRules(unittest.TestCase):
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
         # Select walls as source
-        first_facet = ids.Attribute(name="GlobalId",value="2O2Fr$t4X7Zf8NOew3FLQD")
+        first_facet = ids.Attribute(name="GlobalId", value="2O2Fr$t4X7Zf8NOew3FLQD")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
@@ -253,12 +266,11 @@ class TestRules(unittest.TestCase):
             direction_method_for_source="Wide",
             direction_method_for_target="Wide",
             angle_difference=90.0,
-            angle_tolerance=1.0
+            angle_tolerance=1.0,
         )
-       
+
         OneRuleFile.contains = [angle_between_rule]
         OneRuleFile.run()
-
 
         # Verify results
         for result in angle_between_rule.result:
@@ -266,7 +278,8 @@ class TestRules(unittest.TestCase):
 
         # Should find some walls and doors that are parrallels to that one walls.
         self.assertEqual(len(angle_between_rule.result), 6)
-        
+
+
 class TestRulesOBB(unittest.TestCase):
     """
     Made with AI
@@ -278,13 +291,12 @@ class TestRulesOBB(unittest.TestCase):
         self.ifc_path = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
         self.ifc_file = ifcopenshell.open(self.ifc_path)
 
-
     def test_below_rule(self):
-        #@todo check below rule, it copy pasted only
+        # @todo check below rule, it copy pasted only
         """Test Above rule, it's the same test than before but the other way around."""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCSLAB")
         first_select = SelectFacet()
@@ -294,14 +306,17 @@ class TestRulesOBB(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-
-        above_rule = Below(source=first_select, target=second_select, tolerance=0.81, below_type="Below_MinToMax")
+        above_rule = Below(
+            source=first_select,
+            target=second_select,
+            tolerance=0.81,
+            below_type="Below_MinToMax",
+        )
         above_rule.run()
 
-        OneRuleFile.contains=[above_rule]
+        OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
 
-        
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
         self.assertEqual(len(above_rule.result), 8)
@@ -310,7 +325,7 @@ class TestRulesOBB(unittest.TestCase):
         """Test OBB_Above rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         first_select = SelectFacet()
@@ -321,20 +336,19 @@ class TestRulesOBB(unittest.TestCase):
         second_select.applicability = [second_facet]
 
         obb_above_rule = OBB_Above(first_select, second_select, 0.81)
-        
-        OneRuleFile.contains=[obb_above_rule]
+
+        OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
 
         self.assertEqual(len(obb_above_rule.result), 8)
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-
     def test_obb_below_rule(self):
         """Test OBB_Below rule"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IfcWindow")
         first_select = SelectFacet()
@@ -346,12 +360,11 @@ class TestRulesOBB(unittest.TestCase):
 
         obb_above_rule = OBB_Below(first_select, second_select, 0.1)
 
-        
-        OneRuleFile.contains=[obb_above_rule]
+        OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
 
         self.assertEqual(len(obb_above_rule.result), 34)
-        #There is a lot of layer of slab in the house
+        # There is a lot of layer of slab in the house
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
@@ -359,7 +372,7 @@ class TestRulesOBB(unittest.TestCase):
         """Test OBB_Below rule. It's the inverse of OBB Above, to cross check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IfcSlab")
         first_select = SelectFacet()
@@ -369,24 +382,24 @@ class TestRulesOBB(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        obb_above_rule = OBB_Below(first_select, second_select, 0.81) #0.81 should work
-        
-        
-        OneRuleFile.contains=[obb_above_rule]
+        obb_above_rule = OBB_Below(
+            first_select, second_select, 0.81
+        )  # 0.81 should work
+
+        OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
 
-    
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
         self.assertEqual(len(obb_above_rule.result), 14)
-        #We should have get the same amount of result as OBB_Above(FurnishingElement,Slab), but the 3 tables are going threw the 2 finish layer.
+        # We should have get the same amount of result as OBB_Above(FurnishingElement,Slab), but the 3 tables are going threw the 2 finish layer.
 
     def test_obb_above_rule_2(self):
         """Test OBB_above rule, it's the inverse of OBB_Below, to cross check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IfcSlab")
         first_select = SelectFacet()
@@ -397,20 +410,20 @@ class TestRulesOBB(unittest.TestCase):
         second_select.applicability = [second_facet]
 
         obb_above_rule = OBB_Above(first_select, second_select, 0.1)
-        
-        OneRuleFile.contains=[obb_above_rule]
+
+        OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
 
         self.assertEqual(len(obb_above_rule.result), 34)
-        #We should find the same number as the above test rule. 
+        # We should find the same number as the above test rule.
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-     
+
     def test_custom_obb(self):
         """Test custom obb check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IfcWallStandardCase")
         first_select = SelectFacet()
@@ -420,18 +433,21 @@ class TestRulesOBB(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
+        list_of_modifications = [
+            "detach_top_by_extrude:10%",
+            "NEW_OBB",
+            "detach_bottom_by_extrude:10%",
+        ]
 
+        obb_above_rule = OBB_Custom(
+            first_select, second_select, list_of_modifications, state="Final"
+        )
 
-        list_of_modifications=["detach_top_by_extrude:10%","NEW_OBB","detach_bottom_by_extrude:10%"]
-
-        obb_above_rule = OBB_Custom(first_select, second_select, list_of_modifications,state="Final")
-        
-        OneRuleFile.contains=[obb_above_rule]
+        OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
 
-
         self.assertEqual(len(obb_above_rule.result), 20)
-        #We should find the same number as the above test rule. 
+        # We should find the same number as the above test rule.
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
@@ -439,7 +455,7 @@ class TestRulesOBB(unittest.TestCase):
         """Test custom obb check"""
 
         OneRuleFile = RuleFile()
-        OneRuleFile.list_ifc_path= [self.ifc_path]
+        OneRuleFile.list_ifc_path = [self.ifc_path]
 
         first_facet = ids.Entity(name="IfcDoor")
         first_select = SelectFacet()
@@ -449,15 +465,13 @@ class TestRulesOBB(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
+        rule = OBB_Front_And_Back(first_select, second_select, 1.0, "Wide")
 
-
-        rule = OBB_Front_And_Back(first_select, second_select,1.0,"Wide")
-        
-        OneRuleFile.contains=[rule]
+        OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
         self.assertEqual(len(rule.result), 1)
-        #We should find the same number as the above test rule. 
+        # We should find the same number as the above test rule.
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
@@ -480,7 +494,6 @@ class TestRulesAdvanced(unittest.TestCase):
         in their horizontal plane (z=0.931), the 2 sink openings in
         theirs (z=0.880): no clash."""
 
-
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
@@ -492,13 +505,16 @@ class TestRulesAdvanced(unittest.TestCase):
         counter_select.applicability = [counter_facet]
 
         alignement_rule = Alignement(
-            counter_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=0.01, min_group=2,state="Display_Result"
+            counter_select,
+            axis="Horizontal",
+            alignment_type="Plane",
+            tolerance=0.01,
+            min_group=2,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
-
 
         self.assertEqual(len(alignement_rule.result), 0)
         for result in alignement_rule.result:
@@ -518,8 +534,12 @@ class TestRulesAdvanced(unittest.TestCase):
         source_select.applicability = [source_facet]
 
         alignement_rule = Alignement(
-            source_select, axis="Vertical", alignment_type="Plane",
-            tolerance=0.01, min_group=2,state="Display_Result"
+            source_select,
+            axis="Vertical",
+            alignment_type="Plane",
+            tolerance=0.01,
+            min_group=2,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -546,8 +566,12 @@ class TestRulesAdvanced(unittest.TestCase):
         source_select.applicability = [source_facet]
 
         alignement_rule = Alignement(
-            source_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=0.05, min_group=2,state="Display_Result"
+            source_select,
+            axis="Horizontal",
+            alignment_type="Plane",
+            tolerance=0.05,
+            min_group=2,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -571,8 +595,12 @@ class TestRulesAdvanced(unittest.TestCase):
         source_select.applicability = [source_facet]
 
         alignement_rule = Alignement(
-            source_select, axis="Vertical", alignment_type="Plane",
-            tolerance=0.01, min_group=4,state="Display_Result"
+            source_select,
+            axis="Vertical",
+            alignment_type="Plane",
+            tolerance=0.01,
+            min_group=4,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -599,8 +627,12 @@ class TestRulesAdvanced(unittest.TestCase):
         source_select.applicability = [source_facet]
 
         alignement_rule = Alignement(
-            source_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=0.05, min_group=4,state="Display_Result"
+            source_select,
+            axis="Horizontal",
+            alignment_type="Plane",
+            tolerance=0.05,
+            min_group=4,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -626,8 +658,12 @@ class TestRulesAdvanced(unittest.TestCase):
         counter_select.applicability = [counter_facet]
 
         alignement_rule = Alignement(
-            counter_select, axis="Horizontal", alignment_type="Plane",
-            tolerance=1.0, min_group=3,state="Display_Result"
+            counter_select,
+            axis="Horizontal",
+            alignment_type="Plane",
+            tolerance=1.0,
+            min_group=3,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -652,12 +688,16 @@ class TestRulesAdvanced(unittest.TestCase):
         wall_select = SelectFacet()
         wall_select.applicability = [wall_facet]
 
-        rule = ClearanceForDoors(door_select, wall_select, tolerance=0.001,state="Display_Result")
+        rule = ClearanceForDoors(
+            door_select, wall_select, tolerance=0.001, state="Display_Result"
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(rule.result), 0) #@todo This rule is not working. The size of the zone is not clear.
+        self.assertEqual(
+            len(rule.result), 0
+        )  # @todo This rule is not working. The size of the zone is not clear.
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
@@ -701,8 +741,12 @@ class TestRulesAdvanced(unittest.TestCase):
         wall_select.applicability = [wall_facet]
 
         rule = DirectView(
-            window_select, window_select, wall_select,
-            ray_source="Both", ray_count=10, threshold="100%"
+            window_select,
+            window_select,
+            wall_select,
+            ray_source="Both",
+            ray_count=10,
+            threshold="100%",
         )
 
         OneRuleFile.contains = [rule]
@@ -747,8 +791,12 @@ class TestRulesAdvanced(unittest.TestCase):
         context_select.applicability = [context_facet]
 
         rule = DirectView(
-            stair_select, window_select, context_select,
-            ray_source="Source", ray_count=10, threshold="100%"
+            stair_select,
+            window_select,
+            context_select,
+            ray_source="Source",
+            ray_count=10,
+            threshold="100%",
         )
 
         OneRuleFile.contains = [rule]
@@ -786,8 +834,13 @@ class TestRulesAdvanced(unittest.TestCase):
         context_select.applicability = [context_facet]
 
         rule = DirectView(
-            stair_select, window_select, context_select,
-            ray_source="Source", ray_count=10, threshold="10%",state="Display_Result"
+            stair_select,
+            window_select,
+            context_select,
+            ray_source="Source",
+            ray_count=10,
+            threshold="10%",
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]
@@ -796,7 +849,6 @@ class TestRulesAdvanced(unittest.TestCase):
         self.assertEqual(len(rule.result), 5)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-
 
     def test_clearance_axis_to_axis_rule(self):
         """Test ClearanceAxisToAxis rule on the basement beam grid.
@@ -810,9 +862,7 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        beam_facet = ids.Attribute(
-            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"
-        )
+        beam_facet = ids.Attribute(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv")
         beam_select = SelectFacet()
         beam_select.applicability = [beam_facet]
 
@@ -821,8 +871,12 @@ class TestRulesAdvanced(unittest.TestCase):
         all_beams_select.applicability = [all_beams_facet]
 
         rule = ClearanceAxisToAxis(
-            beam_select, all_beams_select, mode="Perpendicular",
-            min_distance=4.5, max_distance=5.5,state="Display_Result"
+            beam_select,
+            all_beams_select,
+            mode="Perpendicular",
+            min_distance=4.5,
+            max_distance=5.5,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]
@@ -834,15 +888,12 @@ class TestRulesAdvanced(unittest.TestCase):
             # Only the pairs outside [4.5, 5.5] clash, the two
             # parallel runs at 5.02 m stay compliant.
             self.assertTrue(
-                result.distance_between < 4.5
-                or result.distance_between > 5.5
+                result.distance_between < 4.5 or result.distance_between > 5.5
             )
         # The collinear continuation shares the support line: its
         # offset is measured in Perpendicular mode.
         collinear = [
-            result
-            for result in rule.result
-            if result.axis_mode == "Perpendicular"
+            result for result in rule.result if result.axis_mode == "Perpendicular"
         ]
         self.assertEqual(len(collinear), 1)
         self.assertAlmostEqual(collinear[0].distance_between, 0.0, places=4)
@@ -864,33 +915,39 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Attribute(
-            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"
-        )
+        first_facet = ids.Attribute(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        second_facet = ids.Attribute(
-            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"
-        )
+        second_facet = ids.Attribute(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv")
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
         perpendicular_rule = ClearanceAxisToAxis(
-            first_select, second_select, mode="Perpendicular",
-            min_distance=1.0, max_distance=3.0,
+            first_select,
+            second_select,
+            mode="Perpendicular",
+            min_distance=1.0,
+            max_distance=3.0,
         )
         min_distance_rule = ClearanceAxisToAxis(
-            first_select, second_select, mode="MinDistance",
-            min_distance=1.0, max_distance=3.0,
+            first_select,
+            second_select,
+            mode="MinDistance",
+            min_distance=1.0,
+            max_distance=3.0,
         )
         min_distance_gap_rule = ClearanceAxisToAxis(
-            first_select, second_select, mode="MinDistance",
+            first_select,
+            second_select,
+            mode="MinDistance",
             max_distance=1.0,
         )
 
         OneRuleFile.contains = [
-            perpendicular_rule, min_distance_rule, min_distance_gap_rule
+            perpendicular_rule,
+            min_distance_rule,
+            min_distance_gap_rule,
         ]
         OneRuleFile.run()
 
@@ -931,11 +988,15 @@ class TestRulesAdvanced(unittest.TestCase):
         railing_select.applicability = [railing_facet]
 
         skip_rule = ClearanceAxisToAxis(
-            stair_select, railing_select, max_distance=0.0,
+            stair_select,
+            railing_select,
+            max_distance=0.0,
             on_non_linear="Skip",
         )
         fallback_rule = ClearanceAxisToAxis(
-            stair_select, railing_select, max_distance=0.0,
+            stair_select,
+            railing_select,
+            max_distance=0.0,
             on_non_linear="Fallback",
         )
 
@@ -968,7 +1029,9 @@ class TestRulesAdvanced(unittest.TestCase):
 
         cabinet_facet = ids.Attribute(
             name="Name",
-            value=ids.Restriction(options={"pattern": ["M_Tall Cabinet-Single Door.*"]}),
+            value=ids.Restriction(
+                options={"pattern": ["M_Tall Cabinet-Single Door.*"]}
+            ),
         )
         cabinet_select = SelectFacet()
         cabinet_select.applicability = [cabinet_facet]
@@ -978,14 +1041,20 @@ class TestRulesAdvanced(unittest.TestCase):
         slab_select.applicability = [slab_facet]
 
         strict_rule = TwoObjectsFace(
-            cabinet_select, slab_select,
+            cabinet_select,
+            slab_select,
             source_face_selection={"orientation": "Top", "extreme_faces": True},
-            distance=True, min_distance=0.9,state="Display_Result"
+            distance=True,
+            min_distance=0.9,
+            state="Display_Result",
         )
         compliant_rule = TwoObjectsFace(
-            cabinet_select, slab_select,
+            cabinet_select,
+            slab_select,
             source_face_selection={"orientation": "Top", "extreme_faces": True},
-            distance=True, min_distance=0.7,state="Display_Result"
+            distance=True,
+            min_distance=0.7,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [strict_rule, compliant_rule]
@@ -1000,7 +1069,8 @@ class TestRulesAdvanced(unittest.TestCase):
             self.assertLess(result.value, 0.9)
         self.assertAlmostEqual(
             min(result.value for result in strict_rule.result),
-            0.81405, places=4,
+            0.81405,
+            places=4,
         )
 
         # 0.7 m is respected everywhere: no clash.
@@ -1029,7 +1099,9 @@ class TestRulesAdvanced(unittest.TestCase):
         roof_select = SelectFacet()
         roof_select.applicability = [roof_facet]
 
-        rule = TwoObjectsFace(skylight_select, roof_select, intersection=True,state="Display_Result")
+        rule = TwoObjectsFace(
+            skylight_select, roof_select, intersection=True, state="Display_Result"
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -1076,14 +1148,22 @@ class TestRulesAdvanced(unittest.TestCase):
         roof_select.applicability = [roof_facet]
 
         parallel_rule = TwoObjectsFace(
-            skylight_select, roof_select,
+            skylight_select,
+            roof_select,
             target_face_selection={"orientation": "Top", "extreme_faces": True},
-            orientation=True, angle=0.0, angle_tolerance=0.0,state="Display_Result"
+            orientation=True,
+            angle=0.0,
+            angle_tolerance=0.0,
+            state="Display_Result",
         )
         opposing_rule = TwoObjectsFace(
-            skylight_select, roof_select,
+            skylight_select,
+            roof_select,
             target_face_selection={"orientation": "Top", "extreme_faces": True},
-            orientation=True, angle=180.0, angle_tolerance=0.0,state="Display_Result"
+            orientation=True,
+            angle=180.0,
+            angle_tolerance=0.0,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [parallel_rule, opposing_rule]
@@ -1092,12 +1172,8 @@ class TestRulesAdvanced(unittest.TestCase):
         from collections import Counter
 
         self.assertEqual(len(parallel_rule.result), 5040)
-        measured = Counter(
-            round(result.value) for result in parallel_rule.result
-        )
-        self.assertEqual(
-            measured, Counter({90: 2304, 180: 1872, 125: 576, 145: 288})
-        )
+        measured = Counter(round(result.value) for result in parallel_rule.result)
+        self.assertEqual(measured, Counter({90: 2304, 180: 1872, 125: 576, 145: 288}))
         for result in parallel_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.check, "orientation")
@@ -1125,7 +1201,13 @@ class TestRulesAdvanced(unittest.TestCase):
         furniture_select = SelectFacet()
         furniture_select.applicability = [furniture_facet]
 
-        rule = FreeSpace(space_select, furniture_select, diameter=1.5, height=2.0,state="Display_Result")
+        rule = FreeSpace(
+            space_select,
+            furniture_select,
+            diameter=1.5,
+            height=2.0,
+            state="Display_Result",
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -1136,7 +1218,6 @@ class TestRulesAdvanced(unittest.TestCase):
 
     def test_free_space_rule_2(self):
 
-
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
@@ -1148,19 +1229,22 @@ class TestRulesAdvanced(unittest.TestCase):
         furniture_select = SelectFacet()
         furniture_select.applicability = [furniture_facet]
 
-        rule = FreeSpace(space_select, furniture_select, diameter=0.2, height=2.0,state="Display_Result")
+        rule = FreeSpace(
+            space_select,
+            furniture_select,
+            diameter=0.2,
+            height=2.0,
+            state="Display_Result",
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
-
 
         self.assertEqual(len(rule.result), 0)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
-
     def test_free_space_rule_3(self):
-
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -1173,17 +1257,20 @@ class TestRulesAdvanced(unittest.TestCase):
         furniture_select = SelectFacet()
         furniture_select.applicability = [furniture_facet]
 
-        rule = FreeSpace(space_select, furniture_select, diameter=3, height=2.0,state="Display_Result")
+        rule = FreeSpace(
+            space_select,
+            furniture_select,
+            diameter=3,
+            height=2.0,
+            state="Display_Result",
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-
         self.assertEqual(len(rule.result), 18)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
-
-
 
     def test_surface_recover_rule(self):
         """Test SurfaceRecover rule. The furniture stands on the slabs;
@@ -1202,8 +1289,13 @@ class TestRulesAdvanced(unittest.TestCase):
         slab_select.applicability = [slab_facet]
 
         rule = SurfaceRecover(
-            furniture_select, slab_select, direction="Bottom",
-            reference="Source", tolerance=0.05, min_covering="101%",state="Display_Result"
+            furniture_select,
+            slab_select,
+            direction="Bottom",
+            reference="Source",
+            tolerance=0.05,
+            min_covering="101%",
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]
@@ -1214,7 +1306,6 @@ class TestRulesAdvanced(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
 
     def test_surface_recover_rule_n2(self):
-
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -1228,17 +1319,22 @@ class TestRulesAdvanced(unittest.TestCase):
         slab_select.applicability = [slab_facet]
 
         rule = SurfaceRecover(
-            furniture_select, slab_select, direction="Bottom",
-            reference="Source", tolerance=0.05, min_covering=0.3,max_covering=1.0,state="Display_Result"
+            furniture_select,
+            slab_select,
+            direction="Bottom",
+            reference="Source",
+            tolerance=0.05,
+            min_covering=0.3,
+            max_covering=1.0,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(rule.result), 0)# This rule is not working. 
+        self.assertEqual(len(rule.result), 0)  # This rule is not working.
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-
 
     def test_surface_recover_min_covering(self):
         """Test SurfaceRecover rule with a 50% minimum covering: the
@@ -1260,8 +1356,13 @@ class TestRulesAdvanced(unittest.TestCase):
         slab_select.applicability = [slab_facet]
 
         rule = SurfaceRecover(
-            slab_select,wall_select,  direction="Bottom",
-            reference="Source", tolerance=0.01, min_covering="50%",state="Display_Result"
+            slab_select,
+            wall_select,
+            direction="Bottom",
+            reference="Source",
+            tolerance=0.01,
+            min_covering="50%",
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]
@@ -1272,5 +1373,5 @@ class TestRulesAdvanced(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
