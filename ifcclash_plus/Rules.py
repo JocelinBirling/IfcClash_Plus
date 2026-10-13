@@ -1242,6 +1242,8 @@ class Above(RuleCheckTwoObjects):
                     obb = create_obb_from_TopoDs_Shape(geom)
                     clash_obb = obb.detach_top_by_extrude(self.tolerance)
 
+                    #@todo Implement a fonction to determine the number of faces that are toward the direction. We need to have at least the same number of ray.
+
                     extrem_faces = (
                         clash_utils.get_faces_visible_from_direction_with_plane(
                             shape=geom, direction=source_direction
@@ -1373,8 +1375,8 @@ class Above(RuleCheckTwoObjects):
                         if pt_source.Z() > pt_target.Z():
                             continue
 
-                        if pt_source.X() - pt_target.X() < 1e-3:
-                            if pt_source.Y() - pt_target.Y() < 1e-3:
+                        if abs(pt_source.X() - pt_target.X()) < 1e-3:
+                            if abs(pt_source.Y() - pt_target.Y()) < 1e-3:
                                 dict_to_return["is_above"] = "Right_Above"
                                 return dict_to_return
 
@@ -1555,15 +1557,15 @@ class Below(RuleCheckTwoObjects):
                 # If they touch (distance <= tolerance), it's close enough to check if the face is exactly above.
                 if distance <= self.tolerance:
                     # We check if the target point is exactly above the source point.
-                    for i in range(1, dist_tool.NbSolution()):
+                    for i in range(0, dist_tool.NbSolution()):
                         pt_source = dist_tool.PointOnShape1(i)
                         pt_target = dist_tool.PointOnShape2(i)
 
                         if pt_source.Z() < pt_target.Z():
                             continue
 
-                        if pt_source.X() - pt_target.X() < 1e-3:
-                            if pt_source.Y() - pt_target.Y() < 1e-3:
+                        if abs(pt_source.X() - pt_target.X()) < 1e-3:
+                            if abs(pt_source.Y() - pt_target.Y()) < 1e-3:
                                 dict_to_return["is_below"] = "Right_Below"
                                 return dict_to_return
 

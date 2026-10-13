@@ -989,7 +989,7 @@ def get_faces_visible_from_direction_with_plane(
     angle_tolerance_deg: float = 45.0,
     plane_distance: float = 100.0,
     plane_size_factor: float = 1.0,
-    n_ray_samples: int = 9
+    n_ray_samples: int = 50
 ) -> dict:
     """
     Détermine les faces visibles depuis une direction en créant un plan perpendiculaire

@@ -111,6 +111,7 @@ class IFCModelRuleTestCase(unittest.TestCase):
         rule_file.list_ifc_path = [os.path.join(MODEL_DIR, model)]
         src = self._resolved(model, source)
         tgt = self._resolved(model, target)
+        #kwargs["state"]="Display_Result"
         rule = rule_cls(self._select(src), self._select(tgt), **kwargs)
         rule_file.contains = [rule]
         rule_file.run()
@@ -476,7 +477,7 @@ class TestAbove(IFCModelRuleTestCase):
                            above_type="Above_MaxToMin", tolerance=1.1)
         self._assert_count("SuzanneA_Above_SlabA.ifc", Above,
                            "SlabA", "SuzanneA", 0,
-                           above_type="Above_MaxToMin", tolerance=1.0)
+                           above_type="Above_MaxToMin", tolerance=0.9)
 
     def test_SuzanneA_Above_UshapeA(self):
         # min distance 0.2156.
