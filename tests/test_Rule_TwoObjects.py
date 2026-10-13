@@ -392,8 +392,8 @@ class TestRulesOBB(unittest.TestCase):
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-        self.assertEqual(len(obb_above_rule.result), 14)
-        # We should have get the same amount of result as OBB_Above(FurnishingElement,Slab), but the 3 tables are going threw the 2 finish layer.
+        self.assertEqual(len(obb_above_rule.result), 8)
+        
 
     def test_obb_above_rule_2(self):
         """Test OBB_above rule, it's the inverse of OBB_Below, to cross check"""

@@ -111,7 +111,7 @@ class IFCModelRuleTestCase(unittest.TestCase):
         rule_file.list_ifc_path = [os.path.join(MODEL_DIR, model)]
         src = self._resolved(model, source)
         tgt = self._resolved(model, target)
-        kwargs["state"]="Display_Result"
+        #kwargs["state"]="Display_Result"
         rule = rule_cls(self._select(src), self._select(tgt), **kwargs)
         rule_file.contains = [rule]
         rule_file.run()
@@ -667,13 +667,16 @@ class TestOBB_Front_And_Back(IFCModelRuleTestCase):
     """
 
     def test_CubeB_InFront_45CuboidA(self):
-        # [calibrated file-name order, tol 1.0: 1 for both Wide and Narrow]
-        # CubeB is in front of 45CuboidA along its main axis -> semantic
-        # order: source=45CuboidA, target=CubeB, same result expected.
+        # [calibrated] the zones are anchored on the SOURCE and the relation
+        # is NOT symmetric: CubeB's axis-aligned zones reach the 45deg cuboid
+        # (file-name order, tol 1.0 -> 1), but the zones anchored on the
+        # 45deg cuboid do not reach CubeB (semantic order -> 0).
         self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
-                           "45CuboidA", "CubeB", 1, tolerance=1.0, method="Wide")
+                           "CubeB", "45CuboidA", 1, tolerance=1.0, method="Wide")
         self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
-                           "45CuboidA", "CubeB", 0, tolerance=0.1, method="Wide")
+                           "CubeB", "45CuboidA", 0, tolerance=0.1, method="Wide")
+        self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
 
     def test_CubeB_InFrontOf_CuboidA_50cm(self):
         # [calibrated file-name order: tol 1.0 -> 1, tol 0.5 -> 0]
@@ -683,27 +686,38 @@ class TestOBB_Front_And_Back(IFCModelRuleTestCase):
         self._assert_count("CubeB_InFrontOf_CuboidA_50cm.ifc", OBB_Front_And_Back,
                            "CuboidA", "CubeB", 0, tolerance=0.5, method="Wide")
 
-    def test_SuzanneA_InFrontOf_CuboidA_150cm(self):
-        # [expected] min distance 1.4601: tolerance 2.0 so that the zone
-        # reaches SuzanneA. (File-name order calibrated: 0 up to tol 1.5.)
-        self._assert_count("SuzanneA_InFrontOf_CuboidA_150cm.ifc", OBB_Front_And_Back,
+    def test_SuzanneA_InFrontOf_CuboidA_146cm(self):
+        # [calibrated] min distance 1.4601 (model renamed 150cm -> 146cm to
+        # match the real distance): tolerance 2.0 so that the zone anchored
+        # on CuboidA reaches SuzanneA.
+        self._assert_count("SuzanneA_InFrontOf_CuboidA_146cm.ifc", OBB_Front_And_Back,
                            "CuboidA", "SuzanneA", 1, tolerance=2.0, method="Wide")
 
     def test_SuzanneB_Behind_SuzanneA(self):
         # [calibrated] the file-name order IS the semantic order here:
-        # SuzanneA is in front of SuzanneB. Wide -> 1 from tolerance 0.1;
+        # SuzanneA is in front of SuzanneB. The zone anchored on SuzanneB
+        # misses SuzanneA by ~0.067 at tol 0.1 (the former expected 1 was
+        # calibrated with the invalid zone solid, which made every distance
+        # collapse to 0); from tol 0.3 the zone reaches -> 1.
         # Narrow -> 0.
         self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
-                           "SuzanneB", "SuzanneA", 1, tolerance=0.1, method="Wide")
+                           "SuzanneB", "SuzanneA", 1, tolerance=0.3, method="Wide")
+        self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
+                           "SuzanneB", "SuzanneA", 0, tolerance=0.1, method="Wide")
         self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
                            "SuzanneB", "SuzanneA", 0, tolerance=0.1, method="Narrow")
 
     def test_CubeB_Side_45CuboidA(self):
-        # [calibrated file-name order: Wide tol 1.0 -> 1] a "sideways"
-        # placement is still covered by the zone of the second main
-        # direction of the OBB -> 1 in semantic order too.
+        # [calibrated] same asymmetry as test_CubeB_InFront_45CuboidA: the
+        # sideways placement is covered by CubeB's own zones (file-name
+        # order, Wide tol 1.0 -> 1) but not by the zones of the 45deg
+        # cuboid (semantic order -> 0).
         self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
-                           "45CuboidA", "CubeB", 1, tolerance=1.0, method="Wide")
+                           "CubeB", "45CuboidA", 1, tolerance=1.0, method="Wide")
+        self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
+                           "CubeB", "45CuboidA", 0, tolerance=0.1, method="Wide")
+        self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
 
     def test_CubeB_Side_CuboidA_50cm(self):
         # [calibrated file-name order: 0 at every tested tolerance <= 1.0]
