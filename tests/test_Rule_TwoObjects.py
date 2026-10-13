@@ -683,8 +683,10 @@ class TestRulesAdvanced(unittest.TestCase):
         self.assertEqual(len(rule.result), 0)
 
     def test_direct_view_rule(self):
-        """Test DirectView rule. Of the 552 ordered window pairs, the
-        walls block 550: only the two skylights see each other."""
+        """Test DirectView rule. The rule is inverted: a result is a
+        pair in direct view. Of the 552 ordered window pairs, the
+        walls block 550; only the two skylights see each other: the
+        2 ordered skylight pairs clash."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -705,14 +707,24 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        # 24 windows -> 24 x 23 = 552 ordered pairs, 550 blocked.
-        self.assertEqual(len(rule.result), 550)
+        # 24 windows -> 24 x 23 = 552 ordered pairs, 550 blocked: the
+        # 2 ordered skylight pairs are in direct view and clash.
+        skylights = (
+            "M_Skylight:1180 x 1170mm:1180 x 1170mm:185337",
+            "M_Skylight:1180 x 1170mm:1180 x 1170mm:185718",
+        )
+        self.assertEqual(len(rule.result), 2)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertIn(result.source.Name, skylights)
+            self.assertIn(result.target.Name, skylights)
+            self.assertNotEqual(result.source.Name, result.target.Name)
 
     def test_direct_view_rule_n2(self):
-        """Test DirectView rule. Of the 552 ordered window pairs, the
-        walls block 550: only the two skylights see each other."""
+        """Test DirectView rule (inverted sense: a result is a pair in
+        direct view). The two stair flights sit in closed stairwells:
+        no window reaches a full (100%) direct view through the
+        stairwell openings: no result at a 100% threshold."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -741,10 +753,49 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        # This rule is not working, the context is not blocking the view.
-        self.assertEqual(len(rule.result), 0) #Not working, the context is not blocking the ray
+        self.assertEqual(len(rule.result), 0)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
+
+    def test_direct_view_rule_n3(self):
+        """Test DirectView rule (inverted sense: a result is a pair in
+        direct view). The two stair flights sit in closed stairwells:
+        only the 5 windows reached through the stairwell openings are
+        in direct view (30% to 70% of the rays pass). With a 10%
+        threshold, those 5 stair-window pairs clash; the 19 other
+        windows are fully hidden and produce no result."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        stair_facet = ids.Entity(name="IfcStairFlight")
+        stair_select = SelectFacet()
+        stair_select.applicability = [stair_facet]
+
+        window_facet = ids.Entity(name="IfcWindow")
+        window_select = SelectFacet()
+        window_select.applicability = [window_facet]
+
+        context_facet = ids.Entity(
+            name=ids.Restriction(
+                options={"enumeration": ["IFCWALLSTANDARDCASE", "IFCSLAB"]}
+            )
+        )
+        context_select = SelectFacet()
+        context_select.applicability = [context_facet]
+
+        rule = DirectView(
+            stair_select, window_select, context_select,
+            ray_source="Source", ray_count=10, threshold="10%",state="Display_Result"
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 5)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+
 
     def test_free_space_rule(self):
         """Test FreeSpace rule. 7 of the 21 spaces cannot host a free

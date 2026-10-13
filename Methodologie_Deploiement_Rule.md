@@ -157,13 +157,13 @@ Décisions d'implémentation :
 - Modèles générés par API ifcopenshell dans `tests/test_DirectView.py` (observateur, cible à 8 m, mur bloquant total ou partiel) : `IFC_Test_Model/` ne contient pas de cas de visée directe.
 
 Écarts et conventions tranchées (vs le .md de la règle) :
-- Résultat levé uniquement pour les paires dont le ratio est sous le seuil (spec : « Raise a clash if the hit ratio is below Threshold ») ; les paires conformes ne produisent rien.
+- Sens de la règle inversé le 2026-10-13 : résultat levé uniquement pour les paires dont le ratio atteint le seuil (spec : « Raise a clash if the hit ratio reaches Threshold »), c'est-à-dire les paires qui se voient ; une paire totalement occultée ne produit rien.
 - Échantillonnage déterministe (séquence R2), pas aléatoire : un même modèle donne toujours le même ratio — indispensable pour des tests reproductibles. Le point visé utilise un index décalé (+1 000 007) pour décorréler origine et cible (sinon les rayons apparient des positions d'échantillonnage identiques et couvrent mal).
 - Face réceptrice d'un rayon : choix pondéré par les aires (déterministe via R2) ; le point visé est échantillonné dans cette face (visée « face à face »).
 - Rayon de longueur nulle (les faces se touchent) : compté comme touché ; rayon plus long que `Max_Distance` : raté sans être tiré dans l'arbre (il comptabilise quand même comme rayon tiré).
-- Aucun rayon tirable pour la paire (aucune face tournée vers l'autre) : ratio 0 % → clash si le seuil > 0.
-- Seuil strictement en dessous : ratio == Threshold → pas de clash ; Threshold « 0% » → jamais de clash.
-- La terminaison anticipée garantit la même décision qu'un tir complet : « clash » quand (touches + restants)/prévus < seuil (le ratio max possible sur les rayons tirés) ; « ok » quand touches/prévus >= seuil (le ratio min possible). Le ratio rapporté porte sur les rayons réellement tirés (spec, étape 7).
+- Aucun rayon tirable pour la paire (aucune face tournée vers l'autre) : ratio 0 % → pas de clash si le seuil > 0 (clash à « 0% »).
+- Seuil inclusif côté clash : ratio == Threshold → clash ; Threshold « 0% » → clash de toutes les paires (décidé sans tirer aucun rayon).
+- La terminaison anticipée garantit la même décision qu'un tir complet : « below_threshold » quand (touches + restants)/prévus < seuil (le ratio max possible sur les rayons tirés) ; « reaches_threshold » quand touches/prévus >= seuil (le ratio min possible). Le ratio rapporté porte sur les rayons réellement tirés (spec, étape 7).
 - Le Context reçoit les fichiers du Source dans `run()` (pas de branchement dans `update_file_info` de la base, sur le modèle de `Ray_Check`).
 
 Problématiques rencontrées et solutions :

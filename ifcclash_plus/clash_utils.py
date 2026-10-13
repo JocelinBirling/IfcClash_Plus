@@ -2221,16 +2221,18 @@ def direct_view_early_stop(
 ) -> Optional[str]:
     """Whether the outcome of a DirectView pair is already decided.
 
-    threshold is a fraction in [0, 1]. Returns "clash" when even if all
-    the remaining rays touched the target, the hit ratio would stay
-    strictly below the threshold; "ok" when the touches already reach the
-    threshold of the planned rays; None to keep casting.
+    threshold is a fraction in [0, 1]. Returns "below_threshold" when
+    even if all the remaining rays touched the target, the final hit
+    ratio would stay strictly below the threshold;
+    "reaches_threshold" when the touches already reach the threshold of
+    the planned rays; None to keep casting. The labels are neutral: the
+    rule decides which side clashes.
     """
     remaining = planned - cast
     if (hits + remaining) / planned < threshold:
-        return "clash"
+        return "below_threshold"
     if hits / planned >= threshold:
-        return "ok"
+        return "reaches_threshold"
     return None
 
 

@@ -2934,9 +2934,10 @@ class DirectView(RuleCheckTwoObjects):
 
     Only the faces oriented toward the other object emit or receive rays,
     and only the Context objects block a ray: the source and the target
-    are transparent to their own rays. The hit ratio over the rays
-    actually cast must reach the Threshold, otherwise the pair clashes.
-    See doc/2ObjectsRules/DirectView.md.
+    are transparent to their own rays. A clash is raised for the pairs
+    whose hit ratio over the rays actually cast reaches the Threshold:
+    the rays pass between the two objects, the direct view is
+    established. See doc/2ObjectsRules/DirectView.md.
 
     This rule tests the mutual geometric visibility: no direction of
     view, no field of view, no viewing cone.
@@ -3252,7 +3253,12 @@ class DirectView(RuleCheckTwoObjects):
                             blocked_segments.append((origin, aim))
 
                 hit_ratio = 100.0 * hits / casts if casts > 0 else 0.0
-                if hit_ratio < self.threshold:
+                # The sense of the rule is inverted: the pair clashes
+                # when the rays pass between the two objects, i.e. when
+                # the hit ratio reaches the Threshold (the direct view
+                # is established). A fully occluded pair produces no
+                # result.
+                if hit_ratio >= self.threshold:
                     result = ClashResultTwoObjects(
                         source=source_entity,
                         target=target_entity,

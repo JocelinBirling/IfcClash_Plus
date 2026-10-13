@@ -149,73 +149,69 @@ class TestDirectView(unittest.TestCase):
 
     # ---- Nominal
 
-    def test_clear_view_no_clash(self):
-        """Without obstacle, every ray touches: no clash at 100%."""
+    def test_clear_view_clashes(self):
+        """Without obstacle, every ray passes between the two objects:
+        the pair is in direct view and clashes at 100%."""
         for ray_source in ("Source", "Both", "Target"):
             rule = self.run_rule(
                 self.clear_model, ray_source=ray_source, threshold="100%"
             )
-            self.assertEqual(len(rule.result), 0, ray_source)
+            self.assertEqual(len(rule.result), 1, ray_source)
+            result = rule.result[0]
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.source.Name, "Observer")
+            self.assertEqual(result.target.Name, "Target")
+            self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
 
-    def test_blocked_view_clashes(self):
-        """A wall between the observer and the target blocks every ray."""
+    def test_blocked_view_no_clash(self):
+        """A wall between the observer and the target blocks every
+        ray: no direct view, no result."""
         rule = self.run_rule(self.blocked_model, context_names=("Wall",))
 
-        self.assertEqual(len(rule.result), 1)
-        result = rule.result[0]
-        self.assertIsInstance(result, ClashResultTwoObjects)
-        self.assertEqual(result.source.Name, "Observer")
-        self.assertEqual(result.target.Name, "Target")
-        # The first ray is blocked: the clash is already guaranteed,
-        # the rule stops before casting the remaining rays.
-        self.assertEqual(result.rays_planned, 10)
-        self.assertEqual(result.rays_cast, 1)
-        self.assertAlmostEqual(result.hit_ratio, 0.0, places=6)
-        self.assertEqual(len(result.hit_segments), 0)
-        self.assertEqual(len(result.blocked_segments), 1)
+        self.assertEqual(len(rule.result), 0)
 
-    def test_blocked_early_stop_ratio_over_cast_rays(self):
-        """Threshold 50% of 20 planned rays: the clash is guaranteed once
-        11 rays are blocked (9 remaining could not reach 50%)."""
+    def test_clear_early_stop_ratio_over_cast_rays(self):
+        """Threshold 50% of 20 planned rays: the outcome is decided
+        once 10 rays touch (10/20 reaches 50%): the rule stops, the
+        ratio is reported over the rays actually cast."""
         rule = self.run_rule(
-            self.blocked_model,
-            context_names=("Wall",),
+            self.clear_model,
             ray_count=20,
             threshold="50%",
         )
 
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertEqual(result.rays_cast, 11)
-        self.assertAlmostEqual(result.hit_ratio, 0.0, places=6)
+        self.assertEqual(result.rays_cast, 10)
+        self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
 
     def test_blocked_target_emits(self):
-        """Ray_Source = Target: the wall blocks the rays the same way."""
+        """Ray_Source = Target: the wall blocks the rays, no result."""
         rule = self.run_rule(
             self.blocked_model,
             context_names=("Wall",),
             ray_source="Target",
             threshold="100%",
         )
-        self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].hit_ratio, 0.0, places=6)
+        self.assertEqual(len(rule.result), 0)
 
-    def test_blocked_both_emitters_single_ratio(self):
+    def test_both_emitters_single_ratio(self):
         """Ray_Source = Both: one combined ratio over the two emitters."""
         rule = self.run_rule(
-            self.blocked_model,
-            context_names=("Wall",),
+            self.clear_model,
             ray_source="Both",
             ray_count=10,
             threshold="100%",
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertEqual(rule.result[0].rays_planned, 20)
-        self.assertEqual(rule.result[0].rays_cast, 1)
+        result = rule.result[0]
+        self.assertEqual(result.rays_planned, 20)
+        self.assertEqual(result.rays_cast, 20)
+        self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
 
-    def test_partial_occlusion_below_threshold_clashes(self):
+    def test_partial_occlusion_below_threshold_no_clash(self):
         """A wall on one side of the corridor: the hit ratio (~10-16%)
-        stays below a 50% requirement."""
+        stays below a 50% requirement: the pair is not in direct view."""
         rule = self.run_rule(
             self.partial_model,
             context_names=("Wall",),
@@ -223,51 +219,55 @@ class TestDirectView(unittest.TestCase):
             threshold="50%",
         )
 
-        self.assertEqual(len(rule.result), 1)
-        result = rule.result[0]
-        self.assertGreater(result.hit_ratio, 0.0)
-        self.assertLess(result.hit_ratio, 30.0)
-        # The reported zones cover exactly the rays actually cast.
-        self.assertEqual(
-            len(result.hit_segments) + len(result.blocked_segments),
-            result.rays_cast,
-        )
+        self.assertEqual(len(rule.result), 0)
 
-    def test_partial_occlusion_above_threshold_no_clash(self):
-        """The same partial occlusion satisfies a 5% visibility need."""
+    def test_partial_occlusion_reaches_threshold_clashes(self):
+        """The same partial occlusion reaches a 5% visibility
+        requirement: the pair is in direct view and clashes."""
         rule = self.run_rule(
             self.partial_model,
             context_names=("Wall",),
             ray_count=40,
             threshold="5%",
         )
-        self.assertEqual(len(rule.result), 0)
+        self.assertEqual(len(rule.result), 1)
+        result = rule.result[0]
+        # The ratio over the rays actually cast reaches the threshold.
+        self.assertGreaterEqual(result.hit_ratio, 5.0)
+        # The reported zones cover exactly the rays actually cast.
+        self.assertEqual(
+            len(result.hit_segments) + len(result.blocked_segments),
+            result.rays_cast,
+        )
 
     # ---- Max_Distance
 
-    def test_max_distance_too_short_is_a_miss(self):
-        """The target is 8 m away, the rays stop at 5 m: all misses."""
+    def test_max_distance_too_short_no_clash(self):
+        """The target is 8 m away, the rays stop at 5 m: all misses,
+        no direct view, no result."""
         rule = self.run_rule(self.clear_model, max_distance=5.0)
-        self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].hit_ratio, 0.0, places=6)
-
-    def test_max_distance_long_enough_no_clash(self):
-        rule = self.run_rule(self.clear_model, max_distance=50.0)
         self.assertEqual(len(rule.result), 0)
+
+    def test_max_distance_long_enough_clashes(self):
+        rule = self.run_rule(self.clear_model, max_distance=50.0)
+        self.assertEqual(len(rule.result), 1)
 
     # ---- Cas limites
 
     def test_empty_context_nothing_blocks(self):
-        """An empty Context set: nothing can block the rays."""
+        """An empty Context set: nothing can block the rays, the pair
+        is in direct view."""
         rule = self.run_rule(self.clear_model, context_names=("Nothing",))
-        self.assertEqual(len(rule.result), 0)
+        self.assertEqual(len(rule.result), 1)
 
-    def test_threshold_zero_never_clashes(self):
-        """A 0% threshold: even a fully blocked pair is compliant."""
+    def test_threshold_zero_clashes_every_pair(self):
+        """A 0% threshold: even a fully blocked pair reaches 0% and
+        clashes (without casting any ray)."""
         rule = self.run_rule(
             self.blocked_model, context_names=("Wall",), threshold="0%"
         )
-        self.assertEqual(len(rule.result), 0)
+        self.assertEqual(len(rule.result), 1)
+        self.assertAlmostEqual(rule.result[0].hit_ratio, 0.0, places=6)
 
     def test_invalid_parameters_raise_value_error(self):
         source = self.select("Observer")
@@ -343,29 +343,33 @@ class TestDirectViewUtilities(unittest.TestCase):
 
     def test_early_stop_guarantees_the_decision(self):
         planned = 10
-        # Threshold 50%: 5 touches of the planned rays decide "ok".
+        # Threshold 50%: 5 touches of the planned rays decide the outcome.
         self.assertEqual(
-            direct_view_early_stop(5, 6, planned, 0.5), "ok"
+            direct_view_early_stop(5, 6, planned, 0.5), "reaches_threshold"
         )
         # Even all the remaining rays touching would stay below 50%.
         self.assertEqual(
-            direct_view_early_stop(0, 6, planned, 0.5), "clash"
+            direct_view_early_stop(0, 6, planned, 0.5), "below_threshold"
         )
         # Undecided: continue casting.
         self.assertIsNone(direct_view_early_stop(3, 6, planned, 0.5))
 
     def test_early_stop_threshold_100(self):
-        # Any miss with a 100% requirement decides the clash.
+        # Any miss with a 100% requirement decides the outcome.
         self.assertEqual(
-            direct_view_early_stop(2, 3, 10, 1.0), "clash"
+            direct_view_early_stop(2, 3, 10, 1.0), "below_threshold"
         )
-        # All the planned rays must touch for "ok".
-        self.assertEqual(direct_view_early_stop(10, 10, 10, 1.0), "ok")
+        # All the planned rays must touch to reach the threshold.
+        self.assertEqual(
+            direct_view_early_stop(10, 10, 10, 1.0), "reaches_threshold"
+        )
         self.assertIsNone(direct_view_early_stop(9, 9, 10, 1.0))
 
     def test_early_stop_bound_is_inclusive(self):
-        # hits / planned exactly at the threshold: "ok", not a clash.
-        self.assertEqual(direct_view_early_stop(4, 8, 8, 0.5), "ok")
+        # hits / planned exactly at the threshold: decided.
+        self.assertEqual(
+            direct_view_early_stop(4, 8, 8, 0.5), "reaches_threshold"
+        )
         # Max possible ratio exactly at the threshold: continue.
         self.assertIsNone(direct_view_early_stop(4, 8, 10, 0.5))
 
