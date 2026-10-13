@@ -2236,6 +2236,153 @@ def direct_view_early_stop(
     return None
 
 
+# ==== Axis helpers for the ClearanceAxisToAxis rule
+
+
+def obb_long_axis(obb) -> Tuple[np.ndarray, np.ndarray, float, float]:
+    """The long axis of an OBB (Bnd_OBB): center, unit direction, half
+    length and thickness.
+
+    The axis is the largest dimension of the OBB passing through the
+    centroid: the support line of a linear object (pipe, duct, cable
+    tray run), truncated at the OBB extents (half_length). The
+    thickness is the second largest full size of the OBB, the
+    denominator of the linearity ratio of a linear object.
+
+    The direction sign is arbitrary: the axis of an object has no
+    orientation, only a support line.
+    """
+    center_xyz = obb.Center()
+    center = np.array(
+        [center_xyz.X(), center_xyz.Y(), center_xyz.Z()], dtype=float
+    )
+
+    candidates = []
+    for half_size, direction in (
+        (obb.XHSize(), obb.XDirection()),
+        (obb.YHSize(), obb.YDirection()),
+        (obb.ZHSize(), obb.ZDirection()),
+    ):
+        vector = np.array(
+            [direction.X(), direction.Y(), direction.Z()], dtype=float
+        )
+        candidates.append((float(half_size), vector))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    half_length, direction = candidates[0]
+    thickness = 2.0 * candidates[1][0]
+
+    norm = float(np.linalg.norm(direction))
+    if norm > 0.0:
+        direction = direction / norm
+
+    return center, direction, half_length, thickness
+
+
+def axis_angle(direction_1: np.ndarray, direction_2: np.ndarray) -> float:
+    """The angle between two axes in degrees, in [0, 90].
+
+    The axes are unsigned (support lines): parallel and anti-parallel
+    axes both give 0 degree.
+    """
+    dot = float(np.dot(direction_1, direction_2))
+    cosine = min(1.0, max(-1.0, abs(dot)))
+    return float(np.degrees(np.arccos(cosine)))
+
+
+def parallel_line_offset(
+    center_1: np.ndarray,
+    direction_1: np.ndarray,
+    center_2: np.ndarray,
+    direction_2: np.ndarray,
+) -> float:
+    """The perpendicular offset between two quasi-parallel support
+    lines.
+
+    The common direction is the bisector of the two axis directions,
+    so the offset stays meaningful for slightly converging axes. The
+    offset is the length of the component of the centers delta that
+    is perpendicular to the common direction.
+    """
+    common = direction_1 + direction_2
+    norm = float(np.linalg.norm(common))
+    if norm < 1e-12:
+        # Anti-parallel axes: same support direction, opposite signs.
+        common = direction_1
+    else:
+        common = common / norm
+
+    delta = center_2 - center_1
+    return float(np.linalg.norm(delta - np.dot(delta, common) * common))
+
+
+def segment_segment_distance(
+    point_1: np.ndarray,
+    end_1: np.ndarray,
+    point_2: np.ndarray,
+    end_2: np.ndarray,
+) -> float:
+    """The minimum distance between two finite segments (analytic).
+
+    The closest points are clamped to the segments, so the distance
+    covers the lateral misalignment of a connection as well as the
+    end-to-end gap of two runs butted end to end.
+    """
+    direction_1 = end_1 - point_1
+    direction_2 = end_2 - point_2
+    delta = point_1 - point_2
+
+    length_1_sq = float(np.dot(direction_1, direction_1))
+    length_2_sq = float(np.dot(direction_2, direction_2))
+    epsilon = 1e-12
+
+    if length_1_sq <= epsilon and length_2_sq <= epsilon:
+        return float(np.linalg.norm(delta))
+
+    if length_1_sq <= epsilon:
+        # First segment degenerates to a point.
+        parameter_1 = 0.0
+        dot = float(np.dot(direction_2, delta))
+        parameter_2 = min(1.0, max(0.0, dot / length_2_sq))
+    elif length_2_sq <= epsilon:
+        # Second segment degenerates to a point.
+        parameter_2 = 0.0
+        dot = float(np.dot(direction_1, delta))
+        parameter_1 = min(1.0, max(0.0, -dot / length_1_sq))
+    else:
+        dot_12 = float(np.dot(direction_1, direction_2))
+        dot_1 = float(np.dot(direction_1, delta))
+        dot_2 = float(np.dot(direction_2, delta))
+        denominator = length_1_sq * length_2_sq - dot_12 * dot_12
+        if denominator > epsilon:
+            parameter_1 = min(
+                1.0,
+                max(
+                    0.0,
+                    (dot_12 * dot_2 - dot_1 * length_2_sq) / denominator,
+                ),
+            )
+        else:
+            # Parallel segments: the closest points are the ends.
+            parameter_1 = 0.0
+
+        parameter_2 = (dot_12 * parameter_1 + dot_2) / length_2_sq
+        if parameter_2 < 0.0:
+            parameter_2 = 0.0
+            parameter_1 = min(
+                1.0, max(0.0, -dot_1 / length_1_sq)
+            )
+        elif parameter_2 > 1.0:
+            parameter_2 = 1.0
+            parameter_1 = min(
+                1.0, max(0.0, (dot_12 - dot_1) / length_1_sq)
+            )
+
+    closest_1 = point_1 + direction_1 * parameter_1
+    closest_2 = point_2 + direction_2 * parameter_2
+    return float(np.linalg.norm(closest_1 - closest_2))
+
+
 # ==== FaceSelection engine shared by the FaceCheck family (FaceCheck.md)
 
 # The orientation presets of a FaceSelection dictionary.

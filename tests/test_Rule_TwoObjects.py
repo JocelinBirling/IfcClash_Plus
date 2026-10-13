@@ -5,7 +5,7 @@ import unittest
 import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
-from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check,Alignement,ClearanceForDoors,DirectView,FreeSpace,SurfaceRecover
+from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,OBB_Custom,OBB_Front_And_Back,Ray_Check,Alignement,ClearanceForDoors,DirectView,FreeSpace,SurfaceRecover,ClearanceAxisToAxis
 from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects
 from ifctester import ids
 
@@ -464,8 +464,9 @@ class TestRulesOBB(unittest.TestCase):
 
 class TestRulesAdvanced(unittest.TestCase):
     """
-    Test cases for the Alignement, ClearanceForDoors, DirectView,
-    FreeSpace and SurfaceRecover rules, on the Duplex maquette.
+    Test cases for the Alignement, ClearanceForDoors,
+    ClearanceAxisToAxis, DirectView, FreeSpace and SurfaceRecover
+    rules, on the Duplex maquette.
     """
 
     def setUp(self):
@@ -796,6 +797,162 @@ class TestRulesAdvanced(unittest.TestCase):
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
+
+    def test_clearance_axis_to_axis_rule(self):
+        """Test ClearanceAxisToAxis rule on the basement beam grid.
+        The selected W310 run (...:209260) continues the collinear
+        run (...:207325, axis offset 0), meets a W410 at a right angle
+        0.114 m off its axis, crosses another one 2.85 m away and runs
+        parallel to the two W410 grids 5.02 m away. With the interval
+        [4.5, 5.5], the two parallel runs are compliant: the 5 other
+        pairs clash."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        beam_facet = ids.Attribute(
+            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"
+        )
+        beam_select = SelectFacet()
+        beam_select.applicability = [beam_facet]
+
+        all_beams_facet = ids.Entity(name="IFCBEAM")
+        all_beams_select = SelectFacet()
+        all_beams_select.applicability = [all_beams_facet]
+
+        rule = ClearanceAxisToAxis(
+            beam_select, all_beams_select, mode="Perpendicular",
+            min_distance=4.5, max_distance=5.5,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 5)
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            # Only the pairs outside [4.5, 5.5] clash, the two
+            # parallel runs at 5.02 m stay compliant.
+            self.assertTrue(
+                result.distance_between < 4.5
+                or result.distance_between > 5.5
+            )
+        # The collinear continuation shares the support line: its
+        # offset is measured in Perpendicular mode.
+        collinear = [
+            result
+            for result in rule.result
+            if result.axis_mode == "Perpendicular"
+        ]
+        self.assertEqual(len(collinear), 1)
+        self.assertAlmostEqual(collinear[0].distance_between, 0.0, places=4)
+        self.assertAlmostEqual(collinear[0].axis_angle, 0.0, places=4)
+        # The crossing and connecting pairs fall back to the segments.
+        self.assertEqual(
+            len([r for r in rule.result if r.axis_mode == "MinDistance"]), 4
+        )
+
+    def test_clearance_axis_to_axis_modes(self):
+        """Test ClearanceAxisToAxis rule on the beam run split by the
+        stair opening: the two collinear segments (...:207325 and
+        ...:209260) share their support line and their axis ends sit
+        2.2 m apart. The Perpendicular mode measures the offset of
+        the support lines (0), the MinDistance mode measures the
+        end-to-end gap of the segments (2.2 m): the same interval
+        validates one mode and clashes the other."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        first_facet = ids.Attribute(
+            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"
+        )
+        first_select = SelectFacet()
+        first_select.applicability = [first_facet]
+
+        second_facet = ids.Attribute(
+            name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"
+        )
+        second_select = SelectFacet()
+        second_select.applicability = [second_facet]
+
+        perpendicular_rule = ClearanceAxisToAxis(
+            first_select, second_select, mode="Perpendicular",
+            min_distance=1.0, max_distance=3.0,
+        )
+        min_distance_rule = ClearanceAxisToAxis(
+            first_select, second_select, mode="MinDistance",
+            min_distance=1.0, max_distance=3.0,
+        )
+        min_distance_gap_rule = ClearanceAxisToAxis(
+            first_select, second_select, mode="MinDistance",
+            max_distance=1.0,
+        )
+
+        OneRuleFile.contains = [
+            perpendicular_rule, min_distance_rule, min_distance_gap_rule
+        ]
+        OneRuleFile.run()
+
+        # The support lines are the same: offset 0, below the interval.
+        self.assertEqual(len(perpendicular_rule.result), 1)
+        result = perpendicular_rule.result[0]
+        self.assertIsInstance(result, ClashResultTwoObjects)
+        self.assertAlmostEqual(result.distance_between, 0.0, places=4)
+        self.assertEqual(result.axis_mode, "Perpendicular")
+
+        # The 2.2 m end-to-end gap stays inside [1.0, 3.0].
+        self.assertEqual(len(min_distance_rule.result), 0)
+
+        # Below a 1.0 m requirement, the gap is a coverage hole.
+        self.assertEqual(len(min_distance_gap_rule.result), 1)
+        result = min_distance_gap_rule.result[0]
+        self.assertAlmostEqual(result.distance_between, 2.1997, places=3)
+        self.assertEqual(result.axis_mode, "MinDistance")
+
+    def test_clearance_axis_to_axis_non_linear(self):
+        """Test ClearanceAxisToAxis rule on the stair flights. A flight
+        is not a linear object (linearity ratio 5.3 below the default
+        threshold of 10), so the stair-railing pairs take the
+        On_Non_Linear path: Skip leaves the 8 ordered pairs out,
+        Fallback measures the skin-to-skin distance (the handrail
+        floats 0.68 m above its flight) and flags the results as
+        degraded."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        stair_facet = ids.Entity(name="IfcStairFlight")
+        stair_select = SelectFacet()
+        stair_select.applicability = [stair_facet]
+
+        railing_facet = ids.Entity(name="IfcRailing")
+        railing_select = SelectFacet()
+        railing_select.applicability = [railing_facet]
+
+        skip_rule = ClearanceAxisToAxis(
+            stair_select, railing_select, max_distance=0.0,
+            on_non_linear="Skip",
+        )
+        fallback_rule = ClearanceAxisToAxis(
+            stair_select, railing_select, max_distance=0.0,
+            on_non_linear="Fallback",
+        )
+
+        OneRuleFile.contains = [skip_rule, fallback_rule]
+        OneRuleFile.run()
+
+        # Every skin-to-skin distance is above 0: the 8 ordered pairs
+        # would all clash, but Skip leaves them out.
+        self.assertEqual(len(skip_rule.result), 0)
+
+        # Fallback measures them skin to skin and flags the results.
+        self.assertEqual(len(fallback_rule.result), 8)
+        for result in fallback_rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+            self.assertEqual(result.axis_mode, "Fallback")
+            self.assertTrue(result.axis_degraded)
+            self.assertGreater(result.distance_between, 0.0)
 
     def test_free_space_rule(self):
         """Test FreeSpace rule. 7 of the 21 spaces cannot host a free

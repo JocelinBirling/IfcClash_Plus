@@ -123,6 +123,7 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 |-----------|----------|-----------|---------|----------|
 | [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | KO | KO | KO |
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | KO | OK |
+| [Clearance Axis To Axis](doc/2ObjectsRules/ClearanceAxisToAxis) | Deux objets | OK | OK | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | KO | KO |
 | [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Deux objets | OK | OK | OK |
 | [Volume Clash](doc/2ObjectsRules/VolumeClash) | Deux objets | KO | KO | KO |

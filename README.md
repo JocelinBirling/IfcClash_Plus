@@ -122,6 +122,7 @@ The last benefit is detecting the front and back of an element. Most of the time
 |-----------|----------|-----------|---------|----------|
 | [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Two objects | KO | KO | KO |
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Two objects | OK | KO | OK |
+| [Clearance Axis To Axis](doc/2ObjectsRules/ClearanceAxisToAxis) | Two objects | OK | OK | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Two objects | OK | KO | OK |
 | [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Two objects | OK | OK | OK |
 | [Inside](doc/2ObjectsRules/Insie.md) | Two objects | KO | KO | KO |

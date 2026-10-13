@@ -751,6 +751,300 @@ class Clearance(RuleCheckTwoObjects):
         self.end_rule_action()
 
 
+class ClearanceAxisToAxis(RuleCheckTwoObjects):
+    """Check the axis-to-axis distance of two linear objects against an
+    interval.
+
+    The axis of an object is the long dimension of its OBB passing
+    through the centroid, truncated at the OBB extents: the support
+    segment of a linear object (pipe, duct, cable tray run). The rule
+    measures the distance between the two axes and clashes when the
+    measured distance leaves the interval [min, max] widened by the
+    tolerance: "too close" and "too far" (coverage holes) alike.
+
+    Two measurement modes. Perpendicular: the offset between the
+    support lines of two objects running side by side (a fixed
+    spacing of a tray bundle) — the offset is only meaningful for
+    quasi-parallel axes, so a non-parallel pair automatically falls
+    back to the minimum distance between the finite segments.
+    MinDistance: always the minimum distance between the segments,
+    which covers the lateral misalignment of a connection and the
+    end-to-end gap of two runs butted end to end.
+
+    An object whose OBB is not slender enough (linearity ratio below
+    linearity_ratio, e.g. an elbow) is not linear: the pair is
+    skipped, or measured skin to skin (the Fallback of on_non_linear)
+    and the result then carries the degraded flag.
+
+    This is the axis counterpart of Clearance, which measures skin to
+    skin: the execution dimensions and the regulatory spacings of a
+    network are expressed axis to axis, whatever the diameters. The
+    directional condition (parallelism) is not tested here: combine
+    it with AngleBetween through an exception for a full coaxiality.
+    See doc/2ObjectsRules/ClearanceAxisToAxis.md.
+    """
+
+    def __init__(
+        self,
+        source,
+        target,
+        mode="Perpendicular",
+        min_distance=None,
+        max_distance=None,
+        tolerance=0.0,
+        linearity_ratio=10.0,
+        on_non_linear="Skip",
+        parallel_tolerance=1.0,
+        state="Final",
+    ):
+        super().__init__(state, source, target)
+        self.type = "ClearanceAxisToAxis"
+
+        if mode not in ("Perpendicular", "MinDistance"):
+            raise ValueError(
+                f"mode must be 'Perpendicular' or 'MinDistance', got {mode!r}"
+            )
+        for bound_name, bound_value in (
+            ("min_distance", min_distance),
+            ("max_distance", max_distance),
+        ):
+            if bound_value is not None and (
+                not isinstance(bound_value, (int, float)) or bound_value < 0
+            ):
+                raise ValueError(
+                    f"{bound_name} must be None or a positive number (m), "
+                    f"got {bound_value!r}"
+                )
+        if min_distance is None and max_distance is None:
+            raise ValueError(
+                "at least one of min_distance or max_distance must be set"
+            )
+        if (
+            min_distance is not None
+            and max_distance is not None
+            and min_distance > max_distance
+        ):
+            raise ValueError(
+                f"min_distance ({min_distance}) must not exceed "
+                f"max_distance ({max_distance})"
+            )
+        if not isinstance(tolerance, (int, float)) or tolerance < 0:
+            raise ValueError(
+                f"tolerance must be a positive number (m), got {tolerance!r}"
+            )
+        if (
+            not isinstance(linearity_ratio, (int, float))
+            or linearity_ratio < 1.0
+        ):
+            raise ValueError(
+                f"linearity_ratio must be a number >= 1, "
+                f"got {linearity_ratio!r}"
+            )
+        if on_non_linear not in ("Skip", "Fallback"):
+            raise ValueError(
+                f"on_non_linear must be 'Skip' or 'Fallback', "
+                f"got {on_non_linear!r}"
+            )
+        if (
+            not isinstance(parallel_tolerance, (int, float))
+            or not 0.0 < parallel_tolerance <= 90.0
+        ):
+            raise ValueError(
+                f"parallel_tolerance must be in (0, 90] degrees, "
+                f"got {parallel_tolerance!r}"
+            )
+
+        self.mode = mode
+        self.min_distance = (
+            float(min_distance) if min_distance is not None else None
+        )
+        self.max_distance = (
+            float(max_distance) if max_distance is not None else None
+        )
+        self.tolerance = float(tolerance)
+        self.linearity_ratio = float(linearity_ratio)
+        self.on_non_linear = on_non_linear
+        self.parallel_tolerance = float(parallel_tolerance)
+
+        # The axes and the fallback distances come from the world
+        # TopoDS shapes of the objects.
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set("USE_WORLD_COORDS", True)
+        self.geom_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+    def _collect_axes(self, select):
+        """The axis data of every selected object.
+
+        Each object carries its entity, its TopoDS shape (for the
+        skin-to-skin fallback) and the center, the unit direction, the
+        half length and the linearity ratio of its OBB long axis.
+        """
+        objects = []
+        for ifc_file in select.dict_elements.keys():
+            included = select.dict_elements[ifc_file]
+            if not included:
+                continue
+
+            iterator = ifcopenshell.geom.iterator(
+                self.geom_settings,
+                ifc_file,
+                multiprocessing.cpu_count(),
+                include=included,
+            )
+            if not iterator.initialize():
+                continue
+
+            while True:
+                shape = iterator.get()
+                geom = shape.geometry
+                entity = ifc_file.by_id(shape.data.id)
+                obb = create_obb_from_TopoDs_Shape(geom)
+                center, direction, half_length, thickness = (
+                    clash_utils.obb_long_axis(obb)
+                )
+                objects.append(
+                    {
+                        "entity": entity,
+                        "geom": geom,
+                        "center": center,
+                        "direction": direction,
+                        "half_length": half_length,
+                        "linearity": (
+                            2.0 * half_length / thickness
+                            if thickness > 1e-9
+                            else float("inf")
+                        ),
+                    }
+                )
+                if not iterator.next():
+                    break
+
+        return objects
+
+    def _outside_interval(self, distance):
+        """Whether a measured distance leaves the interval widened by
+        the tolerance."""
+        if (
+            self.min_distance is not None
+            and distance < self.min_distance - self.tolerance
+        ):
+            return True
+        if (
+            self.max_distance is not None
+            and distance > self.max_distance + self.tolerance
+        ):
+            return True
+        return False
+
+    @staticmethod
+    def _skin_distance(geom_1, geom_2):
+        """The classical skin-to-skin distance between two shapes."""
+        distance_tool = BRepExtrema_DistShapeShape(geom_1, geom_2)
+        distance_tool.Perform()
+        return float(distance_tool.Value())
+
+    def run(self):
+        self.select_source.run()
+        self.select_target.run()
+
+        if self.state == "Display_Input":
+            self._display_input_generic()
+
+        source_objects = self._collect_axes(self.select_source)
+        target_objects = self._collect_axes(self.select_target)
+
+        if self.state == "Display_Input":
+            from OCC.Core.gp import gp_Dir
+
+            for objects, color in (
+                (source_objects, (1, 0, 0)),
+                (target_objects, (0, 0, 1)),
+            ):
+                for one_object in objects:
+                    direction = one_object["direction"]
+                    self._add_gp_Dir_to_display(
+                        one_object["geom"],
+                        gp_Dir(
+                            float(direction[0]),
+                            float(direction[1]),
+                            float(direction[2]),
+                        ),
+                        color,
+                    )
+
+        for source_obj in source_objects:
+            for target_obj in target_objects:
+                if source_obj["entity"] == target_obj["entity"]:
+                    continue
+
+                linear = (
+                    source_obj["linearity"] >= self.linearity_ratio
+                    and target_obj["linearity"] >= self.linearity_ratio
+                )
+
+                angle = clash_utils.axis_angle(
+                    source_obj["direction"], target_obj["direction"]
+                )
+
+                if linear:
+                    if (
+                        self.mode == "Perpendicular"
+                        and angle <= self.parallel_tolerance
+                    ):
+                        distance = clash_utils.parallel_line_offset(
+                            source_obj["center"],
+                            source_obj["direction"],
+                            target_obj["center"],
+                            target_obj["direction"],
+                        )
+                        mode_used = "Perpendicular"
+                    else:
+                        # The support segment spans the full OBB
+                        # extent of the axis: center ± half length.
+                        distance = clash_utils.segment_segment_distance(
+                            source_obj["center"]
+                            - source_obj["direction"]
+                            * source_obj["half_length"],
+                            source_obj["center"]
+                            + source_obj["direction"]
+                            * source_obj["half_length"],
+                            target_obj["center"]
+                            - target_obj["direction"]
+                            * target_obj["half_length"],
+                            target_obj["center"]
+                            + target_obj["direction"]
+                            * target_obj["half_length"],
+                        )
+                        mode_used = "MinDistance"
+                    degraded = False
+                elif self.on_non_linear == "Skip":
+                    continue
+                else:
+                    distance = self._skin_distance(
+                        source_obj["geom"], target_obj["geom"]
+                    )
+                    mode_used = "Fallback"
+                    degraded = True
+
+                if self._outside_interval(distance):
+                    result = ClashResultTwoObjects(
+                        source=source_obj["entity"],
+                        target=target_obj["entity"],
+                        state=True,
+                    )
+                    result.distance_between = distance
+                    result.axis_mode = mode_used
+                    result.axis_degraded = degraded
+                    result.axis_angle = angle
+                    self.result.append(result)
+
+        if self.state == "Display_Input":
+            self.display.FitAll()
+            self.start_display()
+            return 0
+        self.end_rule_action()
+
+
 class Collision(RuleCheckTwoObjects):
     def __init__(self, source, target, allow_touching=False, state="Final"):
         super().__init__(state, source, target)
