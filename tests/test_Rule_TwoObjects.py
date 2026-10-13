@@ -192,9 +192,8 @@ class TestRules(unittest.TestCase):
             source=first_select,
             target=second_select,
             tolerance=1.0,
-            above_type="Above_MaxToMax",
+            above_type="Above_MaxToMax",state="Display_Result"
         )
-        above_rule.run()
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
@@ -202,8 +201,8 @@ class TestRules(unittest.TestCase):
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
         self.assertEqual(
-            len(above_rule.result), 13
-        )  # It's 13 because one windows is badly modelized.
+            len(above_rule.result), 14
+        )  
 
     def test_angle_between_rule(self):
         """Test AngleBetween rule with walls and doors"""

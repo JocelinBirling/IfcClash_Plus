@@ -144,6 +144,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             target_face_selection=self.toward_source(),
             distance=True,
             min_distance=2.10,
+            max_distance=10
         )
 
         # 2 triangles per face, all against all: 4 pairs, all failing.
@@ -201,6 +202,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             source_face_selection=self.toward_target(),
             distance=True,
             min_distance=2.10,
+            max_distance=10
         )
 
         self.assertEqual(len(rule.result), 19)
@@ -351,6 +353,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             target_face_selection=self.toward_source(),
             distance=True,
             min_distance=2.10,
+            max_distance=100
         )
 
         self.assertEqual(len(rule.result), 19)

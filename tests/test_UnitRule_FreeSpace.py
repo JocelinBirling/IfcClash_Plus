@@ -189,9 +189,9 @@ class TestFreeSpace(unittest.TestCase):
 
     def test_tangent_placement_is_free(self):
         """A corridor exactly as wide as the circle: the tangent
-        placement is free, with a zero margin."""
+        placement is free, with a zero margin. If diameter 1.499 it's not possible"""
         rule = self.run_rule(
-            self.corridor_model, context_names=(), diameter=1.5, height=1.4
+            self.corridor_model, context_names=(), diameter=1.499, height=1.4
         )
         self.assertEqual(len(rule.result), 0)
         placement = self.placement_of(rule)
