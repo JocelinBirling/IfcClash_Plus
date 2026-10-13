@@ -55,13 +55,15 @@ A pipe support must be laterally in contact with its bracket: Direction = Auto.
 
 ## Implementation notes
 
-Conventions left open by this specification, as implemented (2026-10-07):
+Conventions left open by this specification, as implemented (2026-10-07, updated 2026-10-13):
 
 - A clash result is raised only for the pairs whose covering value is outside the bounds; a compliant pair in contact produces no result.
 - "Distance below Tolerance" is inclusive (at exactly the tolerance, the pair is in contact and the triangles are counted).
+- A pair is analyzed only when its two extreme faces face each other: the distance between the extreme planes along the direction must stay below the Tolerance. A pair in contact whose extreme faces do not face each other (e.g. a wall crossing a slab) is not a support pair and produces no result, whatever the bounds. A pair with no extreme face along the direction (no aligned candidate face) cannot face the other object and produces no result as well.
 - Direction = Auto: the vector from the closest point of the source to the closest point of the target; when they coincide (touching or overlapping objects), the vector between the mesh centroids is used, and the pair is skipped when even that is degenerate.
 - The pairing angle (quasi coplanar triangles) is 25 degrees, the candidate face alignment is 45 degrees; the distance between two triangles is measured along the direction.
 - The contact area and the reference face area are both measured as projections on the contact plane (perpendicular to the direction).
+- The contact zones are triangulated for display; degenerate fan triangles of a sliver zone are dropped (the zone keeps its measured area).
 - The bounds are inclusive: a covering value exactly at a bound is compliant, only strictly lower (Min) or strictly higher (Max) values clash. A covering value given as a string must end with `%` (a numeric string is rejected).
-- A relative bound with an empty reference face (ratio undefined) cannot be verified and clashes.
+- A relative bound with an empty reference face (ratio undefined) cannot be verified and clashes. The rule itself never reaches this case (an empty extreme face set produces no result, see above); the convention remains that of the bounds helper.
 - Without any bound, nothing is checked and no clash is raised.

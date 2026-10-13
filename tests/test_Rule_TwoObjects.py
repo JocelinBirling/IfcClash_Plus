@@ -801,17 +801,13 @@ class TestRulesAdvanced(unittest.TestCase):
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-    def test_surface_recover_min_covering(self):
-        """Test SurfaceRecover rule with a 50% minimum covering: 8
-        contact pairs cover less than half of the furniture bottom
-        face."""
+    def test_surface_recover_rule_n2(self):
 
-        
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        furniture_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        furniture_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         furniture_select = SelectFacet()
         furniture_select.applicability = [furniture_facet]
 
@@ -820,14 +816,46 @@ class TestRulesAdvanced(unittest.TestCase):
         slab_select.applicability = [slab_facet]
 
         rule = SurfaceRecover(
-            slab_select,furniture_select,  direction="Bottom",
+            furniture_select, slab_select, direction="Bottom",
+            reference="Source", tolerance=0.05, min_covering=0.3,max_covering=1.0,state="Display_Result"
+        )
+
+        OneRuleFile.contains = [rule]
+        OneRuleFile.run()
+
+        self.assertEqual(len(rule.result), 0)# This rule is not working. 
+        for result in rule.result:
+            self.assertIsInstance(result, ClashResultTwoObjects)
+
+
+    def test_surface_recover_min_covering(self):
+        """Test SurfaceRecover rule with a 50% minimum covering: the
+        slabs rest on the walls through narrow strips only, so every
+        support pair (extreme faces facing each other) covers far less
+        than half of the slab bottom face: 60 clashes, the other
+        slab-wall pairs (walls crossing the slabs) are not support
+        pairs and produce no result."""
+
+        OneRuleFile = RuleFile()
+        OneRuleFile.list_ifc_path = [self.ifc_path]
+
+        wall_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        wall_select = SelectFacet()
+        wall_select.applicability = [wall_facet]
+
+        slab_facet = ids.Entity(name="IFCSLAB")
+        slab_select = SelectFacet()
+        slab_select.applicability = [slab_facet]
+
+        rule = SurfaceRecover(
+            slab_select,wall_select,  direction="Bottom",
             reference="Source", tolerance=0.01, min_covering="50%",state="Display_Result"
         )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(rule.result), 0) #Check again this result. The rule is not working
+        self.assertEqual(len(rule.result), 60)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 

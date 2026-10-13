@@ -2571,8 +2571,11 @@ class SurfaceRecover(RuleCheckTwoObjects):
     """Check that the contact surface between two objects covers an
     expected value, defined by a min and a max.
 
-    Only pairs whose distance is below the tolerance are analyzed: pairs
-    not in contact produce no result. The extreme faces of the two objects
+    Only pairs whose distance is below the tolerance AND whose extreme
+    faces face each other within the tolerance along the direction are
+    analyzed: pairs not in contact produce no result, and so do pairs
+    whose extreme faces do not face each other (e.g. crossing objects):
+    they are not support pairs. The extreme faces of the two objects
     along the direction are paired, the contact area is the sum of the
     disjoint contact zones (quasi coplanar triangles at a distance below
     the tolerance), and a clash is raised when the covering value is
@@ -2582,6 +2585,10 @@ class SurfaceRecover(RuleCheckTwoObjects):
     # Two facing triangles are paired when their normals are opposite
     # within 25 degrees.
     PAIRING_COSINE = -math.cos(math.radians(25))
+
+    # A face is a contact candidate when its normal is aligned with
+    # the direction within 45 degrees.
+    ALIGNED_COSINE = math.cos(math.radians(45))
 
     def __init__(
         self,
@@ -2771,13 +2778,27 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     source["faces"],
                     direction,
                     tolerance=self.tolerance,
+                    alignment_cosine=self.ALIGNED_COSINE,
                 )
                 target_triangles = clash_utils.extreme_triangles(
                     target["vertices"],
                     target["faces"],
                     -direction,
                     tolerance=self.tolerance,
+                    alignment_cosine=self.ALIGNED_COSINE,
                 )
+
+                # The extreme faces must face each other: when the two
+                # extreme planes are farther apart than the tolerance
+                # along the direction (e.g. a wall crossing a slab),
+                # the pair is not a support pair and produces no
+                # result, whatever the bounds.
+                if len(source_triangles) == 0 or len(target_triangles) == 0:
+                    continue
+                source_plane = source_triangles.mean(axis=1) @ direction
+                target_plane = target_triangles.mean(axis=1) @ direction
+                if abs(source_plane.max() - target_plane.min()) > self.tolerance:
+                    continue
 
                 contact_area, contact_triangles = (
                     clash_utils.contact_polygons_between_triangle_sets(

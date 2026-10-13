@@ -1958,7 +1958,9 @@ def triangles_projected_area(triangles: np.ndarray, direction: VECTOR_3D) -> flo
     v1 = triangles[:, 1] - triangles[:, 0]
     v2 = triangles[:, 2] - triangles[:, 0]
     normals = np.cross(v1, v2)
-    areas = 0.5 * np.linalg.norm(normals, axis=1)
+    # The projected area of a triangle is its full area scaled by the
+    # cosine of the angle between its normal and the direction.
+    areas = 0.5 * np.abs(normals @ direction)
     return float(areas.sum())
 
 
@@ -1979,7 +1981,15 @@ def _fan_triangulation(polygon) -> List[Tuple[Tuple[float, float], ...]]:
     triangles = []
     ring = list(polygon.exterior.coords)
     for index in range(1, len(ring) - 2):
-        triangles.append((ring[0], ring[index], ring[index + 1]))
+        points = (ring[0], ring[index], ring[index + 1])
+        # Sliver rings can chain nearly coincident points: a fan
+        # triangle of zero area has no surface to display and no
+        # valid TopoDS face.
+        v1 = (points[1][0] - points[0][0], points[1][1] - points[0][1])
+        v2 = (points[2][0] - points[0][0], points[2][1] - points[0][1])
+        if abs(v1[0] * v2[1] - v1[1] * v2[0]) <= 1e-12:
+            continue
+        triangles.append(points)
     return triangles
 
 
