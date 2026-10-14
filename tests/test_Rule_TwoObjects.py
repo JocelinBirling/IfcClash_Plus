@@ -601,7 +601,7 @@ class TestRulesAdvanced(unittest.TestCase):
             axis="Vertical",
             alignment_type="Plane",
             tolerance=0.05,
-            min_group=2,
+            min_group=4,
             state="Display_Result",
         )
 

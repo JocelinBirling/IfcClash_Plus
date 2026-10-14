@@ -305,6 +305,12 @@ class RuleCheck:
 
         self.grouped_result: list[GroupResult] = []
 
+        # The individual results kept aside by the Must check
+        # (AbsoluteOrRelativeChecking): the check replaces result by
+        # its group results, and keeps them only so it can run again
+        # on the same rule.
+        self.result_before_abs_or_rel: list[ClashResult] = []
+
         # The display geometry registry: filled during run() as a
         # by-product of the computation, read by the generic display.
         self.display_items: list[DisplayItem] = []
@@ -839,8 +845,8 @@ class RuleCheckOneObject(RuleCheck):
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
-        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+        green_color = Quantity_Color(0, 0.75, 0, Quantity_TOC_RGB)
+        red_color = Quantity_Color(0.75, 0, 0, Quantity_TOC_RGB)
 
         # Every source object is green, the ones appearing in the
         # results are red. A one object rule has no pair to link.
@@ -1230,8 +1236,8 @@ class RuleCheckTwoObjects(RuleCheck):
         geom_settings = ifcopenshell.geom.settings()
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        green_color = Quantity_Color(0, 1, 0, Quantity_TOC_RGB)
-        red_color = Quantity_Color(1, 0, 0, Quantity_TOC_RGB)
+        green_color = Quantity_Color(0, 0.75, 0, Quantity_TOC_RGB)
+        red_color = Quantity_Color(0.75, 0, 0, Quantity_TOC_RGB)
 
         # Every source and target object is green, the ones appearing
         # in the results are red.
@@ -1290,7 +1296,7 @@ class RuleCheckTwoObjects(RuleCheck):
         geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
         blue_color = Quantity_Color(0, 0, 1, Quantity_TOC_RGB)
-        orange = Quantity_Color(1, 0.5, 0, Quantity_TOC_RGB)
+        orange = Quantity_Color(1, 0.45, 0, Quantity_TOC_RGB)
 
         for ifc_file in self.select_source.dict_elements.keys():
             list_of_elements = self.select_source.dict_elements[ifc_file]
@@ -1341,6 +1347,12 @@ class AbsoluteOrRelativeChecking:
     The grouping comes from the rule: its classic grouping
     (run_grouping, driven by select_grouping) produces the groups, or
     one group per source object when the rule has no grouping.
+
+    The check is a rule in itself: once every group is evaluated,
+    the results of the rule are its verdicts — one ClashResultComplex
+    per group, carrying the elements of the two sets of the group
+    and passing or failing as a whole. The individual results are
+    consumed, the elements of a group can no longer be taken apart.
     """
 
     def __init__(self, type: ABSOLUTEORRELATIVECHECK_TYPE):
@@ -1367,7 +1379,24 @@ class AbsoluteOrRelativeChecking:
         """The check of the results of a rule, grouped by the
         grouping of the rule: run_grouping (driven by
         select_grouping), or one group per source object when the
-        rule has no grouping (or its grouping produces no group)."""
+        rule has no grouping (or its grouping produces no group).
+
+        The check is a rule in itself: the evaluated groups become
+        the results of the rule, one ClashResultComplex per group
+        carrying the elements of its two sets and passing or failing
+        as a whole. The individual results are consumed — kept aside
+        on the rule only so the check can run again on it — the
+        elements of a group can no longer be taken apart."""
+        if any(
+            isinstance(oneresult, ClashResultComplex) for oneresult in rule.result
+        ):
+            # The results were already consumed by a previous check
+            # of the same rule: group again from the individual
+            # results kept aside.
+            rule.result = list(rule.result_before_abs_or_rel)
+        else:
+            rule.result_before_abs_or_rel = list(rule.result)
+
         rule.grouped_result = []
         rule.run_grouping()
         if not rule.grouped_result:
@@ -1375,6 +1404,15 @@ class AbsoluteOrRelativeChecking:
 
         for onegroupresult in rule.grouped_result:
             self.eval_check(onegroupresult)
+
+        rule.result = [
+            ClashResultComplex(
+                sources=onegroupresult.source_set,
+                targets=onegroupresult.target_set,
+                state=onegroupresult.abs_or_rel_check,
+            )
+            for onegroupresult in rule.grouped_result
+        ]
 
     def number(self, groupresult: GroupResult):
         """The element counts of the two sets of the group."""
@@ -1486,10 +1524,21 @@ class ClashResultTwoObjects(ClashResult):
 
 
 class ClashResultComplex(ClashResult):
-    def __init__(self):
-        super().__init__()
-        self.target: ifcopenshell.entity_instance = None
-        self.context: ifcopenshell.entity_instance = None
+    """The result of a Must check (AbsoluteOrRelativeChecking): the
+    verdict of one evaluated group. The group is the result, an
+    atomic whole: sources and targets carry the elements of its two
+    sets (the measured set as sources, the others as targets), they
+    can no longer be taken apart."""
+
+
+    #This result is used as well in the AbsOrRelCheck. 
+    #I should not inherit from ClashResult. Clash_Result is linked to OneObject and TwoObject way to much.
+
+    def __init__(self, sources, targets, state, type="ComplexResult"):
+        super().__init__(None, state, type)
+        self.sources: list[ifcopenshell.entity_instance] = list(sources)
+        self.targets: list[ifcopenshell.entity_instance] = list(targets)
+        self.context: list[ifcopenshell.entity_instance] = None
 
 
 # ====== Group Result
@@ -1514,3 +1563,25 @@ class GroupResult:
         self.result_group.append(clash_result)
         self.target_set.add(clash_result.target)
         self.source_set.add(clash_result.source)
+
+class ResultAnalyze:
+    def __init__(self):
+        self.id: str
+        self.type: str = type
+        self.result_group: list[ClashResult] = []
+        self.source_set: set(ifcopenshell.entity_instance) = set()
+        self.target_set: set(ifcopenshell.entity_instance) = set()
+        self.abs_or_rel_check = None
+
+
+class BCF_Subject:
+    def __init__(self):
+        self.id: str
+        self.type: str = type
+
+    def add_result_to_subject():
+        ...
+    def remove_result_to_subject():
+        ...
+    def create_new_subjet():
+        ...

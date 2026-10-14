@@ -27,9 +27,18 @@ others pass them. The 13 spaces without any flush window produce no
 result, so no group: a Must rule only checks the objects appearing
 in the results of its rule.
 
+The Must check is a rule in itself: once evaluated, the results of
+the rule are its verdicts — one ClashResultComplex per group, with
+the verdict as status and the elements of the group as sources (the
+measured set) and targets (the others). The individual pairing
+results are consumed, the elements of a group can no longer be taken
+apart; the groups stay readable on the rule (grouped_result) for the
+tests.
+
 The pairing rule runs once per class (setUpClass); every test applies
-its own check through run_abs_or_rel, which regroups the results, so
-the tests do not depend on each other.
+its own check through run_abs_or_rel, which regroups the results from
+the individual results kept aside by the check, so the tests do not
+depend on each other.
 
 Execution (from the repository root):
     python -m pytest tests/test_Rule_AbsRel.py -v
@@ -42,7 +51,12 @@ sys.path.insert(0, "./ifcclash_plus")
 from ifcopenshell.util.element import get_pset
 
 from Rules import Clearance
-from RuleClass import AbsoluteOrRelativeChecking, RuleFile, SelectFacet
+from RuleClass import (
+    AbsoluteOrRelativeChecking,
+    ClashResultComplex,
+    RuleFile,
+    SelectFacet,
+)
 from ifctester import ids
 
 
@@ -94,6 +108,12 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         are keyed by target (one group per space)."""
         return next(iter(group.target_set)).Name
 
+    @staticmethod
+    def result_space(result):
+        """The name of the (single) space of one group result: the
+        targets of the group results are the spaces."""
+        return next(iter(result.targets)).Name
+
     def window_height(self, window):
         """The Height of a window, in meters (the model stores real
         numbers in PSet_Revit_Type_Dimensions)."""
@@ -102,8 +122,9 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         )
 
     def apply_check(self, check):
-        """Group the results by target (one group per space) and check
-        every group."""
+        """Group the results by target (one group per space) and
+        check every group: the results of the rule become the group
+        results."""
         self.rule.abs_or_rel_check = check
         self.assertTrue(self.rule.run_abs_or_rel())
         return self.rule.grouped_result
@@ -137,6 +158,42 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         names = {self.group_name(group) for group in groups}
         for name in self.SPACES_WITHOUT_FLUSH_WINDOW:
             self.assertNotIn(name, names)
+
+    def test_the_check_replaces_the_results_by_group_results(self):
+        # The Must check is a rule in itself: the results of the
+        # rule are its verdicts, one ClashResultComplex per group.
+        # The individual pairing results are consumed, the elements
+        # of a group can no longer be taken apart.
+        check = AbsoluteOrRelativeChecking("Absolute_Number")
+        check.operation = "SOURCE>=2"
+
+        groups = self.apply_check(check)
+        self.assertEqual(len(groups), 8)
+        self.assertEqual(len(self.rule.result), 8)
+
+        for result in self.rule.result:
+            self.assertIsInstance(result, ClashResultComplex)
+            self.assertIsInstance(result.status, bool)
+            # The measured set (the windows of the space) as
+            # sources, the group key (the space) as targets.
+            self.assertTrue(result.sources)
+            self.assertEqual(len(result.targets), 1)
+            # The status of the result is the verdict of its group.
+            group = next(
+                one
+                for one in groups
+                if self.group_name(one) == self.result_space(result)
+            )
+            self.assertEqual(result.status, group.abs_or_rel_check)
+
+        # The verdicts read on the rule results: the two single
+        # window spaces fail, the six others pass.
+        failing = {
+            self.result_space(result)
+            for result in self.rule.result
+            if not result.status
+        }
+        self.assertEqual(failing, self.SINGLE_WINDOW_SPACES)
 
     def test_each_space_has_at_least_two_windows(self):
         # "Each space must have at least 2 windows": one group per
@@ -318,6 +375,23 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         self.assertEqual(len(a102.source_set), 2)
         self.assertEqual(len(a102.result_group), 2)
         self.assertTrue(a102.abs_or_rel_check)
+
+        # The results of the rule are the group results: one
+        # ClashResultComplex per space, its verdict as status, its
+        # windows as sources and its space as targets. The
+        # individual pairing results are gone from rule.result.
+        self.assertEqual(len(rule.result), 8)
+        by_result = {
+            self.result_space(result): result for result in rule.result
+        }
+        self.assertEqual(set(by_result), set(by_name))
+        for name, result in by_result.items():
+            self.assertIsInstance(result, ClashResultComplex)
+            self.assertEqual(len(result.targets), 1)
+            self.assertEqual(result.status, by_name[name].abs_or_rel_check)
+            self.assertEqual(len(result.sources), len(by_name[name].source_set))
+        self.assertTrue(by_result["A102"].status)
+        self.assertEqual(len(by_result["A102"].sources), 2)
 
 
 if __name__ == "__main__":

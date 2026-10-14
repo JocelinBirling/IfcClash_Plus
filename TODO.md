@@ -44,5 +44,7 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 20. Vérifier la mise en place de la règle Alignement, surtout la création des plans. 
 Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, ou bien en coupe. C'est un peu bizarre de mélanger les deux vérifications en même endroit.
 
+21. Le résultat d'une MustRule doit produire un Result et non un group_result. In fine, après la MustRule le résultat est atomique. On ne peut pas retirer un "ancien" clash du group_result sans lui faire perdre tout son sens. Le group_result devient donc le result de la must_rule.
+
 
 
