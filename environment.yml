@@ -1,0 +1,27 @@
+# Environnement de développement IfcClash_Plus
+#
+# Creation :   conda env create -f environment.yml
+# Activation : conda activate ifcclash_plus
+# Paquet :     pip install -e .
+# Tests :      pytest tests
+name: ifcclash_plus
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  # pythonocc-core n'est distribue que par conda-forge
+  - pythonocc-core
+  - ifcopenshell
+  - ifctester
+  - numpy
+  - trimesh
+  - shapely
+  - python-dateutil
+  - lark
+  - svgwrite
+  - requests
+  - pytest
+  - pip
+  - pip:
+      - ifcclash==0.8.4
