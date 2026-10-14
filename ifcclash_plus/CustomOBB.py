@@ -1001,15 +1001,42 @@ class Custom_OBB(Bnd_OBB):
         return Custom_OBB(new_center, x_dir, y_dir, z_dir, new_x_h, new_y_h, new_z_h)
 
     def get_corners(self) -> list[gp_XYZ]:
-        pt1 = self.Center() + gp_XYZ(self.XHSize(), self.YHSize(), self.ZHSize())
-        pt2 = self.Center() + gp_XYZ(self.XHSize(), -self.YHSize(), self.ZHSize())
-        pt3 = self.Center() + gp_XYZ(self.XHSize(), self.YHSize(), -self.ZHSize())
-        pt4 = self.Center() + gp_XYZ(self.XHSize(), -self.YHSize(), -self.ZHSize())
-        pt5 = self.Center() + gp_XYZ(-self.XHSize(), self.YHSize(), self.ZHSize())
-        pt6 = self.Center() + gp_XYZ(-self.XHSize(), -self.YHSize(), self.ZHSize())
-        pt7 = self.Center() + gp_XYZ(-self.XHSize(), self.YHSize(), -self.ZHSize())
-        pt8 = self.Center() + gp_XYZ(-self.XHSize(), -self.YHSize(), -self.ZHSize())
-        return [pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8]
+        """The 8 corners of the OBB, in world coordinates.
+
+        Each corner is the center plus or minus the half sizes along
+        the axis DIRECTIONS of the box: the half sizes are directed
+        offsets, not coordinate offsets. The axes of the OBB are not
+        the world axes (their order is arbitrary in the OCC
+        computation), so adding the half sizes as raw XYZ offsets
+        scrambles the box for any non-world-aligned OBB.
+        """
+        center = self.Center()  # a gp_XYZ on Bnd_OBB
+        x_half = self.XDirection()  # a gp_XYZ on Bnd_OBB
+        y_half = self.YDirection()
+        z_half = self.ZDirection()
+        x_h, y_h, z_h = self.XHSize(), self.YHSize(), self.ZHSize()
+
+        corners = []
+        for sx in (-1.0, 1.0):
+            for sy in (-1.0, 1.0):
+                for sz in (-1.0, 1.0):
+                    corners.append(
+                        gp_XYZ(
+                            center.X()
+                            + sx * x_half.X() * x_h
+                            + sy * y_half.X() * y_h
+                            + sz * z_half.X() * z_h,
+                            center.Y()
+                            + sx * x_half.Y() * x_h
+                            + sy * y_half.Y() * y_h
+                            + sz * z_half.Y() * z_h,
+                            center.Z()
+                            + sx * x_half.Z() * x_h
+                            + sy * y_half.Z() * y_h
+                            + sz * z_half.Z() * z_h,
+                        )
+                    )
+        return corners
 
     def get_corners_of_dir(self, dir: gp_Dir) -> list[gp_XYZ]:
         """

@@ -371,27 +371,30 @@ class ObbLength(RuleCheckOneObject):
                         "obb", obb, (0.5,0,1), 0.2, element=entity
                     )
 
-                    x_size = obb.XHSize() * 2
-                    y_size = obb.YHSize() * 2
-                    z_size = obb.ZHSize() * 2
+                    # L'axe vertical de la boite est son axe le plus
+                    # vertical : l'ordre des axes de l'OBB est arbitraire
+                    # dans le calcul OCC, l'axe Z n'est pas toujours la
+                    # hauteur. Les deux autres axes portent les dimensions
+                    # de plan de l'objet.
+                    half_sizes = [obb.XHSize(), obb.YHSize(), obb.ZHSize()]
+                    verticality = [
+                        abs(obb.XDirection().Z()),
+                        abs(obb.YDirection().Z()),
+                        abs(obb.ZDirection().Z()),
+                    ]
+                    height_axis = max(range(3), key=lambda i: verticality[i])
+                    plan_sizes = [
+                        2.0 * half_sizes[i] for i in range(3) if i != height_axis
+                    ]
 
-                    # Identifier les deux faces les plus larges ou étroites
-                    # On compare les dimensions pour déterminer les faces larges ou étroites
-                    # dimensions = {"X": x_size, "Y": y_size, "Z": z_size}
-                    dimensions = {
-                        "X": x_size,
-                        "Y": y_size,
-                    }  # I don't wan to get the high of the object. But i am not sure that Z is the height. @todo check that Z is always the height of an object.
-
-                    # Trouver les deux dimensions les plus grandes ou les plus petites
-                    sorted_dimensions = sorted(
-                        dimensions.items(),
-                        key=lambda item: item[1],
-                        reverse=(self.direction_method == "wide"),
-                    )
-
-                    # Les deux faces les plus larges ou étroites sont les deux premières dimensions
-                    value_to_check = sorted_dimensions[0][1]
+                    # La plus grande (wide) ou la plus petite (narrow) des
+                    # deux dimensions de plan. @todo Un objet incliné à
+                    # environ 45 degrés n'a pas d'axe vertical net : le
+                    # choix de l'axe hauteur reste arbitraire.
+                    if self.direction_method.lower() == "wide":
+                        value_to_check = max(plan_sizes)
+                    else:
+                        value_to_check = min(plan_sizes)
 
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)
@@ -3344,7 +3347,10 @@ class OneObjectFace(RuleCheckOneObject):
     adjacent faces skipped on demand), intersection (crossing deeper
     than a tolerance)
     and orientation (angle between the normals). One clash is raised per
-    pair per failed check. See doc/1ObjectsRules/OneObjectFace.md.
+    pair per failed check. In the display, the faces of group A are
+    blue and the faces of group B orange; the other faces of the object
+    are not registered, the object keeps its own display color. See
+    doc/1ObjectsRules/OneObjectFace.md.
     """
 
     def __init__(
@@ -3527,6 +3533,29 @@ class OneObjectFace(RuleCheckOneObject):
                         material_names,
                     )
 
+                    # The faces of the two groups, kept in the display
+                    # registry: the faces of group A in blue, the
+                    # faces of group B in orange. The other faces of
+                    # the object are not registered: the object keeps
+                    # its own display color (red/green in
+                    # Display_Result, blue in Display_Input).
+                    for triangle in group_a:
+                        self.register_display_item(
+                            "face",
+                            ("face", [tuple(vertex) for vertex in triangle]),
+                            (0, 0, 1),
+                            0.0,
+                            element=entity,
+                        )
+                    for triangle in group_b:
+                        self.register_display_item(
+                            "face",
+                            ("face", [tuple(vertex) for vertex in triangle]),
+                            (1, 0.45, 0),
+                            0.0,
+                            element=entity,
+                        )
+
                     self._check_pairs(entity, group_a, group_b)
 
                 if not iterator.next():
@@ -3570,17 +3599,6 @@ class OneObjectFace(RuleCheckOneObject):
                     result.source_faces = [triangle_a]
                     result.target_faces = [triangle_b]
                     self.result.append(result)
-
-                    # The faces at fault, kept in the display registry:
-                    # source_faces then target_faces.
-                    for triangle in (triangle_a, triangle_b):
-                        self.register_display_item(
-                            "face",
-                            ("face", [tuple(vertex) for vertex in triangle]),
-                            (1, 0.5, 0),
-                            0.0,
-                            element=entity,
-                        )
 
 
 
