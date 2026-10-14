@@ -48,3 +48,4 @@ Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, 
 
 22. Revoir les paramètres à renseigner dans CustomOBB. Revoir aussi la fonction et l'enchainement des modifications de l'OBB.
 
+23. Réparer la Two Rule Face Object pour afficher les objets.

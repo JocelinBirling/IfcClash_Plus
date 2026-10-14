@@ -8,6 +8,8 @@ Usage : descendre au niveau des faces pour effectuer des tests plus fins que les
 
 This file is the family summary: it defines the face selection shared by all members. Each member rule gets its own file in this folder when it is specified.
 
+![alt text](image/TwoObjectFaces.png)
+
 # Member rules
 
 All members follow the Source/Target structure: faces are selected on the source objects, the target provides what they are checked against.
@@ -96,7 +98,7 @@ Conventions left open by this specification, as implemented (2026-10-07, engine 
 
 V1 deployment of the family rule (2026-10-07): while the member rules are still pending, the family is deployed as a single rule, `TwoObjectsFace`, with the same three checks as the OneObjectFace rule:
 
-- `distance`: a pair fails when it is closer than min_distance or farther than max_distance (each bound optional, in meter).
+- `distance`: a pair fails when it is closer than min_distance. max_distance is a search radius: a pair farther apart than max_distance is not checked at all (each bound optional, in meter).
 - `intersection`: a pair fails when the two faces cross strictly by more than intersection_tolerance in depth (in meter). Faces that exactly touch without overlapping do not fail.
 - `orientation`: the measured value is the angle between the paired faces' normals (degrees in [0, 180]); a pair fails when it deviates from the target angle by more than angle_tolerance (in degrees).
 
@@ -104,8 +106,8 @@ Conventions left open by the member specifications, as implemented:
 
 - Pairing is face-to-face: every selected source face is paired with every target face, the faces selected by Target_Face_Selection, or all the faces of the target objects when it is omitted. One clash is raised per pair per failed check.
 - An element present in both Source and Target is not checked against itself.
-- Bounds are inclusive: a distance exactly at min_distance or max_distance is compliant, only strictly closer/farther fails.
+- Bounds are inclusive: a distance exactly at min_distance or exactly at the max_distance search radius is compliant (a pair at the radius limit is still checked).
 - There is no skip_adjacent: two faces of two different objects never share a mesh vertex, and two objects that touch are exactly what a face-level clearance check must report.
-- The distance check short-circuits on the axis-aligned bounding boxes of the two triangles: when only min_distance is set, a pair whose bounding boxes are already that far apart cannot fail and skips the exact computation.
+- The distance check short-circuits on the axis-aligned bounding boxes of the two triangles: a pair whose bounding boxes are farther apart than the max_distance search radius is ignored, and a pair whose bounding boxes are already min_distance apart cannot fail; both skip the exact computation.
 - Default tolerances: intersection_tolerance 0, angle_tolerance 0. A rule with no enabled check, a missing angle with the orientation check enabled, or min_distance > max_distance raise a ValueError.
 - A clash result carries the source and target objects, the failed check, its measured value, and the two faces of the pair (normal, area, triangles).

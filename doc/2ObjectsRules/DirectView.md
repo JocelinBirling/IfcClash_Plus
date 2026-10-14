@@ -6,6 +6,8 @@ Usage : identifier les objets visibles depuis un point d'observation (poste de s
 
 Limitation: this rule tests the mutual geometric visibility between two objects. It does not model an oriented device: no direction of view, no field of view, no viewing cone. A camera check would need the orientation of the device as an input and is out of scope here.
 
+![alt text](image/DirectView.png)
+
 ## Algorithm
 
 1. Select faces on each object: only the faces oriented toward the other object (normal facing the other object) emit or receive rays.

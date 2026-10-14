@@ -2,7 +2,7 @@
 
 This rule aims to detect objects that are on top of each other. 
 
-![Image1](image/image_Page1.png)
+
 
 It will first detect, on each object, the face that will be anaylzed. The lateral tolerance may be use to consider more face than the one directly above.
 - All faces must point to the top, or bottom.
@@ -13,6 +13,8 @@ It will first detect, on each object, the face that will be anaylzed. The latera
 Then it will check the distance between all the faces.
 
 The rule will detect the two faces of the object. Those two faces will be analyze in order to detect if they are in or out.
+
+![doc/2ObjectsRules/image/Above.png](image/Above.png)
 
 # Property
 A: Object A

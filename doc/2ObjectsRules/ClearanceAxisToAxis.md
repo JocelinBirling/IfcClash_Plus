@@ -8,6 +8,8 @@ The rule produces a scalar (the measured distance), not a binary: the result fee
 
 Limitation: the directional condition (parallelism) is not tested here. It combines by AND with AngleBetween, notably as an exception, to produce a full coaxiality (parallel axes AND merged axes).
 
+![alt text](image/Clearance_AxisToAxis.png)
+
 ## Algorithm
 
 1. Compute the OBB of each object (method of the project).

@@ -3,6 +3,8 @@
 This rule aims to detect objects based on the length of the obb.
 
 
+![alt text](image/Obb_Length.png)
+
 # Property
 Source: The objects to be analyzed.
 

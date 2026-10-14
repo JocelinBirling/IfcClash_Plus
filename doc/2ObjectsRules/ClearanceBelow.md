@@ -10,6 +10,8 @@ Then it will check the distance between all the faces.
 
 The rule will detect the two faces of the object. Those two faces will be analyzed in order to detect if they are in or out.
 
+![alt text](image/Below.png)
+
 # Property
 A: Object A
 

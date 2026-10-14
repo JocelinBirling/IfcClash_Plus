@@ -1,4 +1,4 @@
-
+# NOT IMPLEMENTED
 La règle doit vérifier que le volume entre deux objets soit en dessous de la tolérance.
 Dans l'idée, c'est un clash normal, mais le seuil est précisé par un volume à respecter.
 

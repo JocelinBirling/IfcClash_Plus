@@ -9,6 +9,8 @@ It will identify the faces of each selected object that are at the **extreme pos
 
 The rule uses direction vectors: (0,0,1) for Top and (0,0,-1) for Bottom.
 
+![alt text](image/TopOrBottomSurface.png)
+
 # Property
 Source: The objects to be analyzed.
 

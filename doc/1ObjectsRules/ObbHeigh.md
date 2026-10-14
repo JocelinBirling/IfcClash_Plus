@@ -5,6 +5,8 @@ It's a fast method to detect the high of an object.
 
 Based on the OBB, it will calculated the height of an object and check if it fit between the two treshold.
 
+![alt text](image/Obb_High.png)
+
 # Property
 Source: The objects to be analyzed.
 

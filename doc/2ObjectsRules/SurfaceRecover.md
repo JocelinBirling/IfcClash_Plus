@@ -6,6 +6,8 @@ Usage : détecter les objets posés les uns sur les autres mais mal juxtaposés 
 
 It could be done from top to bottom, but as well from side to side.
 
+![alt text](image/SurfaceRecover.png)
+
 ## Algorithm
 
 1. Filter pairs: only pairs whose distance is below `Tolerance` are analyzed. Pairs not in contact produce no result.

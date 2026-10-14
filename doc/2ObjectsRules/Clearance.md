@@ -4,6 +4,8 @@ This rule aims to detect objects that are too close to each other based on a min
 
 It will check the distance between all pairs of source and target objects. If any two objects are closer than the specified clearance distance, a clash will be reported.
 
+![alt text](image/Clearance.png)
+
 # Property
 Source: Object A - The first set of objects to be analyzed.
 

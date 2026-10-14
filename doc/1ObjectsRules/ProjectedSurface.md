@@ -4,6 +4,8 @@ This rule aims to detect objects based on their projected surface area onto a pl
 
 It will calculate the footprint area of each selected object by projecting its geometry onto a plane perpendicular to the specified direction vector. This projection creates a 2D silhouette of the object as seen from that direction, and the area of this silhouette is measured. Unlike surface area measurements that sum all faces, the projected area represents the object's "shadow" or outline when viewed from a particular direction.
 
+![alt text](image/ProjectedSurface.png)
+
 # Property
 
 Source: The objects to be analyzed.

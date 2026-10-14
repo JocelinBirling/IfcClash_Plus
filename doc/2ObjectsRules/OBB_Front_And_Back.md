@@ -4,6 +4,8 @@ This rule aims to detect objects that are in front of or behind source objects u
 
 It creates an OBB for each source object, then identifies the front and back directions based on the OBB's dimensions (using either the "Wide" or "Narrow" method to determine the primary axis). The rule extends the OBB along these directions by the specified tolerance to form two detection zones - one for the front and one for the back. The rule then checks if any target objects intersect with these extended OBB zones in front of or behind the source objects.
 
+![alt text](image/FrontAndBack.png)
+
 # Property
 Source: Object A - The objects that will have front and back detection zones created around them.
 

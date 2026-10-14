@@ -4,6 +4,7 @@ This rule aims to detect objects based on their surface area.
 
 It will calculate the surface area of each selected object and check if it falls within the specified minimum and maximum range.
 
+![alt text](image/Area.png)
 # Property
 Source: The objects to be analyzed.
 

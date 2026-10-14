@@ -147,9 +147,15 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 
 
 # Installation
-Ce projet utilise les éléments suivants.
-IfcOpenShell
-PythonOCC avec une installation avec Conda
+Ce projet utilise IfcOpenShell et PythonOCC. PythonOCC n'est distribué que via le canal conda-forge : l'installation passe donc par Conda.
+
+```bash
+conda env create -f environment.yml
+conda activate ifcclash_plus
+pip install -e .
+```
+
+L'environnement de développement est décrit dans environment.yml, la recette de déploiement Conda dans conda/meta.yaml.
 
 
 # Progression
@@ -173,6 +179,15 @@ La première étape est de créer de nouvelles règles afin d'étendre les possi
 
 - Sérialisation
     Un nouveau module serialization.py a été créé, avec des tests. Toutes les classes peuvent être sauvegardées dans un json afin de les réutiliser ailleurs.
+
+- Vérification absolue ou relative en résultat
+    Le Must check (AbsoluteOrRelativeChecking) est désormais une règle en soi : une fois les groupes évalués, il produit son propre résultat complexe (sources, cibles et état du verdict) et conserve les résultats individuels d'origine, afin de pouvoir être relancé sur la même règle. Les classes ResultAnalyze et BCF_Subject ont été créées pour regrouper les résultats par sujet BCF. Les tests AbsOrRel ont été étendus en conséquence.
+
+- Spécification du lien BCF
+    Une spécification (specification_BCF_Link.md) décrit la manière dont les résultats de règles sont regroupés en sujets BCF : acteur, criticité et références aux objets concernés.
+
+- Packaging Conda / Pip
+    Le projet est désormais installable et déployable : environment.yml fournit l'environnement de développement (PythonOCC via conda-forge), conda/meta.yaml la recette de déploiement Conda. Le setup.py a été réparé (l'installation pip n'installait aucun module) et requirements.txt a été nettoyé de ses chemins de build locaux.
 
 #### Mise à jour mineure
 
@@ -203,6 +218,21 @@ La première étape est de créer de nouvelles règles afin d'étendre les possi
 
 - Documentation
     Le README et de nombreuses pages de doc/ ont été mises à jour, dont de nouvelles pages pour ObbHeigh et ObbLength. Un nouveau agent.md et un complex_configuration.json ont été ajoutés. Un gros fichier IFC de test (44000 lignes) a été supprimé du dépôt.
+
+- Correction des règles ObbHigh et ObbLength
+    L'ordre des axes d'une OBB calculée par OCC est arbitraire : l'axe Z n'est pas toujours la hauteur de l'objet. L'axe vertical est désormais déterminé comme l'axe le plus vertical de la boite, et les dimensions de plan portent le large/l'étroit. Les faces des deux groupes sont enregistrées pour l'affichage (bleu/orange).
+
+- Documentation illustrée
+    Chaque page de règle de doc/ dispose désormais d'une capture d'écran du résultat affiché. Une page a été créée pour OBB Custom, et les pages des règles futures (Quality, StairQuality, Stability) ont été précisées. Le gabarit d'image Blender a été déplacé dans doc/.
+
+- Rapport d'audit du code
+    Un rapport d'analyse statique (Rapport.md) recense par gravité les bugs bloquants, les logiques douteuses et les dettes structurelles du code.
+
+- Refonte de agent.md
+    Le guide de développement de l'agent (agent.md) a été refondu pour refléter l'architecture actuelle.
+
+- Tests d'affichage
+    Les tests du display ont été fiabilisés, avec des couleurs harmonisées entre les règles à un objet et à deux objets.
 
 ## V0.3
 - Utilisation de l'IA

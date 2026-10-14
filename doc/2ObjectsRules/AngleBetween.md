@@ -4,6 +4,8 @@ This rule aims to detect pairs of objects based on the angle between their main 
 
 It calculates the oriented bounding box (OBB) for each object in both source and target sets, extracts their main directions using the specified method (Wide or Narrow), and then measures the angle between these directions. This allows for identifying object pairs that are aligned at specific angular relationships, such as parallel (0°) or perpendicular (90°) arrangements.
 
+![alt text](image/AngleBetween.png)
+
 # Property
 
 Source: The first set of objects to analyze.
