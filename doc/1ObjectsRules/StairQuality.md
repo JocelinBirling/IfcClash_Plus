@@ -1,5 +1,65 @@
-Stair Check (conformité géométrique d'escalier)
-Entrées : Source = escaliers (IfcStair + marches) ; paramètres : hauteur de marche min/max, giron min/max, régularité, largeur min, hauteur de garde-corps.
-Description : reconstruit la ligne de foulée depuis la géométrie (détection des marches par tranches d'altitude), mesure pas-à-pas. Règle complexe car elle décompose un objet unique en sous-objets fonctionnels.
-Exemples : (1) ERP : hauteur de marche 16-18 cm, giron ≥ 24 cm, toutes les marches identiques à 5 mm. (2) La largeur de la volée entre mains courantes doit rester ≥ 1,40 m. (3) En Select : sortir les escaliers non conformes pour reprise archi.
+Inclure la loi de Blonel dans la réalisation de cette règle. 
 
+
+# Description
+
+This rule checks the geometric conformity of a stair (step height,
+going, regularity, flight width) against standard stair metrics.
+
+The steps are not selected as elements: the rule reconstructs them
+from the geometry of the stair alone. The source objects are sliced
+by altitude to detect the steps, the walking line is rebuilt from the
+detected steps, and the measurements are taken step by step along it.
+
+Although it analyzes a single object, this rule is more complex than
+a plain measurement rule: it decomposes one object into functional
+sub-objects (the steps) before measuring them. It stays a one object
+rule: everything is derived from the source geometry, no target and
+no context selection are involved.
+
+Out of scope: the guardrail (main courante) height. It needs the
+guardrail as a second object, so it is covered by a separate two
+objects rule (stair + guardrail), not by StairQuality.
+
+# Property
+
+Source: The stairs to analyze (IfcStair, IfcStairFlight or any
+element typed as a stair). The steps are reconstructed from this
+geometry; they must not be selected.
+
+Parameters:
+
+- **Step height min / max**: the allowed range for the riser height
+  of each step. A step outside the range is non conforming.
+- **Going min** (giron): the minimum tread depth, measured along the
+  walking line between two consecutive step noses.
+- **Regularity tolerance**: all the steps of a flight must be
+  identical within this tolerance (a flight is non conforming as
+  soon as one step deviates from the others by more than the
+  tolerance).
+- **Flight width min**: the minimum clear walking width of the
+  flight, measured across the reconstructed steps along the walking
+  line.
+- **Walking line offset**: the position of the walking line used for
+  the measurements, as a distance from the inner edge of the flight
+  (default: the center of the flight).
+
+# Result
+
+One ClashResult per stair and per non conforming criterion. A stair
+failing both the step height and the going produces two results, one
+per criterion, each carrying the measured values and the offending
+steps.
+
+This granularity keeps the result atomic: one result is one
+verdictable fact, ready for the sorting phase and the BCF subjects
+(see specification_BCF_Link.md).
+
+# Example
+
+- ERP conformity: step height between 16 and 18 cm, going of at least
+  24 cm, all steps identical within 5 mm.
+- Accessibility: the flight width between the handrails must stay
+  above 1.40 m.
+- In Select: output the non conforming stairs for architectural
+  rework.

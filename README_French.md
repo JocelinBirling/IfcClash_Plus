@@ -78,7 +78,9 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 | [Orientation](doc/1ObjectsRules/Orientation) | Un objet | OK | KO | OK |
 | [Object height](doc/1ObjectsRules/ObbHeigh) | Un objet | OK | OK | OK |
 | [Object length](doc/1ObjectsRules/ObbLength) | Un objet | OK | OK | OK |
-| [Quality Geometrie](doc/1ObjectsRules/Quality) | Un objet | KO | KO | KO |
+| [Geometry Quality](doc/1ObjectsRules/Quality) | Un objet | KO | KO | KO |
+| [Stair Quality](doc/1ObjectsRules/StairQuality) | Un objet | KO | KO | KO |
+| [Stability](doc/1ObjectsRules/Stability) | Un objet | KO | KO | KO |
 | [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | KO | KO | KO |
 
 ### Règles à deux objets
