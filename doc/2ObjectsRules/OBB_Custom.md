@@ -6,6 +6,8 @@ It creates an OBB for each source object, then applies a list of modifications t
 
 Each detection zone is turned into a solid, and the rule checks if any target object touches or intersects one of these zones. A target object that is entirely inside a zone also counts as a clash, since the distance to the zone is then 0.
 
+![alt text](image/CustomOBB.png)
+
 # Property
 
 Source: Object A - The objects from which the detection zones are built.

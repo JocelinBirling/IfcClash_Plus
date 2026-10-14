@@ -1,5 +1,7 @@
 # Description
 
+> **Status: Specification** — this rule is not implemented yet; this page describes the target behavior.
+
 This rule checks the static stability of placed objects: an object
 standing on its own must not tip over under its own weight.
 

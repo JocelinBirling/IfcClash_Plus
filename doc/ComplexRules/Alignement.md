@@ -4,6 +4,8 @@ This rule checks that the objects of a set are aligned: each object must belong 
 
 Usage : vérifier l'alignement vertical de poteaux empilés sur plusieurs étages (même axe), l'alignement horizontal des poteaux d'un même étage (une file), ou l'alignement de murs d'une même façade (décalage maximum de 1 m par exemple).
 
+![alt text](image/Alignement_Plan.png)
+
 ## Algorithm
 
 1. Compute the main axis of the OBB of each source object: the alignment is tested on axes, not on points.

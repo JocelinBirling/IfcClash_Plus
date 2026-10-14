@@ -8,9 +8,9 @@ This rule aims to detect objects based on the length of the obb.
 # Property
 Source: The objects to be analyzed.
 
-Min: The minimum length threshold. Objects with a volume greater than this value will be considered.
+Min: The minimum length threshold. Objects with a length greater than this value will be considered.
 
-Max: The maximum length threshold. Objects with a volume less than this value will be considered.
+Max: The maximum length threshold. Objects with a length less than this value will be considered.
 
 Direction Method: The method used to determine the object's main directions from its oriented bounding box:
 - **Wide**: Uses the two widest dimensions of the OBB to determine main directions

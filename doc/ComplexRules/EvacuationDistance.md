@@ -1,5 +1,7 @@
 # Description
 
+> **Status: Specification** — this rule is not implemented yet; this page describes the target behavior. The generic pathfinding engine it relies on is shared with FindPath.
+
 This rule checks that the evacuation distance from a space to the nearest exit stays below a maximum value.
 
 Usage : vérifier la distance d'évacuation réglementaire d'un local vers une sortie de sécurité (ou une porte d'escalier, prise comme arrivée), sur un seul étage.

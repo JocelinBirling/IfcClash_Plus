@@ -61,6 +61,7 @@ The default parameters of a member rule, as received by the function:
         "materials": [],
         "interior_exterior": null
 }
+```
 
 `Source` and `Target` are mandatory and filled by the user; an empty array is invalid. `Source_Face_Selection` defaults to the empty selection above (all faces). `Target_Face_Selection` defaults to null: the whole target objects are used; when provided, it takes the same template as `Source_Face_Selection`.
 

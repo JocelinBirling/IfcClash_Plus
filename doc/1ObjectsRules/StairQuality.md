@@ -1,7 +1,6 @@
-Inclure la loi de Blonel dans la réalisation de cette règle. 
-
-
 # Description
+
+> **Status: Specification** — this rule is not implemented yet; this page describes the target behavior. The implementation should include the Blondel law (2 × riser height + going between 60 and 64 cm, or 60–65 cm depending on the standard) as a derived criterion.
 
 This rule checks the geometric conformity of a stair (step height,
 going, regularity, flight width) against standard stair metrics.

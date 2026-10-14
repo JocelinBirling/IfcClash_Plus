@@ -10,9 +10,9 @@ Based on the OBB, it will calculated the height of an object and check if it fit
 # Property
 Source: The objects to be analyzed.
 
-Min: The minimum height threshold. Objects with a volume greater than this value will be considered.
+Min: The minimum height threshold. Objects with a height greater than this value will be considered.
 
-Max: The maximum height threshold. Objects with a volume less than this value will be considered.
+Max: The maximum height threshold. Objects with a height less than this value will be considered.
 
 
 

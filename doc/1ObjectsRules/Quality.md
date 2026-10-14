@@ -1,5 +1,7 @@
 # Description
 
+> **Status: Specification** — this rule is not implemented yet; this page describes the target behavior.
+
 This rule validates the geometry quality of the source objects. It is
 the upstream quality gate of the whole catalogue: no other rule
 checks the geometry itself, and broken solids are a classic source of
