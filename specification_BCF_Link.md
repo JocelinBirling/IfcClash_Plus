@@ -2,7 +2,7 @@
 
 Une fois que les `results` et les `grouped_results` ont été produits, une
 deuxième phase se met en place : le tri des résultats par l'utilisateur,
-puis leur regroupement en sujets BCF.
+leur observation dans le modèle, puis leur regroupement en sujets BCF.
 
 Le vocabulaire renvoie aux objets du code :
 - `result` : un `ClashResult` (`ClashResultOneObject`,
@@ -65,7 +65,37 @@ remplacé par les `ClashResultComplex` dans
 
 ---
 
-## 2. Les sujets BCF
+## 2. Observation du modèle pendant le tri
+
+Pendant le tri, l'utilisateur doit pouvoir observer tous les objets
+analysés par la règle, dans le modèle, et pas seulement la liste des
+résultats. C'est ce qui permet de constater visuellement qu'un clash
+n'a pas été détecté correctement : un faux négatif.
+
+### Affichage
+
+L'interface affiche les objets des sélections de la règle
+(source et target), avec :
+
+- les `results` en échec (`status` à `False`) en surbrillance nette,
+  objets du tri ;
+- les `results` en succès (`status` à `True`) affichables discrètement,
+  pour distinguer « détecté et conforme » de « non détecté » ;
+- le reste des sélections en affichage neutre.
+
+Par-dessus, si besoin, l'utilisateur peut ajouter d'autres objets du
+modèle comme contexte (typiquement les murs et les dalles), pour
+situer les clashes dans la maquette.
+
+### Faux négatif
+
+L'observation est visuelle seule. Repérer un faux négatif ne crée pas
+de `result` manuel : cela sert à corriger la règle (tolérance,
+sélection, exception) et à la relancer.
+
+---
+
+## 3. Les sujets BCF
 
 Pendant qu'il trie, l'utilisateur doit pouvoir ajouter des `results`
 (ou des groupes de results) à des sujets.
@@ -83,7 +113,7 @@ l'export.
 
 ---
 
-## 3. Persistance
+## 4. Persistance
 
 - Le tri utilisateur et les résultats des clashs sont sauvegardés dans
   un fichier : on doit pouvoir fermer puis rouvrir la session sans
@@ -92,7 +122,7 @@ l'export.
 
 ---
 
-## 4. Travaux à prévoir
+## 5. Travaux à prévoir
 
 - Ajouter l'attribut de tri sur `ClashResult` (valeur `Indéfini` par
   défaut) et ne peupler le tri que pour les `results` en échec.
@@ -100,6 +130,9 @@ l'export.
   `RuleClass.py` : ajout/retrait de results, criticité et acteur hérités).
 - L'interface graphique de tri (validation, refus, actions en masse par
   groupe, gestion des sujets).
+- L'affichage pendant le tri : objets des sélections avec échecs en
+  surbrillance, succès affichables discrètement, superposition
+  d'objets de contexte choisis par l'utilisateur.
 - La sauvegarde des résultats et du tri dans un fichier de session.
 - L'export BCF : un topic par sujet, avec les viewpoints des éléments
   des `results` du sujet.

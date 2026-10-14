@@ -56,7 +56,7 @@ Cette vérification doit permettre de définir une quantité, le nombre d'objets
 Cette quantité peut être absolue, il faut que je trouve X éléments qui répondent à la règle dans cette maquette.
 Cette quantité peut être relative (pour une règle à deux objets), je dois avoir X fois plus d'objets source que d'objet target dans mes résultats.
 
-Typiquement, cela peut permettre de vérifier que l'on a bien mis 2 prises électriques par 10m2 de bureau par exemple.
+Typiquement, cela peut permettre de vérifier que l'on a bien mis 2 prises électriques par 10m2 de bureau par exemple.Peu
 
 
 
@@ -81,7 +81,7 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 | [Geometry Quality](doc/1ObjectsRules/Quality) | Un objet | KO | KO | KO |
 | [Stair Quality](doc/1ObjectsRules/StairQuality) | Un objet | KO | KO | KO |
 | [Stability](doc/1ObjectsRules/Stability) | Un objet | KO | KO | KO |
-| [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | KO | KO | KO |
+| [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | OK | KO | OK |
 
 ### Règles à deux objets
 
@@ -98,7 +98,7 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
 | [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Deux objets | OK | KO | OK |
-| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Deux objets | KO | KO | OK |
+| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Deux objets | OK | KO | OK |
 | [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Deux objets | OK | KO | OK |
 
 #### Clearance avec OBB
@@ -110,10 +110,10 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [OBB Above](doc/2ObjectsRules/OBB_Above) | Deux objets | OK | KO | OK |
-| [OBB Below](doc/2ObjectsRules/OBB_Below) | Deux objets | OK | KO | OK |
-| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back) | Deux objets | OK | KO | OK |
-
+| [OBB Above](doc/2ObjectsRules/OBB_Above.md) | Deux objets | OK | KO | OK |
+| [OBB Below](doc/2ObjectsRules/OBB_Below.md) | Deux objets | OK | KO | OK |
+| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back.md) | Deux objets | OK | KO | OK |
+| [OBB Custom](doc/2ObjectsRules/OBB_Custom.md) | Deux objets | OK | KO | OK |
 
 
 
@@ -123,7 +123,7 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | KO | KO | KO |
+| [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | OK | KO | OK |
 | [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | KO | OK |
 | [Clearance Axis To Axis](doc/2ObjectsRules/ClearanceAxisToAxis) | Deux objets | OK | OK | OK |
 | [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | KO | KO |
@@ -131,25 +131,18 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 | [Volume Clash](doc/2ObjectsRules/VolumeClash) | Deux objets | KO | KO | KO |
 | [Inside](doc/2ObjectsRules/Inside) | Deux objets | KO | KO | KO |
 | [Door Check](doc/2ObjectsRules/Door) | Deux objets | KO | KO | KO |
-
-#### Les règles sur les faces
-| **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
-|-----------|----------|-----------|---------|----------|
-| [Face Intersection](doc/2ObjectsRules/FaceIntersect) | Deux objets | KO | KO | KO |
-| [Face Clearance](doc/2ObjectsRules/FaceClearance) | Deux objets | OK | KO | OK |
-| [Face OBB](doc/2ObjectsRules/FaceOBB) | Deux objets | OK | KO | OK |
-| [Face Orient](doc/2ObjectsRules/FaceOrient) | Deux objets | KO | KO | KO |
-
+| [Face Check](doc/2ObjectsRules/TwoObjectsFace.md) | Deux objets | OK | KO | OK |
 
 
 ### Règles complexes
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Free Space in Room](doc/ComplexRules/FreeSpaceInRoom) | Complexe | KO | KO | KO |
+| [Free Space in Room](doc/ComplexRules/FreeSpaceInRoom) | Complexe | OK | KO | OK |
+| [Alignement](doc/ComplexRules/Alignement) | Complexe | OK | KO | OK |
 | [Find Path](doc/ComplexRules/FindPath) | Complexe | KO | KO | KO |
-| [EvacuationDistance](doc/ComplexRules/EvacuationDistance) | Complexe | NOK | KO | KO |
-| [Alignement](doc/ComplexRules/Alignement) | Complexe | NOK | KO | KO |
+| [EvacuationDistance](doc/ComplexRules/EvacuationDistance) | Complexe | KO | KO | KO |
+
 
 
 
