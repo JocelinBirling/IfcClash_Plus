@@ -35,3 +35,5 @@ tests/__pycache__/test_custom_obb.cpython-314.pyc
 tests/__pycache__/test_RuleFile.cpython-314.pyc
 ifcclash_plus/constructtest_python.py
 ifcclash_plus/construct_bigmodel.py
+tests/test_Rule_External_Models.py
+doc/Template_Image.blend1

@@ -708,16 +708,18 @@ class TestOBB_Front_And_Back(IFCModelRuleTestCase):
                            "SuzanneB", "SuzanneA", 0, tolerance=0.1, method="Narrow")
 
     def test_CubeB_Side_45CuboidA(self):
-        # [calibrated] same asymmetry as test_CubeB_InFront_45CuboidA: the
-        # sideways placement is covered by CubeB's own zones (file-name
-        # order, Wide tol 1.0 -> 1) but not by the zones of the 45deg
-        # cuboid (semantic order -> 0).
+        # [recalibrated] same asymmetry as test_CubeB_InFront_45CuboidA
+        # for the small tolerance, but the improved main-direction
+        # detection (the most vertical axis of a tilted OBB is excluded)
+        # makes the 45deg cuboid's Wide direction horizontal: its
+        # front/back zone now reaches CubeB at the side (semantic order,
+        # tol 1.0 -> 1).
         self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
                            "CubeB", "45CuboidA", 1, tolerance=1.0, method="Wide")
         self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
                            "CubeB", "45CuboidA", 0, tolerance=0.1, method="Wide")
         self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
-                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
+                           "45CuboidA", "CubeB", 1, tolerance=1.0, method="Wide")
 
     def test_CubeB_Side_CuboidA_50cm(self):
         # [calibrated file-name order: 0 at every tested tolerance <= 1.0]
@@ -737,9 +739,12 @@ class TestOBB_Front_And_Back(IFCModelRuleTestCase):
 class TestAngleBetween(IFCModelRuleTestCase):
     """AngleBetween rule on the Orient / NoOrient models.
 
-    Measured real angles (OBB main directions, Wide/Narrow method):
-      - CuboidA_Orient_45Cuboid_45    : Wide-Narrow 45deg, Wide-Wide 135deg,
-                                        Narrow-Wide 90deg, Narrow-Narrow 90deg;
+    Measured real angles (OBB main directions, Wide/Narrow method; the
+    45deg cuboid angles are measured with the improved main-direction
+    detection, which excludes the most vertical axis of a tilted OBB):
+      - CuboidA_Orient_45Cuboid_45    : Wide-Narrow 45deg, Wide-Wide 90deg,
+                                        Narrow-Wide 180deg (anti-parallel),
+                                        Narrow-Narrow 90deg;
       - CuboidA_NoOrient_45Cuboid     : Wide-Wide/Wide-Narrow 75.2deg,
                                         Narrow-Wide/Narrow-Narrow 131.2deg;
       - CuboidA_Orient_FallenCuboidA_90: Wide-Wide 90deg, Wide-Narrow 0deg,
@@ -772,8 +777,12 @@ class TestAngleBetween(IFCModelRuleTestCase):
                            angle_difference=45, angle_tolerance=15)
 
     def test_CuboidA_Orient_45Cuboid_45(self):
-        # [expected, measured angles] actual target: 45CuboidA (see NAME_OVERRIDES).
-        # The nominal 45deg angle is between Wide of CuboidA and Narrow of 45CuboidA.
+        # [recalibrated, measured angles] actual target: 45CuboidA (see
+        # NAME_OVERRIDES). With the improved main-direction detection for
+        # tilted objects, the 45deg cuboid's Wide direction is horizontal:
+        # it is anti-parallel to CuboidA's Narrow (length) direction (the
+        # rule measures the signed angle between the direction vectors,
+        # 180deg) and perpendicular to its Wide (thickness) direction.
         self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
                            "CuboidA", "45Cuboid", 1,
                            direction_method_for_source="Wide",
@@ -788,7 +797,7 @@ class TestAngleBetween(IFCModelRuleTestCase):
                            "CuboidA", "45Cuboid", 1,
                            direction_method_for_source="Narrow",
                            direction_method_for_target="Wide",
-                           angle_difference=90, angle_tolerance=5)
+                           angle_difference=180, angle_tolerance=5)
         self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
                            "CuboidA", "45Cuboid", 1,
                            direction_method_for_source="Narrow",

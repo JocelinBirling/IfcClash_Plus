@@ -464,9 +464,9 @@ class Orientation(RuleCheckOneObject):
                         element=entity,
                     )
 
-                    if self.direction_method == "Parrallel":
+                    if self.orientation_type == "Parrallel":
                         check_direction = is_parrallel
-                    elif self.direction_method == "Perpendicular":
+                    elif self.orientation_type == "Perpendicular":
                         check_direction = not is_parrallel
 
                     if check_direction:
