@@ -2689,6 +2689,19 @@ def distance_between_triangles(triangle_a, triangle_b) -> float:
     return float(dist_tool.Value())
 
 
+def triangles_bbox_distance(triangle_a, triangle_b) -> float:
+    """A cheap lower bound of the distance between two triangles: the
+    distance between their axis-aligned bounding boxes (0 when the
+    boxes overlap). The exact distance is always greater or equal."""
+    a = np.asarray(triangle_a, dtype=float)
+    b = np.asarray(triangle_b, dtype=float)
+    delta = np.maximum(
+        np.maximum(a.min(axis=0) - b.max(axis=0), b.min(axis=0) - a.max(axis=0)),
+        0.0,
+    )
+    return float(np.linalg.norm(delta))
+
+
 # ==== Door clearance helpers for the ClearanceForDoors rule
 
 def get_local_placement_axes(element) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

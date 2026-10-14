@@ -1104,21 +1104,31 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile.run()
 
     def test_two_objects_face_result_display(self):
-        """Test TwoObjectsFace rule in result display"""
+        """Test TwoObjectsFace rule in result display: the extreme top
+        faces of the tall cabinets must stand at least 0.9 m below the
+        slabs over them (the scenario of the unit test, documented in
+        doc/2ObjectsRules/TwoObjectsFace.md)."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCDOOR")
-        first_select = SelectFacet()
-        first_select.applicability = [first_facet]
+        cabinet_facet = ids.Attribute(
+            name="Name",
+            value=ids.Restriction(options={"pattern": ["M_Tall Cabinet-Single Door.*"]}),
+        )
+        cabinet_select = SelectFacet()
+        cabinet_select.applicability = [cabinet_facet]
 
-        second_facet = ids.Entity(name="IFCWINDOW")
-        second_select = SelectFacet()
-        second_select.applicability = [second_facet]
+        slab_facet = ids.Entity(name="IFCSLAB")
+        slab_select = SelectFacet()
+        slab_select.applicability = [slab_facet]
 
         rule = TwoObjectsFace(
-            first_select, second_select, intersection=True, state="Display_Result"
+            cabinet_select, slab_select,
+            source_face_selection={"orientation": "Top", "extreme_faces": True},
+            target_face_selection={"orientation": "Bottom"},
+            distance=True, min_distance=0.9,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [rule]

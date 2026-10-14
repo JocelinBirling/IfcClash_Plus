@@ -3343,8 +3343,10 @@ class OneObjectFace(RuleCheckOneObject):
     The faces of group A and group B are selected with two
     FaceSelection dictionaries (the schema of the FaceCheck family),
     every face of A is paired with every face of B, and each pair must
-    pass all the enabled checks: distance (min_distance/max_distance,
-    adjacent faces skipped on demand), intersection (crossing deeper
+    pass all the enabled checks: distance (a pair closer than
+    min_distance fails; max_distance is a search radius, a pair
+    farther apart is not checked; adjacent faces skipped on demand),
+    intersection (crossing deeper
     than a tolerance)
     and orientation (angle between the normals). One clash is raised per
     pair per failed check. In the display, the faces of group A are
@@ -3469,15 +3471,22 @@ class OneObjectFace(RuleCheckOneObject):
         failures = []
 
         if self.distance:
-            adjacent = clash_utils.triangles_share_geometry(triangle_a, triangle_b)
-            if not (self.skip_adjacent and adjacent):
-                measured = clash_utils.distance_between_triangles(
-                    triangle_a, triangle_b
-                )
-                if self.min_distance is not None and measured < self.min_distance:
-                    failures.append(("distance", measured))
-                elif self.max_distance is not None and measured > self.max_distance:
-                    failures.append(("distance", measured))
+            if (
+                self.max_distance is not None
+                and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
+                > self.max_distance
+            ):
+                # max_distance is a search radius: a pair farther
+                # apart than max_distance is not checked at all.
+                pass
+            else:
+                adjacent = clash_utils.triangles_share_geometry(triangle_a, triangle_b)
+                if not (self.skip_adjacent and adjacent):
+                    measured = clash_utils.distance_between_triangles(
+                        triangle_a, triangle_b
+                    )
+                    if self.min_distance is not None and measured < self.min_distance:
+                        failures.append(("distance", measured))
 
         if self.intersection:
             if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
@@ -3611,11 +3620,15 @@ class TwoObjectsFace(RuleCheckTwoObjects):
     against: the faces selected by Target_Face_Selection when it is
     provided, the whole target objects (all their faces) when it is
     omitted. Every source face is paired with every target face, and
-    each pair must pass all the enabled checks: distance
-    (min_distance/max_distance), intersection (crossing deeper than a
+    each pair must pass all the enabled checks: distance (a pair closer
+    than min_distance fails; max_distance is a search radius, a pair
+    farther apart is not checked), intersection (crossing deeper than a
     tolerance) and orientation (angle between the normals). One clash is
     raised per pair per failed check. See
-    doc/2ObjectsRules/TwoObjectsFace.md.
+    doc/2ObjectsRules/TwoObjectsFace.md. In the display, the selected
+    source faces are blue and the selected target faces orange, as in
+    OneObjectFace; the other faces of the objects are not registered,
+    the objects keep their own display color.
 
     Unlike OneObjectFace there is no skip_adjacent: two faces of two
     different objects never share a mesh vertex, and two objects that
@@ -3738,21 +3751,26 @@ class TwoObjectsFace(RuleCheckTwoObjects):
 
         if self.distance:
             if (
-                self.max_distance is None
-                and self.min_distance is not None
-                and self._triangle_bbox_distance(triangle_a, triangle_b)
+                self.max_distance is not None
+                and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
+                > self.max_distance
+            ):
+                # max_distance is a search radius: a pair farther
+                # apart than max_distance is not checked at all.
+                pass
+            elif (
+                self.min_distance is not None
+                and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
                 >= self.min_distance
             ):
-                # The bounding boxes are already far enough apart: the
-                # exact distance cannot be below the bound.
+                # The bounding boxes are already far enough apart:
+                # the exact distance cannot be below the bound.
                 pass
             else:
                 measured = clash_utils.distance_between_triangles(
                     triangle_a, triangle_b
                 )
                 if self.min_distance is not None and measured < self.min_distance:
-                    failures.append(("distance", measured))
-                elif self.max_distance is not None and measured > self.max_distance:
                     failures.append(("distance", measured))
 
         if self.intersection:
@@ -3771,10 +3789,13 @@ class TwoObjectsFace(RuleCheckTwoObjects):
 
         return failures
 
-    def _collect_faces(self, select, selection):
+    def _collect_faces(self, select, selection, color):
         """The selected faces of each element of a selection, in world
         coordinates, as (entity, triangles) pairs. An empty selection
-        selects all the faces of the element."""
+        selects all the faces of the element. Every selected face is
+        kept in the display registry with the given color, as in
+        OneObjectFace: the other faces of the object are not
+        registered, the object keeps its own display color."""
         element_faces = []
         for ifc_file in select.dict_elements.keys():
             included = select.dict_elements[ifc_file]
@@ -3805,6 +3826,18 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                     )
                     if len(triangles) > 0:
                         element_faces.append((entity, triangles))
+                        # The selected faces, kept in the display
+                        # registry, in the color of their group (blue
+                        # for the source, orange for the target, as in
+                        # OneObjectFace).
+                        for triangle in triangles:
+                            self.register_display_item(
+                                "face",
+                                ("face", [tuple(vertex) for vertex in triangle]),
+                                color,
+                                0.0,
+                                element=entity,
+                            )
 
                 if not iterator.next():
                     break
@@ -3812,14 +3845,15 @@ class TwoObjectsFace(RuleCheckTwoObjects):
         return element_faces
 
     def run(self):
+        self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
 
         source_elements = self._collect_faces(
-            self.select_source, self.source_face_selection
+            self.select_source, self.source_face_selection, (0, 0, 1)
         )
         target_elements = self._collect_faces(
-            self.select_target, self.target_face_selection
+            self.select_target, self.target_face_selection, (1, 0.45, 0)
         )
 
         for source_entity, source_triangles in source_elements:
@@ -3867,19 +3901,6 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                     result.source_faces = [triangle_a]
                     result.target_faces = [triangle_b]
                     self.result.append(result)
-
-
-    def _triangle_bbox_distance(triangle_a, triangle_b) -> float:
-        """A cheap lower bound of the distance between two triangles: the
-        distance between their axis-aligned bounding boxes (0 when the
-        boxes overlap)."""
-        a = np.asarray(triangle_a, dtype=float)
-        b = np.asarray(triangle_b, dtype=float)
-        delta = np.maximum(
-            np.maximum(a.min(axis=0) - b.max(axis=0), b.min(axis=0) - a.max(axis=0)),
-            0.0,
-        )
-        return float(np.linalg.norm(delta))
 
 
 class ClearanceForDoors(RuleCheckTwoObjects):
