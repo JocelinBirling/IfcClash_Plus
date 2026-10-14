@@ -46,5 +46,5 @@ Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, 
 
 21. Le résultat d'une MustRule doit produire un Result et non un group_result. In fine, après la MustRule le résultat est atomique. On ne peut pas retirer un "ancien" clash du group_result sans lui faire perdre tout son sens. Le group_result devient donc le result de la must_rule.
 
-
+22. Revoir les paramètres à renseigner dans CustomOBB. Revoir aussi la fonction et l'enchainement des modifications de l'OBB.
 

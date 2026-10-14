@@ -697,11 +697,11 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCSLAB")
+        first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        rule = TopOrBottomSurface(first_select, 5, 10, "Top", state="Display_Result")
+        rule = TopOrBottomSurface(first_select, 1, 5, "Top", state="Display_Result")
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -742,11 +742,11 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        first_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        rule = ObbHigh(first_select, 2, 3, state="Display_Result")
+        rule = ObbHigh(first_select, 2, 4, state="Display_Result")
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -757,11 +757,11 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        first_facet = ids.Entity(name="IFCFURNISHINGELEMENT")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        rule = ObbLength(first_select, 2, 3, "wide", state="Display_Result")
+        rule = ObbLength(first_select, 1.5, 3, "wide", state="Display_Result")
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -807,7 +807,18 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile.run()
 
     def test_one_object_face_result_display(self):
-        """Test OneObjectFace rule in result display"""
+        """Test OneObjectFace rule in result display.
+
+        Business rule: two faces of the object oriented the same way
+        (parallel normals, same sense) must not exceed 0.1 m2 each. The
+        face selections keep only the faces bigger than 0.1 m2, the
+        orientation check flags the same-oriented pairs.
+
+        The orientation check flags the pairs DEVIATING from the target
+        angle: flagging the same-oriented pairs (measured angle close
+        to 0 deg) is expressed as a deviation of more than 179 deg
+        from the 180 deg target.
+        """
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -816,7 +827,14 @@ class Test_Result_Display(unittest.TestCase):
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
-        rule = OneObjectFace(first_select, intersection=True, state="Display_Result")
+        rule = OneObjectFace(
+            first_select,
+            face_a_selection={"min_surface": 0.1,"orientation":"Top"},
+            face_b_selection={"min_surface": 0.1,"orientation":"Bottom"},
+            #orientation=True,angle=180.0,angle_tolerance=10,
+            distance=True,min_distance=0.2,max_distance=2.0,
+            state="Display_Result",
+        )
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -904,7 +922,7 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCWALLSTANDARDCASE")
+        first_facet = ids.Entity(name="IFCSTAIRFLIGHT")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
@@ -912,7 +930,7 @@ class Test_Result_Display(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        rule = Clearance(first_select, second_select, 0.5, state="Display_Result")
+        rule = Clearance(first_select, second_select, 2.0, state="Display_Result")
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
@@ -1016,7 +1034,7 @@ class Test_Result_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
 
-        first_facet = ids.Entity(name="IfcWallStandardCase")
+        first_facet = ids.Entity(name="IFCDOOR")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 
@@ -1024,7 +1042,7 @@ class Test_Result_Display(unittest.TestCase):
         second_select = SelectFacet()
         second_select.applicability = [second_facet]
 
-        list_of_modifications = ["detach_top_by_extrude:10%", "NEW_OBB", "detach_bottom_by_extrude:10%"]
+        list_of_modifications = ["detach_top_by_extrude:20%","NEW_OBB", "detach_bottom_by_extrude:50%"]
 
         rule = OBB_Custom(first_select, second_select, list_of_modifications, state="Display_Result")
 

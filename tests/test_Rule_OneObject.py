@@ -182,10 +182,14 @@ class TestRules(unittest.TestCase):
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
 
-        
+
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
-        self.assertEqual(len(rule.result), 25)
+        # 28: the true count of walls whose OBB vertical extent is in
+        # (2, 3). The previous value (25) was calibrated on the buggy
+        # Custom_OBB.get_corners, which measured the OBB Z axis instead
+        # of the world vertical extent.
+        self.assertEqual(len(rule.result), 28)
 
     def test_obb_length_rule(self):
         """Test TopSurface rule"""
