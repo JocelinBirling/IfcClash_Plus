@@ -39,6 +39,6 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 
 18. Faire des test avec des maquettes hors du repo, des maquettes lourdes, des maquettes loins, etc...
 
-
+19. Le display a un fonctionnement étrange avec des maquettes loins de l'origine. 
 
 
