@@ -1506,12 +1506,17 @@ ALIGNMENT_PARALLEL_COSINE = cos(radians(15))
 # An axis is parallel to a fitted plane when it makes less than 15 degrees
 # with it: the absolute cosine with the plane normal stays under this.
 ALIGNMENT_PLANE_COSINE = cos(radians(75))
-# The fitted plane of a Plane alignment must stay close to the horizontal:
-# the alignment of horizontal objects is about levels (floors, ramps,
-# stair flights), and a steep plane only threads objects of different
-# levels. The plane makes at most 40 degrees with the horizontal, so the
-# absolute Z of its normal stays above this cosine.
-ALIGNMENT_LEVEL_COSINE = cos(radians(40))
+# The fitted plane of a Plane alignment is a LEVEL: the alignment of
+# horizontal objects is about levels (floors, landings), and an
+# inclined plane only threads objects of different construction
+# heights — parallel slabs are always coplanar, whatever the
+# tolerance, so only the tilt of their common plane separates a
+# level alignment from a spurious bridge. The plane makes at most 1
+# degree with the horizontal (a small fuzz for the modelling noise of
+# real levels), so the absolute Z of its normal stays above this
+# cosine. A genuinely inclined object (a ramp) is not a level
+# alignment.
+ALIGNMENT_LEVEL_COSINE = cos(radians(1))
 # Two plan projections closer than this are coincident (stacked objects).
 ALIGNMENT_COINCIDENCE = 1e-9
 
@@ -1712,13 +1717,16 @@ def coplanar_alignment_groups(
       within the tolerance of the plane and whose axis is parallel to
       the plane.
 
-    The fitted plane is free, but close to the horizontal (at most 40
-    degrees from it): a horizontal set of slabs aligns in its floor
-    plane, a ramp in its inclined plane, but a steep plane threads
-    objects of different levels, whatever the tolerance — the alignment
-    of horizontal objects is about levels. A stack of objects on the
-    same plan line across the levels is the business of the Vertical,
-    plan projection, alignment.
+    The fitted plane is free, but is a level (at most 1 degree from
+    the horizontal): a horizontal set of slabs aligns in its floor
+    plane, but an inclined plane threads objects of different
+    construction heights, whatever the tolerance — two parallel
+    segments are always coplanar, so only the tilt of their common
+    plane separates a level alignment from a spurious bridge. The
+    alignment of horizontal objects is about levels; a genuinely
+    inclined object (a ramp) is not a level alignment. A stack of
+    objects on the same plan line across the levels is the business
+    of the Vertical, plan projection, alignment.
 
     Returns the groups as sorted tuples of indices, without duplicates.
     """

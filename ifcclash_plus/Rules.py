@@ -128,6 +128,11 @@ class TopOrBottomSurface(RuleCheckOneObject):
         self.surface_min: float = surface_min
         self.top_or_bot_method: TOP_OR_BOT = top_or_bot
         self.geom_settings = ifcopenshell.geom.settings()
+        # The extreme faces are registered in the display registry:
+        # they must be in world coordinates, like the displayed
+        # objects, otherwise the surface is offset by the element
+        # placement.
+        self.geom_settings.set(self.geom_settings.USE_WORLD_COORDS, True)
 
     def run(self):
         self.display_items.clear()
@@ -159,9 +164,15 @@ class TopOrBottomSurface(RuleCheckOneObject):
                     area = result["total_area"]
 
                     # The extreme faces, kept in the display registry.
+                    # get_extreme_faces_with_area returns vertex indices,
+                    # not displayable shapes: they are converted to the
+                    # lightweight corner triangle, displayable by
+                    # _item_shape.
+                    vertices = get_vertices(geom)
                     for face in result["extrem_faces"]:
+                        corners = tuple(vertices[face])
                         self.register_display_item(
-                            "face", face, (0.5,0,1), 0.2, element=entity
+                            "face", ("face", corners), (0.5,0,1), 0.2, element=entity
                         )
 
                     if self.surface_min < area < self.surface_max:
@@ -2057,8 +2068,10 @@ class OBB_Custom(RuleCheckTwoObjects):
 class Alignement(RuleCheckOneObject):
     """Check that the objects of a set are aligned.
 
-    The alignment is tested on the main axis of the OBB of each object,
-    not on points. The rule searches the alignment groups of the set:
+    The alignment is tested on the length axis of the OBB of each object
+    (the largest non-vertical axis: the object is taken along its
+    length, its plan projection is the largest possible), not on
+    points. The rule searches the alignment groups of the set:
     each group gathers the objects lying on one common fitted line (or
     plane), an object being allowed to belong to several groups. A group
     with at least Min_Group members is a valid alignment, and an object
@@ -2071,6 +2084,11 @@ class Alignement(RuleCheckOneObject):
     # An axis within 45 degrees of the global Z counts as vertical when
     # the orientation is auto-detected.
     VERTICAL_COSINE = math.cos(math.radians(45))
+
+    # A footprint is directional when its length reaches this multiple
+    # of its width. A compact footprint (a column) carries no plan
+    # direction: it projects as a point.
+    FOOTPRINT_ELONGATION = 2.0
 
     def __init__(
         self,
@@ -2135,11 +2153,19 @@ class Alignement(RuleCheckOneObject):
         self.end_rule_action()
 
     def _collect_axis_data(self):
-        """The main axis of the OBB of each selected object.
+        """The length axis of the OBB of each selected object.
 
-        The main axis is the OBB axis with the largest half size. The axis
-        segment (center +/- main direction * main half size) carries the
-        geometric data of the alignment.
+        The object is taken along its length: the main axis is the
+        largest horizontal OBB axis when the footprint is elongated, so
+        the plan projection of the object is the largest possible (its
+        length segment, never a point). A compact footprint (a column)
+        carries no plan direction: the object keeps its largest axis
+        and projects as a point. The largest axis whatever its
+        orientation is kept for the orientation vote (a tall object
+        still votes vertical), and the world Z half extent lets the
+        displayed planes span the full height of their objects. The
+        axis segment (center +/- length direction * length half size)
+        carries the geometric data of the alignment.
         """
         objects = []
         for ifc_file in self.select_source.dict_elements.keys():
@@ -2163,26 +2189,61 @@ class Alignement(RuleCheckOneObject):
                 obb = create_obb_from_TopoDs_Shape(shape.geometry)
                 center = obb.Center()
                 directions = [
-                    obb.XDirection(),
-                    obb.YDirection(),
-                    obb.ZDirection(),
+                    np.array(
+                        [
+                            direction.X(),
+                            direction.Y(),
+                            direction.Z(),
+                        ]
+                    )
+                    for direction in (
+                        obb.XDirection(),
+                        obb.YDirection(),
+                        obb.ZDirection(),
+                    )
                 ]
                 half_sizes = [obb.XHSize(), obb.YHSize(), obb.ZHSize()]
 
-                main_index = max(range(3), key=lambda i: half_sizes[i])
-                main_direction = directions[main_index]
+                # The object is taken along its length: the largest
+                # horizontal axis, when the footprint is elongated (a
+                # wall: its plan projection is the largest possible
+                # and directional). A compact footprint (a column)
+                # carries no plan direction: the object keeps its
+                # largest axis and projects as a point in the plan.
+                horizontal = sorted(
+                    (
+                        index
+                        for index in range(3)
+                        if abs(directions[index][2]) < self.VERTICAL_COSINE
+                    ),
+                    key=lambda i: half_sizes[i],
+                    reverse=True,
+                )
+                largest_index = max(range(3), key=lambda i: half_sizes[i])
+                if (
+                    len(horizontal) >= 2
+                    and half_sizes[horizontal[0]]
+                    >= self.FOOTPRINT_ELONGATION * half_sizes[horizontal[1]]
+                ):
+                    main_index = horizontal[0]
+                else:
+                    main_index = largest_index
+
+                # The world Z half extent of the OBB (the support of
+                # the box on the vertical axis).
+                half_height = sum(
+                    abs(directions[index][2]) * half_sizes[index]
+                    for index in range(3)
+                )
+
                 objects.append(
                     {
                         "entity": entity,
                         "center": np.array([center.X(), center.Y(), center.Z()]),
-                        "main_axis": np.array(
-                            [
-                                main_direction.X(),
-                                main_direction.Y(),
-                                main_direction.Z(),
-                            ]
-                        ),
+                        "main_axis": directions[main_index],
                         "half_main": half_sizes[main_index],
+                        "largest_axis": directions[largest_index],
+                        "half_height": half_height,
                     }
                 )
 
@@ -2194,13 +2255,14 @@ class Alignement(RuleCheckOneObject):
     def _detect_orientation(self, objects):
         """Dominant orientation of the set, used when axis is None.
 
-        An object votes vertical when its main axis is within 45 degrees
-        of the global Z. A tie goes to Vertical.
+        An object votes vertical when its largest OBB axis is within 45
+        degrees of the global Z (the main axis is the length axis and is
+        never vertical). A tie goes to Vertical.
         """
         vertical_votes = sum(
             1
             for one_object in objects
-            if abs(one_object["main_axis"][2]) >= self.VERTICAL_COSINE
+            if abs(one_object["largest_axis"][2]) >= self.VERTICAL_COSINE
         )
         if vertical_votes >= len(objects) - vertical_votes:
             return "Vertical"
@@ -2303,9 +2365,10 @@ class Alignement(RuleCheckOneObject):
         built on the plan projections of the objects, the main axis of
         an object being projected to a point when it stands vertical.
         Horizontal with a Plane fit: the groups are the sets of objects
-        lying in one common free plane, close to the horizontal (at
-        most 40 degrees from it — floor planes, ramps; the alignment
-        of horizontal objects is about levels). Horizontal with a Line
+        lying in one common free plane, a level (at most 1 degree
+        from the horizontal — floor planes, landings; the alignment
+        of horizontal objects is about levels, an inclined ramp is
+        not a level alignment). Horizontal with a Line
         fit: the groups are built on the 3D axis segments.
         """
         if not objects:
@@ -2352,18 +2415,44 @@ class Alignement(RuleCheckOneObject):
     def _fit_group_element(self, objects, indices):
         """The fitted element of one alignment group.
 
-        Returns (element, position, direction): the least-squares line
-        on the projected centers for the Vertical orientation, the
-        least-squares plane on the axis segments for a Plane fit (the
-        least-squares line when the segments are collinear within the
-        tolerance — the alignment is then a line), the least-squares
-        line on the axis segments for a Line fit.
+        Returns (element, position, direction): for the Vertical
+        orientation, the line along the common axis of the member walls
+        through the centroid of their projected centers (the
+        least-squares line on the centers when no member carries an
+        axis: columns), the least-squares plane on the axis segments
+        for a Plane fit (the least-squares line when the segments are
+        collinear within the tolerance — the alignment is then a line),
+        the least-squares line on the axis segments for a Line fit.
         """
         segments = self._axis_segments(objects)
 
         if self._orientation == "Vertical":
             points = [objects[index]["center"][:2] for index in indices]
-            position, direction = clash_utils.least_squares_line_2d(points)
+            # The group members are parallel walls: the fitted line runs
+            # along their common axis direction, not along the spread
+            # of their centers. Stacked walls (one facade piece per
+            # storey) have coincident plan projections: a PCA on the
+            # centers would return a meaningless numerical direction.
+            # The PCA stays for groups of point projections only
+            # (columns: no member carries an axis).
+            axes = [
+                objects[index]["main_axis"][:2]
+                for index in indices
+                if abs(objects[index]["main_axis"][2]) < self.VERTICAL_COSINE
+            ]
+            if axes:
+                reference = np.asarray(axes[0], dtype=float)
+                aligned = [
+                    np.asarray(axis, dtype=float)
+                    if float(np.asarray(axis, dtype=float) @ reference) >= 0
+                    else -np.asarray(axis, dtype=float)
+                    for axis in axes
+                ]
+                direction = np.mean(aligned, axis=0)
+                direction = direction / np.linalg.norm(direction)
+                position = np.mean(np.asarray(points, dtype=float), axis=0)
+            else:
+                position, direction = clash_utils.least_squares_line_2d(points)
             return "Line", position, direction
 
         endpoints = [endpoint for index in indices for endpoint in segments[index]]
@@ -2547,12 +2636,22 @@ class Alignement(RuleCheckOneObject):
                     )
                 )
             elif self._orientation == "Vertical":
-                # The fitted plan line, as its vertical extrusion.
+                # The fitted plan line, as its vertical extrusion. The
+                # plane is as large as possible: it spans the length
+                # segments of its members along the line, and their
+                # full height on the vertical axis.
                 ts = [
                     float((endpoint[:2] - position) @ direction)
                     for endpoint in endpoints
                 ]
-                zs = [float(endpoint[2]) for endpoint in endpoints]
+                zs = []
+                for one_object in zone_objects:
+                    zs.append(
+                        float(one_object["center"][2] - one_object["half_height"])
+                    )
+                    zs.append(
+                        float(one_object["center"][2] + one_object["half_height"])
+                    )
                 min_t, max_t = span(ts)
                 min_z, max_z = span(zs)
 

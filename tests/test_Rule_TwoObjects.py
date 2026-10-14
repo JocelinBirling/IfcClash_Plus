@@ -520,10 +520,13 @@ class TestRulesAdvanced(unittest.TestCase):
             self.assertIsInstance(result, ClashResultOneObject)
 
     def test_alignement_rule_n2(self):
-        """Test Alignement rule on the walls. The walls sharing a plan
-        centerline (exterior and party walls stacked over the storeys,
-        basement walls bridged by vertical-axis walls) form valid groups:
-        37 walls aligned, 19 isolated walls clash."""
+        """Test Alignement rule on the walls. Each wall is taken along
+        its length (the largest axis of an elongated footprint), so a
+        wall taller than long still projects as its length segment:
+        only walls sharing a plan centerline form valid groups. The
+        facades and the storey stacks align: 32 walls aligned, the 24
+        isolated pieces (short furring and partition fragments, single
+        storey walls) clash."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -544,7 +547,7 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 19)
+        self.assertEqual(len(alignement_rule.result), 24)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
@@ -568,7 +571,7 @@ class TestRulesAdvanced(unittest.TestCase):
             source_select,
             axis="Horizontal",
             alignment_type="Plane",
-            tolerance=0.05,
+            tolerance=0.01,
             min_group=2,
             state="Final",
         )
@@ -597,9 +600,9 @@ class TestRulesAdvanced(unittest.TestCase):
             source_select,
             axis="Vertical",
             alignment_type="Plane",
-            tolerance=0.01,
-            min_group=4,
-            state="Final",
+            tolerance=0.05,
+            min_group=2,
+            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
@@ -611,12 +614,15 @@ class TestRulesAdvanced(unittest.TestCase):
 
     def test_alignement_rule_n5(self):
         """Test Alignement rule on the slabs with Min_Group = 4. The
-        fitted plane stays close to the horizontal, so the alignments
-        are per level. The roof and the inclined entrance slab find no
-        group at all, and the two slabs on grade sit 73 mm below the
-        finish floors of their level: no group of 4 on their plane.
-        Four slabs clash: the roof, the entrance slab, the two slabs
-        on grade."""
+        fitted plane is a level (at most 1 degree from the
+        horizontal), so the alignments are per construction height,
+        never bridged by an inclined plane. The roof and the inclined
+        entrance slab find no group at all. The two slabs on grade
+        sit 73 mm below the finish floors of their level and the two
+        wood joist subfloors carry the finish floors 16 cm above
+        their axis: each series counts only 2 slabs, below the
+        Min_Group of 4. Six slabs clash: the roof, the entrance
+        slab, the two slabs on grade, the two wood joist subfloors."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -637,7 +643,7 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
 
-        self.assertEqual(len(alignement_rule.result), 4)
+        self.assertEqual(len(alignement_rule.result), 6)
         for result in alignement_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 

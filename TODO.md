@@ -41,4 +41,8 @@ Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bo
 
 19. Le display a un fonctionnement étrange avec des maquettes loins de l'origine. 
 
+20. Vérifier la mise en place de la règle Alignement, surtout la création des plans. 
+Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, ou bien en coupe. C'est un peu bizarre de mélanger les deux vérifications en même endroit.
+
+
 
