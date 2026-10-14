@@ -29,6 +29,7 @@ ifcclash_plus/
 └── exemple.py            # Example scripts
 
 tests/
+├── test_Rule_display.py  # MANUAL ONLY: opens a GUI window (see Running the tests)
 ├── test_Rule_OneObject.py
 ├── test_Rule_TwoObjects.py
 ├── test_RuleFile.py
@@ -56,19 +57,23 @@ RuleFile          # Root container for rules and IFC files
 
 RuleFolder        # Organize rules into folders
 ├── id
-├── activation_rule
-├── activation_case  # ALLTRUE, ANYTRUE, etc.
+├── activation_rule  # SelectFacet (run if non-empty) or BooleanRule (rules run first, then evaluate)
+├── activation_case  # Declared but NOT used by the code yet
 └── contains: [Rule|Folder]
 
 Select            # Base selection class
 ├── SelectFacet   # IDS-based element selection
 │   └── applicability: [Facet]
 └── SelectRule    # Selection based on rule results
+                    # (element_to_pass / element_state_to_pass configure it)
 
 RuleCheck         # Abstract base for all rules
 ├── RuleCheckOneObject    # Single element validation
 ├── RuleCheckTwoObjects   # Pairwise element validation
-└── RuleCheckComplex      # Multi-set validation
+└── RuleCheckComplex      # Multi-set validation — currently BROKEN, do not
+                          # inherit from it (see Rapport.md §3); real complex
+                          # rules (FreeSpace) inherit RuleCheckOneObject
+                          # plus a context Select
 ```
 
 #### 2. Rule Categories
@@ -77,7 +82,7 @@ RuleCheck         # Abstract base for all rules
 |------|---------|-------|----------|
 | **One Object** | Validate single elements | Geometry/Property checks | Volume, Area, Orientation, TopOrBottomSurface |
 | **Two Objects** | Validate element pairs | Spatial relationships | Clearance, Intersection, Collision, Above, Below, OBB_Above |
-| **Complex** | Multi-set validation | Complex scenarios | FreeSpace, FindPath, EvacuationDistance |
+| **Complex** | Multi-set validation | Complex scenarios | FreeSpace (FindPath and EvacuationDistance are NOT implemented) |
 
 #### 3. Rule Execution Flow
 ```
@@ -86,17 +91,26 @@ RuleFile.run()
   ├─ Update file info to all contains
   └─ Execute each rule/folder
 
-RuleCheck.run(state="Final")
+rule.state = "Final" | "Select" | "Display_Input" | "Display_Result"  # an
+                                                                    # attribute,
+                                                                    # not a parameter
+rule.run()                         # run() takes NO argument
   ├─ select_source.run()     # Get source elements
   ├─ select_target.run()     # Get target elements (if 2-objects)
   ├─ Run rule-specific logic # Generate self.result
-  ├─ manage_result()        # Post-processing
-  │   ├─ run_exception()     # Filter out exceptions
-  │   ├─ run_criticity()     # Auto-classify criticity
-  │   ├─ run_actor()         # Auto-classify actor
-  │   └─ run_grouping() or run_abs_or_rel()
-  └─ Return ClashResult[]
+  └─ end_rule_action()        # Routes according to self.state:
+     ├─ run_exception()       # Filter out exceptions
+     ├─ "Final": manage_result()
+     │   ├─ run_criticity()   # Auto-classify criticity
+     │   ├─ run_actor()       # Auto-classify actor
+     │   └─ run_grouping() or run_abs_or_rel()
+     ├─ "Select": produce_select()
+     └─ "Display_Input" / "Display_Result": display
 ```
+
+Important: the state is an attribute set on the rule (`rule.state`), never an
+argument of `run()`. `SelectRule` sets `rule.state = "Select"` before calling
+`rule.run()`.
 
 ---
 
@@ -110,7 +124,7 @@ RuleCheck.run(state="Final")
 | **Target** | Secondary set being tested against. For 2-object rules. |
 | **Context** | Auxiliary objects (not directly clashed). Used in complex rules. |
 | **Select** | Process of filtering elements using IDS facets or previous rule results |
-| **Grouping** | Organizing results by Entity, Property, Attribute, PartOf, Material, Classification, or Closeness |
+| **Grouping** | Organizing results by Entity, Property, Attribute, PartOf, Material, Classification, or Closeness — only Entity, Property, Attribute and Source/Target are implemented; PartOf, Material, Classification and Closeness are silent stubs |
 | **Exception** | Edge case handling - rules that invalidate other rule results |
 | **Must Rule** | Absolute/Relative checks on grouped results |
 
@@ -153,7 +167,8 @@ Rules can be chained where one rule's output becomes another's input:
 wall_selector = SelectFacet(applicability=[Entity(name="IFCWALL")])
 
 # Rule 2: Find walls with volume issues
-volume_rule = Volume(wall_selector, min=0, max=10)
+# (signature: Volume(source, volume_min, volume_max, state="Final"))
+volume_rule = Volume(wall_selector, 0, 10)
 
 # Rule 3: Select only problematic walls from Rule 2
 problematic_walls = SelectRule()
@@ -181,14 +196,17 @@ import ifcopenshell
 import multiprocessing
 
 class NewRule(RuleCheckOneObject):
-    def __init__(self, source, param1, param2):
-        super().__init__(state,source)
+    def __init__(self, source, param1, param2, state="Final"):
+        super().__init__(state, source)   # state FIRST, then source
         self.type = "NewRule"
         self.param1 = param1
         self.param2 = param2
         self.geom_settings = ifcopenshell.geom.settings()
+        # Note: without USE_WORLD_COORDS or USE_PYTHON_OPENCASCADE the
+        # shapes are in LOCAL coordinates. Setting USE_PYTHON_OPENCASCADE
+        # also forces world coordinates (see Common Operations).
 
-    def run(self):
+    def run(self):                        # run() takes NO argument
         self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
 
@@ -205,19 +223,20 @@ class NewRule(RuleCheckOneObject):
                     shape = iterator.get()
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.id)
-                    
+
                     # Your rule logic here
                     if condition_met:
                         result = ClashResultOneObject(source=entity, state=True)
                         self.result.append(result)
-                    
+
                     if not iterator.next():
                         break
 
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+        if self.state == "Display_Input":
+            return self.end_rule_action()
+        self.end_rule_action()            # routes on self.state, do NOT call
+                                          # manage_result()/produce_select()
+                                          # directly
 ```
 
 **Template for Two-Objects Rule**:
@@ -226,8 +245,8 @@ class NewRule(RuleCheckOneObject):
 from RuleClass import RuleCheckTwoObjects, ClashResultTwoObjects
 
 class NewTwoObjectRule(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance=0.1):
-        super().__init__(state,source, target)
+    def __init__(self, source, target, tolerance=0.1, state="Final"):
+        super().__init__(state, source, target)
         self.type = "NewTwoObjectRule"
         self.tolerance = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
@@ -237,58 +256,79 @@ class NewTwoObjectRule(RuleCheckTwoObjects):
         self.select_source.run()
         self.select_target.run()
 
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
+
         self.add_to_tree(self.select_source, "BVH")
         self.add_to_tree(self.select_target, "BVH")
 
         # Your clash logic here
         # Use self.tree.clash_intersection_many(), clash_clearance_many(), etc.
-        
+
         temp_result = self.tree.clash_intersection_many(
             self.select_source.list_of_elements,
             self.select_target.list_of_elements,
             tolerance=self.tolerance,
         )
 
-        # Process results
+        self.result = []
         for result in temp_result:
-            # Extract source/target entities
-            # Create ClashResultTwoObjects
-            pass
+            a_file = ifcopenshell.file.from_pointer(result.a.file_pointer())
+            a_object = a_file.by_id(result.a.id_)
+            b_file = ifcopenshell.file.from_pointer(result.b.file_pointer())
+            b_object = b_file.by_id(result.b.id_)
 
-        if self.state == "Final":
-            self.manage_result()
-        else:
-            self.produce_select()
+            # a/b are not ordered: restore source/target.
+            # NOTE: membership tests belong on a SET, not a list (see
+            # Rapport.md T5 about the overlap ambiguity).
+            if a_object in set(self.select_source.list_of_elements):
+                source_object, target_object = a_object, b_object
+            else:
+                source_object, target_object = b_object, a_object
+
+            self.result.append(
+                ClashResultTwoObjects(
+                    source=source_object, target=target_object, state=True
+                )
+            )
+
+        if self.state == "Display_Input":
+            return self.end_rule_action()
+        self.end_rule_action()
 ```
 
 ### Key Patterns
 
 1. **Always inherit from RuleCheckOneObject or RuleCheckTwoObjects**
-2. **Call super().__init__(source[, target]) first**
+2. **Call `super().__init__(state, source[, target])` first** (state first, then the selections)
 3. **Set self.type to a unique string identifier**
-4. **Set self.geom_settings with appropriate settings**
-5. **Implement run(state="Final") method**
-6. **Populate self.result with ClashResult objects**
-7. **Call self.manage_result() for final state**
-8. **Call self.produce_select() for Select state**
+4. **Set self.geom_settings with appropriate settings** (see the coordinate-system note in Common Operations)
+5. **Implement `run(self)` with NO argument** — the state lives in `self.state`
+6. **Populate self.result with ClashResult objects** (append to it; do not assume it is empty on re-run, see Rapport.md T2)
+7. **Exit through `self.end_rule_action()`** — it routes on `self.state` to manage_result / produce_select / display; never call `manage_result()` or `produce_select()` yourself
+8. **Prefer a spatial prefilter** (OBB `IsOut` or the BVH tree) before any per-pair `BRepExtrema` call — five rules still lack one (see Rapport.md §1.1)
 9. **Add to __init__.py exports**
 
 ### Reusing Exceptions
 
+`select_exception` accepts a `BooleanLeaf` (from booleanrule) whose rule is
+evaluated per result pair, or one of the built-in relation methods — it does
+NOT accept a list:
+
 ```python
-# Main rule
+# Built-in relation exception: two objects of the same IfcSystem may clash
 door_wall_intersection = Intersection(wall_selector, door_selector)
+door_wall_intersection.select_exception = "Same_IfcSystem"
 
-# Exception: Ignore if door and wall are in same IfcSystem
-exception_rule = Intersection(
-    SelectRule(door_wall_intersection),  # Source from main rule
-    SelectRule(door_wall_intersection),  # Target from main rule
-)
-# Configure exception to filter same-system pairs
-
-# Apply exception
-door_wall_intersection.select_exception = [SelectRule(exception_rule)]
+# Custom exception: a BooleanLeaf wrapping a rule evaluated on each pair
+from booleanrule import BooleanLeaf  # see RuleClass.run_exception
+# (the leaf's rule must be able to run on the pair of elements of a result)
 ```
+
+Only `"Same_IfcSystem"` is implemented; `"Same_Building"`, `"Same_Storey"`
+and `"Same_Space"` are stubs that currently raise a TypeError (see
+Rapport.md §3, run_exception). Exceptions invalidate results in place
+(`status = False`) without removing them from `self.result`.
 
 ---
 
@@ -327,12 +367,29 @@ python -c "import OCC, ifcopenshell, ifctester; print('environment OK')"
 
 ### Running the tests
 
-Tests must be run from the repository root (the IFC model paths are relative):
+Tests must be run from the repository root (the IFC model paths are relative).
+
+> **WARNING — never run the whole test suite blindly.** Run ONE test file
+> (or one single test) at a time, and NEVER run tests whose rule uses
+> `state="Display_Input"` or `state="Display_Result"` (the whole of
+> `tests/test_Rule_display.py`): they open an OCC GUI window that ONLY
+> the human developer can close. An automated run of a display test
+> blocks the session until the window is closed by hand — it hangs and
+> wastes time. Display tests exist for manual, visual verification only.
 
 ```bash
-python -m pytest tests/            # all tests
+# One test file at a time, display tests excluded
 python -m pytest tests/test_RuleFile.py -v
+python -m pytest tests/test_Rule_OneObject.py
+
+# One single test
+python -m pytest "tests/test_RuleFile.py::TestRuleFileWithSelectRule" -v
 python -m unittest tests.test_RuleFile.TestRuleFileWithSelectRule -v
+
+# NEVER (opens GUI windows that only the developer can close):
+#   python -m pytest tests/
+#   python -m pytest tests/test_Rule_display.py
+#   any test constructing a rule with state="Display_Input"/"Display_Result"
 ```
 
 ### Pitfalls
@@ -365,8 +422,9 @@ import unittest
 import sys
 sys.path.insert(0, './ifcclash_plus')
 
+import ifcopenshell
 from Rules import YourNewRule
-from RuleClass import SelectFacet, RuleFile
+from RuleClass import SelectFacet, RuleFile, ClashResultOneObject
 from ifctester import ids
 
 class TestYourNewRule(unittest.TestCase):
@@ -379,7 +437,7 @@ class TestYourNewRule(unittest.TestCase):
         rule_file.list_ifc_path = [self.ifc_path]
 
         # Setup selection
-        facet = ids.Entity(name="IFCEENTITY")
+        facet = ids.Entity(name="IFCWALL")
         select = SelectFacet()
         select.applicability = [facet]
 
@@ -397,14 +455,16 @@ class TestYourNewRule(unittest.TestCase):
 
 ### Running Tests
 ```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test
+# One test file at a time — NOT the whole tests/ directory
 python -m pytest tests/test_Rule_OneObject.py
 
-# Verbose output
-python -m pytest -v tests/
+# One single test, verbose
+python -m pytest -v "tests/test_Rule_OneObject.py::TestRules::test_obb_high_rule"
+
+# FORBIDDEN for an agent: the display tests (any rule with
+# state="Display_Input"/"Display_Result", i.e. all of
+# tests/test_Rule_display.py). They open a GUI window that only the
+# human developer can close; an automated run hangs until then.
 ```
 
 ---
@@ -424,6 +484,14 @@ ifc_file = ifcopenshell.open("model.ifc")
 # Get geometry settings
 settings = ifcopenshell.geom.settings()
 settings.set("USE_WORLD_COORDS", True)  # Important for correct positioning
+# COORDINATE SYSTEMS — critical facts (verified against ifcopenshell 0.8):
+# - Default: shapes come in LOCAL coordinates (element placement not applied)
+# - Setting "USE_PYTHON_OPENCASCADE" to True ALSO forces "use-world-coords"
+#   to True (implicit side effect in ifcopenshell.geom.settings.set)
+# - Any rule comparing two objects' shapes (BRepExtrema, OBB.IsOut) MUST
+#   work in world coordinates, or the distances are meaningless
+# - LateralSurface and ProjectedSurface currently lack this setting and
+#   apply a world direction to local geometry (see Rapport.md §2)
 
 # Iterate through elements
 iterator = ifcopenshell.geom.iterator(
@@ -522,59 +590,74 @@ point2 = dist_tool.PointOnShape2()
 |------|------|--------|-----|------|
 | Volume | 1-Object | ✅ | ❌ | ✅ |
 | Area | 1-Object | ✅ | ❌ | ✅ |
-| TopSurface | 1-Object | ✅ | ❌ | ✅ |
-| BottomSurface | 1-Object | ✅ | ❌ | ❌ |
-| LateralSurface | 1-Object | ✅ | ❌ | ❌ |
-| ProjectedSurface | 1-Object | ✅ | ❌ | ❌ |
+| TopOrBottomSurface | 1-Object | ✅ | ❌ | ✅ |
+| LateralSurface | 1-Object | ⚠️ (local coords, see Rapport.md) | ❌ | ❌ |
+| ProjectedSurface | 1-Object | ⚠️ (local coords, see Rapport.md) | ❌ | ❌ |
+| ObbHigh | 1-Object | ⚠️ (OBB axes arbitrarily permuted by OCCT — confirmed, see Rapport.md) | ❌ | ❌ |
+| ObbLength | 1-Object | ⚠️ (Z exclusion assumption, see Rapport.md) | ❌ | ❌ |
 | Orientation | 1-Object | ✅ | ❌ | ✅ |
 | Intersection | 2-Objects | ✅ | ❌ | ✅ |
 | Clearance | 2-Objects | ✅ | ❌ | ✅ |
+| ClearanceAxisToAxis | 2-Objects | ✅ | ✅ | ✅ |
 | Collision | 2-Objects | ✅ | ❌ | ✅ |
-| Above | 2-Objects | ✅ | ❌ | ❌ |
-| Below | 2-Objects | ✅ | ❌ | ❌ |
+| Above | 2-Objects | ⚠️ (contradictory conventions, see Rapport.md §2) | ❌ | ❌ |
+| Below | 2-Objects | ⚠️ (semantics to clarify, see Rapport.md §2) | ❌ | ❌ |
 | Ray_Check | 2-Objects | ⚠️ | ❌ | ❌ |
 | OBB_Above | 2-Objects | ✅ | ❌ | ✅ |
 | OBB_Below | 2-Objects | ✅ | ❌ | ⚠️ |
 | OBB_Front_And_Back | 2-Objects | ⚠️ | ❌ | ❌ |
+| OBB_Custom | 2-Objects | ✅ (API misleading: `tolerance` is a list of modification strings) | ❌ | ❌ |
+| AngleBetween | 2-Objects | ✅ (no spatial prefilter, 180° symmetry unhandled, see Rapport.md) | ❌ | ❌ |
 | Alignement | 1-Object (Complexe) | ✅ | ✅ | ✅ |
 | SurfaceRecover | 2-Objects | ✅ | ✅ | ✅ |
 | DirectView | 2-Objects + context | ✅ | ✅ | ✅ |
-| FaceCheck (moteur FaceSelection) | 2-Objects (famille) | ⚠️ | ✅ | ✅ |
 | OneObjectFace | 1-Object | ✅ | ✅ | ✅ |
 | TwoObjectsFace | 2-Objects (famille FaceCheck) | ✅ | ✅ | ✅ |
 | ClearanceForDoors | 2-Objects | ✅ | ✅ | ✅ |
 | FreeSpace | Complexe (1-Object + context) | ✅ | ✅ | ✅ |
 
+See `Rapport.md` at the repository root for the full per-rule analysis:
+blocking bugs, doubtful logic and the spatial-prefilter inventory (§1.1).
+
 ### Priority Development Areas
 
-1. **Documentation** (HIGH)
+1. **Fix blocking bugs** (HIGH — from Rapport.md §5)
+   - `RuleCheckOneObject.run_actor`: crashes as soon as an actor is set
+   - `RuleCheckComplex`: not instantiable (complex rules must inherit
+     RuleCheckOneObject for now)
+   - `run_exception`: Same_Building/Same_Storey/Same_Space raise TypeError
+   - `Select.create_list_of_element` with an empty SelectFacet
+
+2. **Documentation** (HIGH)
    - Complete doc/Rule.md explanations
    - Add docstrings to all classes/methods
    - Document all rule parameters and edge cases
 
-2. **Testing** (HIGH)
+3. **Testing** (HIGH)
    - Add tests for missing rules
    - Test edge cases (empty selections, single elements, etc.)
    - Test exception handling
    - Test grouping and classification
 
-3. **Rule Completion** (MEDIUM)
+4. **Rule Completion** (MEDIUM)
    - Fix OBB_Front_And_Back
    - Fix Ray_Check
-   - Complete Below rule
+   - Clarify Above/Below semantics (contradictory conventions, see Rapport.md §2)
    - Add ClearanceNextTo, ClearanceAbove, ClearanceBelow
 
-4. **New Features** (MEDIUM)
-   - AngleBetween rule
+5. **New Features** (MEDIUM)
    - FaceCheck member rules (FaceClearance, FaceIntersect, FaceOBB, FaceOrient — family deployed as TwoObjectsFace, member specs pending)
    - EvacuationDistance rule (FindPath not in the deployment list)
 
-5. **Performance** (LOW)
+6. **Performance** (MEDIUM)
+   - Add a spatial prefilter (OBB `IsOut`) to the 5 rules without one:
+     AngleBetween, ClearanceAxisToAxis, Ray_Check, DirectView, TwoObjectsFace
+     (see Rapport.md §1.1 — ClearanceAxisToAxis already holds the OBBs)
    - Optimize OBB generation
    - Implement BVH vs UB tree selection logic
    - Add parallel processing where possible
 
-6. **Visualization** (LOW)
+7. **Visualization** (LOW)
    - Complete display() for all rules
    - Add OBB visualization options
    - Export clash visualization to BCF
@@ -623,7 +706,7 @@ else:
 
 ### Debugging Tips
 
-1. **Visualize elements**: Use OCC.Display.SimpleGui to see what you're working with
+1. **Visualize elements**: Use OCC.Display.SimpleGui to see what you're working with — manual only, never in an automated test run (see Running the tests)
 2. **Check geometry types**: Not all IFC elements have geometry
 3. **Validate IFC files**: Use ifcopenshell file validation
 4. **Test with small files**: Ifc_Model/ has small test files
@@ -651,7 +734,8 @@ logger.debug(f"Element: {entity}, Geometry: {geom}")
 4. **Implement the change**
 5. **Add tests** for new functionality
 6. **Update documentation** in doc/ or docstrings
-7. **Run all tests**: `python -m pytest tests/`
+7. **Run the relevant tests, one file at a time** (never the whole suite,
+   never the display tests — see Running the tests)
 8. **Commit with descriptive message**
 
 ---
@@ -679,7 +763,9 @@ source_select.applicability = [ids.Entity(name="IFCFURNISHINGELEMENT")]
 target_select = SelectFacet()
 target_select.applicability = [ids.Entity(name="IFCSLAB")]
 
-# Create rule: Check if anything is > 0.85m above furniture
+# Create rule: detect a target penetrating the 0.85m band above the source
+# (i.e. an object LESS than 0.85m above the furniture and touching the band,
+# NOT "> 0.85m above" — see Rapport.md §2, OBB_Above)
 rule = OBB_Above(source_select, target_select, tolerance=0.85)
 rule_file.contains = [rule]
 rule_file.run()
