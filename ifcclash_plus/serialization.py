@@ -630,6 +630,78 @@ def _serialize_rule_specific_data(rule: 'RuleCheck') -> Dict[str, Any]:
         data["direction_method"] = rule.direction_method
     elif rule_type == "OBB_Custom":
         data["list_of_modifications"] = rule.list_of_modifications
+    elif rule_type == "Alignement":
+        data["axis"] = rule.axis
+        data["alignment_type"] = rule.alignment_type
+        data["tolerance"] = rule.tolerance
+        data["min_group"] = rule.min_group
+    elif rule_type == "SurfaceRecover":
+        # direction: "Auto" / "Top" / "Bottom" or a 3D vector
+        data["direction"] = (
+            rule.direction
+            if isinstance(rule.direction, str)
+            else list(rule.direction)
+        )
+        data["reference"] = rule.reference
+        data["tolerance"] = rule.tolerance
+        # A covering bound: None or a ("absolute"/"relative", value) pair
+        data["min_covering"] = (
+            list(rule.min_covering) if rule.min_covering is not None else None
+        )
+        data["max_covering"] = (
+            list(rule.max_covering) if rule.max_covering is not None else None
+        )
+    elif rule_type == "DirectView":
+        data["ray_source"] = rule.ray_source
+        data["ray_count"] = rule.ray_count
+        data["threshold"] = rule.threshold  # percentage as a float
+        data["max_distance"] = rule.max_distance
+        if rule.select_context is not None:
+            data["select_context"] = serialize_select(rule.select_context)
+    elif rule_type == "OneObjectFace":
+        data["face_a_selection"] = rule.face_a_selection
+        data["face_b_selection"] = rule.face_b_selection
+        data["distance"] = rule.distance
+        data["min_distance"] = rule.min_distance
+        data["max_distance"] = rule.max_distance
+        data["skip_adjacent"] = rule.skip_adjacent
+        data["intersection"] = rule.intersection
+        data["intersection_tolerance"] = rule.intersection_tolerance
+        data["orientation"] = rule.orientation
+        data["angle"] = rule.angle
+        data["angle_tolerance"] = rule.angle_tolerance
+    elif rule_type == "TwoObjectsFace":
+        data["source_face_selection"] = rule.source_face_selection
+        data["target_face_selection"] = rule.target_face_selection
+        data["distance"] = rule.distance
+        data["min_distance"] = rule.min_distance
+        data["max_distance"] = rule.max_distance
+        data["intersection"] = rule.intersection
+        data["intersection_tolerance"] = rule.intersection_tolerance
+        data["orientation"] = rule.orientation
+        data["angle"] = rule.angle
+        data["angle_tolerance"] = rule.angle_tolerance
+    elif rule_type == "ClearanceForDoors":
+        data["zone_shape"] = rule.zone_shape
+        data["sides"] = rule.sides
+        data["leaves"] = rule.leaves
+        data["width"] = rule.width
+        data["depth"] = rule.depth
+        data["height"] = rule.height
+        data["tolerance"] = rule.tolerance
+    elif rule_type == "FreeSpace":
+        data["diameter"] = rule.diameter
+        data["height"] = rule.height
+        if rule.select_context is not None:
+            data["select_context"] = serialize_select(rule.select_context)
+    elif rule_type == "ClearanceAxisToAxis":
+        data["mode"] = rule.mode
+        data["min_distance"] = rule.min_distance
+        data["max_distance"] = rule.max_distance
+        data["tolerance"] = rule.tolerance
+        data["linearity_ratio"] = rule.linearity_ratio
+        data["on_non_linear"] = rule.on_non_linear
+        data["parallel_tolerance"] = rule.parallel_tolerance
 
     return data
 
@@ -720,6 +792,8 @@ def deserialize_rule_check(data: Dict[str, Any], ifc_paths: List[str] = None) ->
         ObbHigh, ObbLength, Orientation, AngleBetween, Intersection,
         Clearance, Collision, Ray_Check, Above, Below,
         OBB_Above, OBB_Below, OBB_Front_And_Back, OBB_Custom,
+        Alignement, SurfaceRecover, DirectView, OneObjectFace,
+        TwoObjectsFace, ClearanceForDoors, FreeSpace, ClearanceAxisToAxis,
     )
 
     rule_type = data["type"]
@@ -821,6 +895,115 @@ def deserialize_rule_check(data: Dict[str, Any], ifc_paths: List[str] = None) ->
         )
     elif rule_type == "OBB_Custom":
         rule = OBB_Custom(source, target, data.get("list_of_modifications", []))
+    elif rule_type == "Alignement":
+        rule = Alignement(
+            source,
+            axis=data.get("axis"),
+            alignment_type=data.get("alignment_type", "Plane"),
+            tolerance=data.get("tolerance"),
+            min_group=data.get("min_group", 3),
+        )
+    elif rule_type == "SurfaceRecover":
+        # direction: "Auto" / "Top" / "Bottom" or a 3D vector (list)
+        direction = data.get("direction", "Auto")
+        if isinstance(direction, list):
+            direction = tuple(direction)
+        rule = SurfaceRecover(
+            source,
+            target,
+            direction=direction,
+            reference=data.get("reference", "Source"),
+            tolerance=data.get("tolerance", 0.001),
+        )
+        # The covering bounds are restored as parsed pairs: the
+        # constructor expects the raw form (a number or a "x%" string),
+        # the serialized form is the parsed ("kind", value) pair.
+        if data.get("min_covering") is not None:
+            rule.min_covering = tuple(data["min_covering"])
+        if data.get("max_covering") is not None:
+            rule.max_covering = tuple(data["max_covering"])
+    elif rule_type == "DirectView":
+        context = None
+        if data.get("select_context") is not None:
+            context = deserialize_select(data["select_context"])
+        # The threshold is a percentage as a float; the constructor
+        # expects a string ending with '%'.
+        threshold = data.get("threshold", 100.0)
+        if isinstance(threshold, (int, float)):
+            threshold = f"{threshold}%"
+        rule = DirectView(
+            source,
+            target,
+            context,
+            ray_source=data.get("ray_source", "Source"),
+            ray_count=data.get("ray_count", 10),
+            threshold=threshold,
+            max_distance=data.get("max_distance"),
+        )
+    elif rule_type == "OneObjectFace":
+        rule = OneObjectFace(
+            source,
+            face_a_selection=data.get("face_a_selection") or None,
+            face_b_selection=data.get("face_b_selection") or None,
+            distance=data.get("distance", False),
+            min_distance=data.get("min_distance"),
+            max_distance=data.get("max_distance"),
+            skip_adjacent=data.get("skip_adjacent", True),
+            intersection=data.get("intersection", False),
+            intersection_tolerance=data.get("intersection_tolerance"),
+            orientation=data.get("orientation", False),
+            angle=data.get("angle"),
+            angle_tolerance=data.get("angle_tolerance"),
+        )
+    elif rule_type == "TwoObjectsFace":
+        rule = TwoObjectsFace(
+            source,
+            target,
+            source_face_selection=data.get("source_face_selection") or None,
+            target_face_selection=data.get("target_face_selection") or None,
+            distance=data.get("distance", False),
+            min_distance=data.get("min_distance"),
+            max_distance=data.get("max_distance"),
+            intersection=data.get("intersection", False),
+            intersection_tolerance=data.get("intersection_tolerance"),
+            orientation=data.get("orientation", False),
+            angle=data.get("angle"),
+            angle_tolerance=data.get("angle_tolerance"),
+        )
+    elif rule_type == "ClearanceForDoors":
+        rule = ClearanceForDoors(
+            source,
+            target,
+            zone_shape=data.get("zone_shape", "Arc"),
+            sides=data.get("sides", "Swing"),
+            leaves=data.get("leaves"),
+            width=data.get("width"),
+            depth=data.get("depth"),
+            height=data.get("height"),
+            tolerance=data.get("tolerance", 0.001),
+        )
+    elif rule_type == "FreeSpace":
+        context = None
+        if data.get("select_context") is not None:
+            context = deserialize_select(data["select_context"])
+        rule = FreeSpace(
+            source,
+            context,
+            diameter=data.get("diameter", 1.5),
+            height=data.get("height"),
+        )
+    elif rule_type == "ClearanceAxisToAxis":
+        rule = ClearanceAxisToAxis(
+            source,
+            target,
+            mode=data.get("mode", "Perpendicular"),
+            min_distance=data.get("min_distance"),
+            max_distance=data.get("max_distance"),
+            tolerance=data.get("tolerance", 0.0),
+            linearity_ratio=data.get("linearity_ratio", 10.0),
+            on_non_linear=data.get("on_non_linear", "Skip"),
+            parallel_tolerance=data.get("parallel_tolerance", 1.0),
+        )
     else:
         raise NotImplementedError(f"Deserialization for {rule_type} not yet implemented")
 
