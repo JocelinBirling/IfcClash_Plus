@@ -2255,17 +2255,48 @@ def parallel_line_offset(
     return float(np.linalg.norm(delta - np.dot(delta, common) * common))
 
 
-def segment_segment_distance(
+def parallel_line_offset_closest(
+    center_1: np.ndarray,
+    direction_1: np.ndarray,
+    center_2: np.ndarray,
+    direction_2: np.ndarray,
+) -> tuple:
+    """The perpendicular offset between two quasi-parallel support
+    lines, and one pair of points realizing it (one point per line).
+
+    Returns (offset, point_1, point_2). The points are a representative
+    pair of the offset, not the closest points of the (infinite)
+    support lines.
+    """
+    common = direction_1 + direction_2
+    norm = float(np.linalg.norm(common))
+    if norm < 1e-12:
+        # Anti-parallel axes: same support direction, opposite signs.
+        common = direction_1
+    else:
+        common = common / norm
+
+    delta = center_2 - center_1
+    point_1 = center_1 + common * float(np.dot(delta, common))
+    point_2 = center_2
+    offset = float(np.linalg.norm(delta - np.dot(delta, common) * common))
+    return offset, point_1, point_2
+
+
+def segment_segment_closest(
     point_1: np.ndarray,
     end_1: np.ndarray,
     point_2: np.ndarray,
     end_2: np.ndarray,
-) -> float:
-    """The minimum distance between two finite segments (analytic).
+) -> tuple:
+    """The minimum distance between two finite segments (analytic) and
+    the closest point of each segment realizing it.
 
     The closest points are clamped to the segments, so the distance
     covers the lateral misalignment of a connection as well as the
     end-to-end gap of two runs butted end to end.
+
+    Returns (distance, closest_1, closest_2).
     """
     direction_1 = end_1 - point_1
     direction_2 = end_2 - point_2
@@ -2276,7 +2307,9 @@ def segment_segment_distance(
     epsilon = 1e-12
 
     if length_1_sq <= epsilon and length_2_sq <= epsilon:
-        return float(np.linalg.norm(delta))
+        closest_1 = point_1
+        closest_2 = point_2
+        return float(np.linalg.norm(delta)), closest_1, closest_2
 
     if length_1_sq <= epsilon:
         # First segment degenerates to a point.
@@ -2319,10 +2352,43 @@ def segment_segment_distance(
 
     closest_1 = point_1 + direction_1 * parameter_1
     closest_2 = point_2 + direction_2 * parameter_2
-    return float(np.linalg.norm(closest_1 - closest_2))
+    return float(np.linalg.norm(closest_1 - closest_2)), closest_1, closest_2
+
+
+def segment_segment_distance(
+    point_1: np.ndarray,
+    end_1: np.ndarray,
+    point_2: np.ndarray,
+    end_2: np.ndarray,
+) -> float:
+    """The minimum distance between two finite segments (analytic).
+
+    The closest points are clamped to the segments, so the distance
+    covers the lateral misalignment of a connection as well as the
+    end-to-end gap of two runs butted end to end.
+    """
+    return segment_segment_closest(point_1, end_1, point_2, end_2)[0]
 
 
 # ==== FaceSelection engine shared by the FaceCheck family (FaceCheck.md)
+
+# The measure attribute of each FaceCheck check: the failed check of a
+# face pair poses its measured value on the ResultInfo of the result.
+FACE_CHECK_MEASURES = {
+    "distance": "distance",  # m
+    "intersection": "penetration_depth",  # m
+    "orientation": "angle",  # deg
+}
+
+
+def apply_check_measure(info, check, value):
+    """Pose la valeur mesurée d'un check de la famille FaceCheck sur le
+    ResultInfo du résultat (distance -> distance, intersection ->
+    penetration_depth, orientation -> angle)."""
+    measure = FACE_CHECK_MEASURES.get(check)
+    if measure is not None:
+        setattr(info, measure, value)
+
 
 # The orientation presets of a FaceSelection dictionary.
 FACE_ORIENTATION_PRESETS = {

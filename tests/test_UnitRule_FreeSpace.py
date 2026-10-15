@@ -27,6 +27,8 @@ from clash_utils import (
     shapes_intersect_volume,
 )
 from ifctester import ids
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 def make_model(path, elements):
@@ -133,6 +135,7 @@ class TestFreeSpace(unittest.TestCase):
         rule = FreeSpace(self.select("Room"), context, **parameters)
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
         return rule
 
     def placement_of(self, rule):
@@ -221,6 +224,7 @@ class TestFreeSpace(unittest.TestCase):
         rule = FreeSpace(self.select("Nothing"), context, diameter=1.5, height=1.4)
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
         self.assertEqual(len(rule.result), 0)
 
     def test_invalid_parameters_raise_value_error(self):

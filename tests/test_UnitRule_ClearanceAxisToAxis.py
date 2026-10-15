@@ -33,6 +33,8 @@ from clash_utils import (
 )
 from ifctester import ids
 
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 def make_model(path, elements):
     """Write a small IFC file with box elements.
@@ -160,6 +162,7 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         )
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     # ---- Perpendicular mode
@@ -184,10 +187,10 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         self.assertIsInstance(result, ClashResultTwoObjects)
         self.assertEqual(result.source.Name, "TrayA")
         self.assertEqual(result.target.Name, "TrayB")
-        self.assertAlmostEqual(result.distance_between, 0.5, places=4)
-        self.assertEqual(result.axis_mode, "Perpendicular")
-        self.assertFalse(result.axis_degraded)
-        self.assertAlmostEqual(result.axis_angle, 0.0, places=4)
+        self.assertAlmostEqual(result.info.distance, 0.5, places=4)
+        self.assertEqual(result.info.axis_mode, "Perpendicular")
+        self.assertFalse(result.info.axis_degraded)
+        self.assertAlmostEqual(result.info.angle, 0.0, places=4)
 
     def test_parallel_offset_too_far(self):
         """Two trays 0.5 m apart, required below 0.4: the interval
@@ -197,7 +200,7 @@ class TestClearanceAxisToAxis(unittest.TestCase):
             min_distance=0.1, max_distance=0.4,
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].distance_between, 0.5, places=4)
+        self.assertAlmostEqual(rule.result[0].info.distance, 0.5, places=4)
 
     def test_tolerance_widens_the_interval(self):
         """The same too-close pair with a 0.1 m tolerance: 0.5 stays
@@ -218,9 +221,9 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertAlmostEqual(result.distance_between, 0.5, places=4)
-        self.assertEqual(result.axis_mode, "MinDistance")
-        self.assertAlmostEqual(result.axis_angle, 90.0, places=4)
+        self.assertAlmostEqual(result.info.distance, 0.5, places=4)
+        self.assertEqual(result.info.axis_mode, "MinDistance")
+        self.assertAlmostEqual(result.info.angle, 90.0, places=4)
 
     # ---- MinDistance mode
 
@@ -242,8 +245,8 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertAlmostEqual(result.distance_between, 0.1, places=4)
-        self.assertEqual(result.axis_mode, "MinDistance")
+        self.assertAlmostEqual(result.info.distance, 0.1, places=4)
+        self.assertEqual(result.info.axis_mode, "MinDistance")
 
     def test_perpendicular_mode_measures_the_offset_not_the_gap(self):
         """The same end-to-end runs in Perpendicular mode: the axes
@@ -255,8 +258,8 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertAlmostEqual(result.distance_between, 0.0, places=4)
-        self.assertEqual(result.axis_mode, "Perpendicular")
+        self.assertAlmostEqual(result.info.distance, 0.0, places=4)
+        self.assertEqual(result.info.axis_mode, "Perpendicular")
 
     # ---- Non-linear objects
 
@@ -277,9 +280,9 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertAlmostEqual(result.distance_between, 0.95, places=4)
-        self.assertEqual(result.axis_mode, "Fallback")
-        self.assertTrue(result.axis_degraded)
+        self.assertAlmostEqual(result.info.distance, 0.95, places=4)
+        self.assertEqual(result.info.axis_mode, "Fallback")
+        self.assertTrue(result.info.axis_degraded)
 
     def test_non_linear_pair_fallback_in_interval(self):
         """The same fallback measurement inside the interval: no
@@ -311,8 +314,8 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         self.assertEqual(len(forward.result), 1)
         self.assertEqual(len(backward.result), 1)
         self.assertAlmostEqual(
-            forward.result[0].distance_between,
-            backward.result[0].distance_between,
+            forward.result[0].info.distance,
+            backward.result[0].info.distance,
             places=4,
         )
 

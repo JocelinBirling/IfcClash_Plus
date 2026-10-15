@@ -23,6 +23,7 @@ sys.path.insert(0, "./ifcclash_plus")
 import ifcopenshell
 import ifcopenshell.api
 
+from tests.test_structure_ResultShape import assert_result_shape
 from Rules import TwoObjectsFace
 from RuleClass import SelectFacet, RuleFile, ClashResultTwoObjects
 from ifctester import ids
@@ -123,6 +124,7 @@ class TestTwoObjectsFace(unittest.TestCase):
         )
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     @staticmethod
@@ -153,12 +155,12 @@ class TestTwoObjectsFace(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.source.Name, "Near")
             self.assertEqual(result.target.Name, "Far")
-            self.assertEqual(result.check, "distance")
-            self.assertAlmostEqual(result.value, 2.0, places=6)
-            self.assertAlmostEqual(result.face_a["area"], 0.5, places=6)
-            self.assertAlmostEqual(result.face_b["area"], 0.5, places=6)
-            self.assertAlmostEqual(result.face_a["normal"][0], 1.0, places=6)
-            self.assertAlmostEqual(result.face_b["normal"][0], -1.0, places=6)
+            self.assertEqual(result.info.primary_measure, "distance")
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 2.0, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.area, 0.5, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.area, 0.5, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.normal[0], 1.0, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.normal[0], -1.0, places=6)
 
     def test_distance_within_bounds_no_clash(self):
         rule = self.run_rule(
@@ -178,7 +180,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             max_distance=1.0,
         )
         self.assertEqual(len(rule.result), 4)
-        self.assertEqual({result.check for result in rule.result}, {"distance"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"distance"})
 
     def test_distance_bound_is_inclusive(self):
         """Exactly 2 m satisfies [2.0, 2.0]."""
@@ -207,8 +209,8 @@ class TestTwoObjectsFace(unittest.TestCase):
 
         self.assertEqual(len(rule.result), 19)
         for result in rule.result:
-            self.assertEqual(result.check, "distance")
-            self.assertAlmostEqual(result.value, 2.0, places=6)
+            self.assertEqual(result.info.primary_measure, "distance")
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 2.0, places=6)
 
     def test_whole_target_distance_bounds(self):
         rule = self.run_rule(
@@ -245,8 +247,8 @@ class TestTwoObjectsFace(unittest.TestCase):
         for result in rule.result:
             self.assertEqual(result.source.Name, "PlateX")
             self.assertEqual(result.target.Name, "PlateY")
-            self.assertEqual(result.check, "intersection")
-            self.assertGreater(result.value, 0.001)
+            self.assertEqual(result.info.primary_measure, "penetration_depth")
+            self.assertGreater(result.info.measure(result.info.primary_measure), 0.001)
 
     def test_crossed_skins_tolerated_by_depth(self):
         rule = self.run_rule("PlateX", "PlateY", intersection=True,
@@ -275,9 +277,9 @@ class TestTwoObjectsFace(unittest.TestCase):
             angle_tolerance=5,
         )
         self.assertEqual(len(rule.result), 4)
-        self.assertEqual({result.check for result in rule.result}, {"orientation"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"angle"})
         for result in rule.result:
-            self.assertAlmostEqual(result.value, 180.0, places=6)
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 180.0, places=6)
 
     def test_orientation_bound_is_inclusive(self):
         """A deviation exactly at angle_tolerance is compliant."""
@@ -306,7 +308,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             angle_tolerance=5,
         )
         self.assertEqual(len(rule.result), 4)
-        self.assertEqual({result.check for result in rule.result}, {"orientation"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"angle"})
 
     # ---- Selection behavior
 
@@ -361,8 +363,8 @@ class TestTwoObjectsFace(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.source.Name, "Near")
             self.assertEqual(result.target.Name, "Far")
-            self.assertEqual(result.check, "distance")
-            self.assertAlmostEqual(result.value, 2.0, places=6)
+            self.assertEqual(result.info.primary_measure, "distance")
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 2.0, places=6)
 
     def test_object_vs_face_distance_within_bounds(self):
         """ObjetVsFace: every pair of the whole Near object against
@@ -392,7 +394,7 @@ class TestTwoObjectsFace(unittest.TestCase):
             angle_tolerance=0,
         )
         self.assertEqual(len(rule.result), 20)
-        self.assertEqual({result.check for result in rule.result}, {"orientation"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"angle"})
 
         rule = self.run_rule(
             target_face_selection=self.toward_source(),
@@ -403,8 +405,8 @@ class TestTwoObjectsFace(unittest.TestCase):
         self.assertEqual(len(rule.result), 8)
         measured = {}
         for result in rule.result:
-            measured[round(result.value)] = (
-                measured.get(round(result.value), 0) + 1
+            measured[round(result.info.measure(result.info.primary_measure))] = (
+                measured.get(round(result.info.measure(result.info.primary_measure)), 0) + 1
             )
         self.assertEqual(measured, {180: 4, 0: 4})
 
@@ -425,10 +427,10 @@ class TestTwoObjectsFace(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.source.Name, "Near")
             self.assertEqual(result.target.Name, "Far")
-            self.assertAlmostEqual(result.face_a["normal"][0], 1.0, places=6)
-            self.assertAlmostEqual(result.face_b["normal"][0], -1.0, places=6)
-            self.assertAlmostEqual(result.face_a["area"], 0.5, places=6)
-            self.assertAlmostEqual(result.face_b["area"], 0.5, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.normal[0], 1.0, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.normal[0], -1.0, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.area, 0.5, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.area, 0.5, places=6)
 
     # ---- Invalid parameters
 

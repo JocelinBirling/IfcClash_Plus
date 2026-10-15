@@ -28,6 +28,8 @@ from clash_utils import (
 )
 from ifctester import ids
 
+from tests.test_structure_ResultShape import assert_result_shape
+
 MODEL_DIR = "IFC_Test_Model/IFC_Model"
 
 
@@ -49,6 +51,7 @@ class TestSurfaceRecover(unittest.TestCase):
         )
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     def bottom_parameters(self, **overrides):
@@ -89,12 +92,12 @@ class TestSurfaceRecover(unittest.TestCase):
         self.assertEqual(result.source.Name, "SlabA")
         self.assertEqual(result.target.Name, "CuboidB")
         # Contact = the whole 2 x 1 m cuboid top, 100% of the reference.
-        self.assertAlmostEqual(result.surface_contact_area, 2.0, places=3)
-        self.assertAlmostEqual(result.ratio, 100.0, places=3)
+        self.assertAlmostEqual(result.info.contact_area, 2.0, places=3)
+        self.assertAlmostEqual(result.info.ratio, 1.0, places=3)
         # The faces used: source bottom face vs target top face.
-        self.assertAlmostEqual(result.source_face["area"], 9.0, places=3)
-        self.assertAlmostEqual(result.target_face["area"], 2.0, places=3)
-        self.assertAlmostEqual(result.distance_between, 0.9, places=3)
+        self.assertAlmostEqual(result.info.source_faces[0].face.area, 9.0, places=3)
+        self.assertAlmostEqual(result.info.target_faces[0].face.area, 2.0, places=3)
+        self.assertAlmostEqual(result.info.distance, 0.9, places=3)
 
     def test_half_coverage_below_min_clashes(self):
         """The slab covers 50% of the cuboid top: 50% < 70%, clash."""
@@ -106,8 +109,8 @@ class TestSurfaceRecover(unittest.TestCase):
         )
 
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].surface_contact_area, 1.0, places=3)
-        self.assertAlmostEqual(rule.result[0].ratio, 50.0, places=3)
+        self.assertAlmostEqual(rule.result[0].info.contact_area, 1.0, places=3)
+        self.assertAlmostEqual(rule.result[0].info.ratio, 0.5, places=3)
 
     def test_half_coverage_compliant_no_clash(self):
         """50% >= 40%: the partial support is accepted."""
@@ -136,7 +139,7 @@ class TestSurfaceRecover(unittest.TestCase):
             **self.bottom_parameters(min_covering="101%"),
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].ratio, 100.0, places=2)
+        self.assertAlmostEqual(rule.result[0].info.ratio, 1.0, places=2)
 
     def test_curved_support_half_coverage(self):
         """A slab on half a cylinder top covers ~50% of the disk."""
@@ -147,7 +150,7 @@ class TestSurfaceRecover(unittest.TestCase):
             **self.bottom_parameters(min_covering="60%"),
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].ratio, 50.0, places=2)
+        self.assertAlmostEqual(rule.result[0].info.ratio, 0.5, places=2)
 
     # ---- Reference face
 
@@ -161,7 +164,7 @@ class TestSurfaceRecover(unittest.TestCase):
             **self.bottom_parameters(reference="Source", min_covering="30%"),
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].ratio, 100.0 * 2.0 / 9.0, places=2)
+        self.assertAlmostEqual(rule.result[0].info.ratio, 2.0 / 9.0, places=2)
 
         rule = self.run_rule(
             "SlabA_RecoverTop_CuboidB_100%.ifc",
@@ -226,8 +229,8 @@ class TestSurfaceRecover(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertAlmostEqual(result.surface_contact_area, 1.0, places=3)
-        self.assertAlmostEqual(result.ratio, 100.0, places=3)
+        self.assertAlmostEqual(result.info.contact_area, 1.0, places=3)
+        self.assertAlmostEqual(result.info.ratio, 1.0, places=3)
 
         rule = self.run_rule(
             "CubeA_TouchFace_CubeB.ifc",

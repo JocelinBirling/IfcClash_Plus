@@ -58,6 +58,8 @@ from RuleClass import (
     SelectFacet,
 )
 from ifctester import ids
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 class TestMustRuleOnArchitectureModel(unittest.TestCase):
@@ -101,6 +103,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         rule_file.list_ifc_path = [cls.MODEL]
         rule_file.contains = [cls.rule]
         rule_file.run()
+        assert_result_shape(rule_file)
 
     @staticmethod
     def group_name(group):
@@ -302,6 +305,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         rule_file.list_ifc_path = [self.MODEL]
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
 
         groups = rule.grouped_result
         self.assertEqual(len(groups), 2)
@@ -343,6 +347,7 @@ class TestMustRuleOnArchitectureModel(unittest.TestCase):
         rule_file.list_ifc_path = [self.MODEL]
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
 
         groups = rule.grouped_result
         self.assertEqual(len(groups), 8)

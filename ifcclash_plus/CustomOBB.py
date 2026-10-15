@@ -491,6 +491,25 @@ class Custom_OBB(Bnd_OBB):
         else:
             super().__init__()
 
+    def to_data(self, label=None) -> tuple:
+        """The serializable data of the OBB, as the ObbData tuple of
+        the results (center, axes, half_sizes, label): plain floats and
+        tuples only, complete enough to rebuild the OCC solid."""
+        center = self.Center()
+        x_dir = self.XDirection()
+        y_dir = self.YDirection()
+        z_dir = self.ZDirection()
+        return (
+            (center.X(), center.Y(), center.Z()),
+            (
+                (x_dir.X(), x_dir.Y(), x_dir.Z()),
+                (y_dir.X(), y_dir.Y(), y_dir.Z()),
+                (z_dir.X(), z_dir.Y(), z_dir.Z()),
+            ),
+            (self.XHSize(), self.YHSize(), self.ZHSize()),
+            label,
+        )
+
     def min_distance_to_obb(self, other_obb: Bnd_OBB) -> float:
         """
         Calculate the minimal distance between two Bnd_OBB objects using Separating Axis Theorem.

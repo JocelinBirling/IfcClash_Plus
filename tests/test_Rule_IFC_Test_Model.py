@@ -77,6 +77,8 @@ from Rules import (  # noqa: E402
 )
 from RuleClass import RuleFile, SelectFacet  # noqa: E402
 from ifctester import ids  # noqa: E402
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 MODEL_DIR = "IFC_Test_Model/IFC_Model"
 
@@ -115,6 +117,7 @@ class IFCModelRuleTestCase(unittest.TestCase):
         rule = rule_cls(self._select(src), self._select(tgt), **kwargs)
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
         return rule, src, tgt
 
     def _assert_count(self, model, rule_cls, source, target, expected, **kwargs):

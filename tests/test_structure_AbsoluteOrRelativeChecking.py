@@ -38,6 +38,8 @@ from RuleClass import (
     SelectFacet,
 )
 from Rules import Intersection, Volume
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 def make_group(nb_source=0, nb_target=0):

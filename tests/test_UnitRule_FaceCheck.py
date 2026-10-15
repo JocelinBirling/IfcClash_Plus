@@ -32,6 +32,8 @@ from clash_utils import (
     validate_face_selection,
 )
 from ifcopenshell.util.shape import get_vertices, get_faces
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 def closed_box_mesh():

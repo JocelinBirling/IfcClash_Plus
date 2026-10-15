@@ -29,6 +29,8 @@ from Rules import (
 )
 from RuleClass import SelectFacet, RuleFile, ClashResultOneObject, ClashResultTwoObjects
 from ifctester import ids
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 class TestRules(unittest.TestCase):
@@ -60,6 +62,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [intersection_rule]
         OneRuleFile.run()
+        assert_result_shape(intersection_rule)
 
         self.assertEqual(len(intersection_rule.result), 1)
         for result in intersection_rule.result:
@@ -82,6 +85,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 24)
         for result in rule.result:
@@ -104,6 +108,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [intersection_rule]
         OneRuleFile.run()
+        assert_result_shape(intersection_rule)
 
         for result in intersection_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -138,6 +143,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 21)
 
@@ -167,6 +173,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
+        assert_result_shape(above_rule)
 
         self.assertEqual(len(above_rule.result), 8)
         for result in above_rule.result:
@@ -192,11 +199,12 @@ class TestRules(unittest.TestCase):
             source=first_select,
             target=second_select,
             tolerance=1.0,
-            above_type="Above_MaxToMax",state="Display_Result"
+            above_type="Above_MaxToMax"
         )
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
+        assert_result_shape(above_rule)
 
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -233,6 +241,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [angle_between_rule]
         OneRuleFile.run()
+        assert_result_shape(angle_between_rule)
 
         # Verify results
         for result in angle_between_rule.result:
@@ -270,6 +279,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains = [angle_between_rule]
         OneRuleFile.run()
+        assert_result_shape(angle_between_rule)
 
         # Verify results
         for result in angle_between_rule.result:
@@ -315,6 +325,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
+        assert_result_shape(above_rule)
 
         for result in above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -338,6 +349,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
+        assert_result_shape(obb_above_rule)
 
         self.assertEqual(len(obb_above_rule.result), 8)
         for result in obb_above_rule.result:
@@ -361,6 +373,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
+        assert_result_shape(obb_above_rule)
 
         self.assertEqual(len(obb_above_rule.result), 34)
         # There is a lot of layer of slab in the house
@@ -387,6 +400,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
+        assert_result_shape(obb_above_rule)
 
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
@@ -412,6 +426,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
+        assert_result_shape(obb_above_rule)
 
         self.assertEqual(len(obb_above_rule.result), 34)
         # We should find the same number as the above test rule.
@@ -444,6 +459,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [obb_above_rule]
         OneRuleFile.run()
+        assert_result_shape(obb_above_rule)
 
         self.assertEqual(len(obb_above_rule.result), 20)
         # We should find the same number as the above test rule.
@@ -468,6 +484,7 @@ class TestRulesOBB(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 1)
         # We should find the same number as the above test rule.
@@ -514,6 +531,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 0)
         for result in alignement_rule.result:
@@ -546,6 +564,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 24)
         for result in alignement_rule.result:
@@ -578,6 +597,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 2)
         for result in alignement_rule.result:
@@ -602,11 +622,11 @@ class TestRulesAdvanced(unittest.TestCase):
             alignment_type="Plane",
             tolerance=0.05,
             min_group=4,
-            state="Display_Result",
         )
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 40)
         for result in alignement_rule.result:
@@ -642,6 +662,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 6)
         for result in alignement_rule.result:
@@ -673,6 +694,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [alignement_rule]
         OneRuleFile.run()
+        assert_result_shape(alignement_rule)
 
         self.assertEqual(len(alignement_rule.result), 0)
         for result in alignement_rule.result:
@@ -699,6 +721,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(0, 0)  # @todo This rule is not working. The size of the zone is not clear.
 
@@ -722,6 +745,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 0)
 
@@ -753,6 +777,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         # 24 windows -> 24 x 23 = 552 ordered pairs, 550 blocked: the
         # 2 ordered skylight pairs are in direct view and clash.
@@ -803,6 +828,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 0)
         for result in rule.result:
@@ -847,6 +873,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 5)
         for result in rule.result:
@@ -883,6 +910,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 5)
         for result in rule.result:
@@ -890,19 +918,19 @@ class TestRulesAdvanced(unittest.TestCase):
             # Only the pairs outside [4.5, 5.5] clash, the two
             # parallel runs at 5.02 m stay compliant.
             self.assertTrue(
-                result.distance_between < 4.5 or result.distance_between > 5.5
+                result.info.distance < 4.5 or result.info.distance > 5.5
             )
         # The collinear continuation shares the support line: its
         # offset is measured in Perpendicular mode.
         collinear = [
-            result for result in rule.result if result.axis_mode == "Perpendicular"
+            result for result in rule.result if result.info.axis_mode == "Perpendicular"
         ]
         self.assertEqual(len(collinear), 1)
-        self.assertAlmostEqual(collinear[0].distance_between, 0.0, places=4)
-        self.assertAlmostEqual(collinear[0].axis_angle, 0.0, places=4)
+        self.assertAlmostEqual(collinear[0].info.distance, 0.0, places=4)
+        self.assertAlmostEqual(collinear[0].info.angle, 0.0, places=4)
         # The crossing and connecting pairs fall back to the segments.
         self.assertEqual(
-            len([r for r in rule.result if r.axis_mode == "MinDistance"]), 4
+            len([r for r in rule.result if r.info.axis_mode == "MinDistance"]), 4
         )
 
     def test_clearance_axis_to_axis_modes(self):
@@ -952,13 +980,16 @@ class TestRulesAdvanced(unittest.TestCase):
             min_distance_gap_rule,
         ]
         OneRuleFile.run()
+        assert_result_shape(perpendicular_rule)
+        assert_result_shape(min_distance_rule)
+        assert_result_shape(min_distance_gap_rule)
 
         # The support lines are the same: offset 0, below the interval.
         self.assertEqual(len(perpendicular_rule.result), 1)
         result = perpendicular_rule.result[0]
         self.assertIsInstance(result, ClashResultTwoObjects)
-        self.assertAlmostEqual(result.distance_between, 0.0, places=4)
-        self.assertEqual(result.axis_mode, "Perpendicular")
+        self.assertAlmostEqual(result.info.distance, 0.0, places=4)
+        self.assertEqual(result.info.axis_mode, "Perpendicular")
 
         # The 2.2 m end-to-end gap stays inside [1.0, 3.0].
         self.assertEqual(len(min_distance_rule.result), 0)
@@ -966,8 +997,8 @@ class TestRulesAdvanced(unittest.TestCase):
         # Below a 1.0 m requirement, the gap is a coverage hole.
         self.assertEqual(len(min_distance_gap_rule.result), 1)
         result = min_distance_gap_rule.result[0]
-        self.assertAlmostEqual(result.distance_between, 2.1997, places=3)
-        self.assertEqual(result.axis_mode, "MinDistance")
+        self.assertAlmostEqual(result.info.distance, 2.1997, places=3)
+        self.assertEqual(result.info.axis_mode, "MinDistance")
 
     def test_clearance_axis_to_axis_non_linear(self):
         """Test ClearanceAxisToAxis rule on the stair flights. A flight
@@ -1004,6 +1035,8 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [skip_rule, fallback_rule]
         OneRuleFile.run()
+        assert_result_shape(skip_rule)
+        assert_result_shape(fallback_rule)
 
         # Every skin-to-skin distance is above 0: the 8 ordered pairs
         # would all clash, but Skip leaves them out.
@@ -1013,9 +1046,9 @@ class TestRulesAdvanced(unittest.TestCase):
         self.assertEqual(len(fallback_rule.result), 8)
         for result in fallback_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-            self.assertEqual(result.axis_mode, "Fallback")
-            self.assertTrue(result.axis_degraded)
-            self.assertGreater(result.distance_between, 0.0)
+            self.assertEqual(result.info.axis_mode, "Fallback")
+            self.assertTrue(result.info.axis_degraded)
+            self.assertGreater(result.info.distance, 0.0)
 
     def test_two_objects_face_distance_rule(self):
         """Test TwoObjectsFace distance check. The extreme top faces
@@ -1061,16 +1094,18 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [strict_rule, compliant_rule]
         OneRuleFile.run()
+        assert_result_shape(strict_rule)
+        assert_result_shape(compliant_rule)
 
         # The tightest gap between a cabinet top face and a slab face.
         self.assertEqual(len(strict_rule.result), 80)
         for result in strict_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-            self.assertEqual(result.check, "distance")
-            self.assertGreaterEqual(result.value, 0.81)
-            self.assertLess(result.value, 0.9)
+            self.assertEqual(result.info.primary_measure, "distance")
+            self.assertGreaterEqual(result.info.distance, 0.81)
+            self.assertLess(result.info.distance, 0.9)
         self.assertAlmostEqual(
-            min(result.value for result in strict_rule.result),
+            min(result.info.distance for result in strict_rule.result),
             0.81405,
             places=4,
         )
@@ -1107,20 +1142,23 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 173)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-            self.assertEqual(result.check, "intersection")
-            self.assertGreater(result.value, 0.0)
+            self.assertEqual(result.info.primary_measure, "penetration_depth")
+            self.assertGreater(result.info.penetration_depth, 0.0)
         # The result carries the two faces of the pair (normal, area).
         one_result = rule.result[0]
-        self.assertIn("normal", one_result.face_a)
-        self.assertIn("area", one_result.face_a)
-        self.assertIn("normal", one_result.face_b)
-        self.assertIn("area", one_result.face_b)
+        self.assertEqual(len(one_result.info.source_faces), 1)
+        self.assertEqual(len(one_result.info.target_faces), 1)
+        self.assertEqual(one_result.info.source_faces[0].number, 1)
+        self.assertEqual(one_result.info.target_faces[0].number, 1)
         self.assertAlmostEqual(
-            min(result.value for result in rule.result), 0.4, places=3
+            min(result.info.penetration_depth for result in rule.result),
+            0.4,
+            places=3,
         )
 
     def test_two_objects_face_orientation_rule(self):
@@ -1170,20 +1208,22 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [parallel_rule, opposing_rule]
         OneRuleFile.run()
+        assert_result_shape(parallel_rule)
+        assert_result_shape(opposing_rule)
 
         from collections import Counter
 
         self.assertEqual(len(parallel_rule.result), 5040)
-        measured = Counter(round(result.value) for result in parallel_rule.result)
+        measured = Counter(round(result.info.angle) for result in parallel_rule.result)
         self.assertEqual(measured, Counter({90: 2304, 180: 1872, 125: 576, 145: 288}))
         for result in parallel_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-            self.assertEqual(result.check, "orientation")
+            self.assertEqual(result.info.primary_measure, "angle")
 
         # At 180 degrees the 1872 opposing pairs pass, the rest clashes.
         self.assertEqual(len(opposing_rule.result), 3168)
         self.assertEqual(
-            {round(result.value) for result in opposing_rule.result},
+            {round(result.info.angle) for result in opposing_rule.result},
             {90, 125, 145},
         )
 
@@ -1213,6 +1253,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 6)
         for result in rule.result:
@@ -1241,6 +1282,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 0)
         for result in rule.result:
@@ -1269,6 +1311,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 18)
         for result in rule.result:
@@ -1302,6 +1345,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 102)
         for result in rule.result:
@@ -1333,6 +1377,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
         #@todo repair this rule. It's not working
         """
         self.assertEqual(len(rule.result), 0)  
@@ -1371,6 +1416,7 @@ class TestRulesAdvanced(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 60)
         for result in rule.result:

@@ -21,6 +21,7 @@ sys.path.insert(0, "./ifcclash_plus")
 import ifcopenshell
 import ifcopenshell.api
 
+from tests.test_structure_ResultShape import assert_result_shape
 from Rules import OneObjectFace
 from RuleClass import SelectFacet, RuleFile, ClashResultOneObject
 from clash_utils import (
@@ -134,6 +135,7 @@ class TestOneObjectFace(unittest.TestCase):
         rule = OneObjectFace(self.select(entity_name), **parameters)
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     def bottom_selection(self):
@@ -158,12 +160,12 @@ class TestOneObjectFace(unittest.TestCase):
         for result in rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
             self.assertEqual(result.source.Name, "Cube")
-            self.assertEqual(result.check, "distance")
-            self.assertAlmostEqual(result.value, 1.0, places=6)
-            self.assertAlmostEqual(result.face_a["area"], 0.5, places=6)
-            self.assertAlmostEqual(result.face_b["area"], 0.5, places=6)
-            self.assertAlmostEqual(result.face_a["normal"][2], -1.0, places=6)
-            self.assertAlmostEqual(result.face_b["normal"][2], 1.0, places=6)
+            self.assertEqual(result.info.primary_measure, "distance")
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 1.0, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.area, 0.5, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.area, 0.5, places=6)
+            self.assertAlmostEqual(result.info.source_faces[0].face.normal[2], -1.0, places=6)
+            self.assertAlmostEqual(result.info.target_faces[0].face.normal[2], 1.0, places=6)
 
     def test_distance_within_bounds_no_clash(self):
         """The same 1 m height satisfies [0.5, 1.5]."""
@@ -184,7 +186,7 @@ class TestOneObjectFace(unittest.TestCase):
             max_distance=0.5,
         )
         self.assertEqual(len(rule.result), 4)
-        self.assertEqual({result.check for result in rule.result}, {"distance"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"distance"})
 
     # ---- skip_adjacent
 
@@ -197,7 +199,7 @@ class TestOneObjectFace(unittest.TestCase):
         rule = self.run_rule(distance=True, min_distance=0.1, skip_adjacent=False)
         self.assertGreater(len(rule.result), 0)
         for result in rule.result:
-            self.assertAlmostEqual(result.value, 0.0, places=6)
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 0.0, places=6)
 
     # ---- Nominal: orientation check
 
@@ -220,9 +222,9 @@ class TestOneObjectFace(unittest.TestCase):
             angle_tolerance=5,
         )
         self.assertGreater(len(rule.result), 0)
-        self.assertEqual({result.check for result in rule.result}, {"orientation"})
+        self.assertEqual({result.info.primary_measure for result in rule.result}, {"angle"})
         for result in rule.result:
-            self.assertAlmostEqual(result.value, 90.0, places=6)
+            self.assertAlmostEqual(result.info.measure(result.info.primary_measure), 90.0, places=6)
 
     def test_orientation_opposing_faces(self):
         """Bottom vs top normals are opposite: 180 degrees."""
@@ -249,8 +251,8 @@ class TestOneObjectFace(unittest.TestCase):
 
         self.assertGreater(len(rule.result), 0)
         for result in rule.result:
-            self.assertEqual(result.check, "intersection")
-            self.assertGreater(result.value, 0.001)
+            self.assertEqual(result.info.primary_measure, "penetration_depth")
+            self.assertGreater(result.info.measure(result.info.primary_measure), 0.001)
 
     def test_crossed_skin_tolerated_by_depth(self):
         """A tolerance above the penetration depth tolerates the
@@ -278,7 +280,7 @@ class TestOneObjectFace(unittest.TestCase):
         # 4 pairs x 2 failed checks.
         self.assertEqual(len(rule.result), 8)
         self.assertEqual(
-            {result.check for result in rule.result}, {"distance", "orientation"}
+            {result.info.primary_measure for result in rule.result}, {"distance", "angle"}
         )
 
     def test_pair_passing_both_checks_no_clash(self):

@@ -21,6 +21,8 @@ from Rules import (
 )
 from RuleClass import SelectFacet, RuleFile, ClashResultTwoObjects
 from ifctester import ids
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 
 # Pairs of elements known to match each rule (GlobalId of the model
@@ -98,6 +100,7 @@ class TestRulesTwoObjectsTwoElements(unittest.TestCase):
         rule_file.list_ifc_path = [self.ifc_path]
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule_file)
 
         # The source and the target selections contain exactly one element
         for select in (rule.select_source, rule.select_target):

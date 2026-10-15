@@ -3,6 +3,8 @@ from RuleClass import (
     RuleCheckTwoObjects,
     ClashResultOneObject,
     ClashResultTwoObjects,
+    RaycastData,
+    ZoneData,
     Select,
 )
 import ifcopenshell
@@ -322,6 +324,7 @@ class ObbHigh(RuleCheckOneObject):
 
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)
+                        result.info.add_source_obb(obb.to_data("object"))
                         self.result.append(result)
                     else:
                         self.result_fail_source.append(entity)
@@ -398,6 +401,7 @@ class ObbLength(RuleCheckOneObject):
 
                     if self.length_min < value_to_check < self.length_max:
                         result = ClashResultOneObject(source=entity, state=True)
+                        result.info.add_source_obb(obb.to_data("object"))
                         self.result.append(result)
                     else:
                         self.result_fail_source.append(entity)
@@ -924,10 +928,19 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
 
     @staticmethod
     def _skin_distance(geom_1, geom_2):
-        """The classical skin-to-skin distance between two shapes."""
+        """The classical skin-to-skin distance between two shapes, with
+        the closest point of each shape."""
         distance_tool = BRepExtrema_DistShapeShape(geom_1, geom_2)
         distance_tool.Perform()
-        return float(distance_tool.Value())
+        if distance_tool.IsDone() and distance_tool.NbSolution() >= 1:
+            point_1 = distance_tool.PointOnShape1(1)
+            point_2 = distance_tool.PointOnShape2(1)
+            return (
+                float(distance_tool.Value()),
+                (point_1.X(), point_1.Y(), point_1.Z()),
+                (point_2.X(), point_2.Y(), point_2.Z()),
+            )
+        return float(distance_tool.Value()), None, None
 
     def run(self):
         self.display_items.clear()
@@ -976,32 +989,40 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                         self.mode == "Perpendicular"
                         and angle <= self.parallel_tolerance
                     ):
-                        distance = clash_utils.parallel_line_offset(
-                            source_obj["center"],
-                            source_obj["direction"],
-                            target_obj["center"],
-                            target_obj["direction"],
+                        distance, source_point, target_point = (
+                            clash_utils.parallel_line_offset_closest(
+                                source_obj["center"],
+                                source_obj["direction"],
+                                target_obj["center"],
+                                target_obj["direction"],
+                            )
                         )
+                        source_point = tuple(float(v) for v in source_point)
+                        target_point = tuple(float(v) for v in target_point)
                         mode_used = "Perpendicular"
                     else:
                         # The support segment spans the full OBB
                         # extent of the axis: center ± half length.
-                        distance = clash_utils.segment_segment_distance(
-                            source_obj["center"]
-                            - source_obj["direction"] * source_obj["half_length"],
-                            source_obj["center"]
-                            + source_obj["direction"] * source_obj["half_length"],
-                            target_obj["center"]
-                            - target_obj["direction"] * target_obj["half_length"],
-                            target_obj["center"]
-                            + target_obj["direction"] * target_obj["half_length"],
+                        distance, source_point, target_point = (
+                            clash_utils.segment_segment_closest(
+                                source_obj["center"]
+                                - source_obj["direction"] * source_obj["half_length"],
+                                source_obj["center"]
+                                + source_obj["direction"] * source_obj["half_length"],
+                                target_obj["center"]
+                                - target_obj["direction"] * target_obj["half_length"],
+                                target_obj["center"]
+                                + target_obj["direction"] * target_obj["half_length"],
+                            )
                         )
+                        source_point = tuple(float(v) for v in source_point)
+                        target_point = tuple(float(v) for v in target_point)
                         mode_used = "MinDistance"
                     degraded = False
                 elif self.on_non_linear == "Skip":
                     continue
                 else:
-                    distance = self._skin_distance(
+                    distance, source_point, target_point = self._skin_distance(
                         source_obj["geom"], target_obj["geom"]
                     )
                     mode_used = "Fallback"
@@ -1013,10 +1034,12 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                         target=target_obj["entity"],
                         state=True,
                     )
-                    result.distance_between = distance
-                    result.axis_mode = mode_used
-                    result.axis_degraded = degraded
-                    result.axis_angle = angle
+                    result.info.distance = distance  # m — mesure nominale
+                    result.info.angle = angle  # deg — mesure secondaire
+                    if source_point is not None and target_point is not None:
+                        result.info.add_point_pair(source_point, target_point)
+                    result.info.axis_mode = mode_used
+                    result.info.axis_degraded = degraded
                     self.result.append(result)
 
         if self.state == "Display_Input":
@@ -1653,7 +1676,12 @@ class OBB_Above(RuleCheckTwoObjects):
 
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
-                        {"entity": entity, "geom": compound, "obb": clash_obb}
+                        {
+                            "entity": entity,
+                            "geom": compound,
+                            "obb": clash_obb,
+                            "base_obb": obb,
+                        }
                     )
 
                     if not iterator.next():
@@ -1706,6 +1734,11 @@ class OBB_Above(RuleCheckTwoObjects):
                         target=target_data["entity"],
                         state=True,
                     )
+                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
+                    result.info.add_source_obb(
+                        source_data["base_obb"].to_data("object")
+                    )
+                    result.info.add_target_obb(target_data["obb"].to_data("object"))
                     self.result.append(result)
         self.end_rule_action()
 
@@ -1751,7 +1784,12 @@ class OBB_Below(RuleCheckTwoObjects):
 
                     compound = clash_obb.to_TopoDS_Solid()
                     source_geoms.append(
-                        {"entity": entity, "geom": compound, "obb": clash_obb}
+                        {
+                            "entity": entity,
+                            "geom": compound,
+                            "obb": clash_obb,
+                            "base_obb": obb,
+                        }
                     )
 
                     if not iterator.next():
@@ -1802,6 +1840,11 @@ class OBB_Below(RuleCheckTwoObjects):
                         target=target_data["entity"],
                         state=True,
                     )
+                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
+                    result.info.add_source_obb(
+                        source_data["base_obb"].to_data("object")
+                    )
+                    result.info.add_target_obb(target_data["obb"].to_data("object"))
                     self.result.append(result)
         self.end_rule_action()
 
@@ -1867,10 +1910,20 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     compound_1 = clash_obb_1.to_TopoDS_Solid()
                     compound_2 = clash_obb_2.to_TopoDS_Solid()
                     source_obbs.append(
-                        {"entity": entity, "geom": compound_1, "obb": clash_obb_1}
+                        {
+                            "entity": entity,
+                            "geom": compound_1,
+                            "obb": clash_obb_1,
+                            "base_obb": obb,
+                        }
                     )
                     source_obbs.append(
-                        {"entity": entity, "geom": compound_2, "obb": clash_obb_2}
+                        {
+                            "entity": entity,
+                            "geom": compound_2,
+                            "obb": clash_obb_2,
+                            "base_obb": obb,
+                        }
                     )
 
                     if not iterator.next():
@@ -1919,6 +1972,11 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         target=target_data["entity"],
                         state=True,
                     )
+                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
+                    result.info.add_source_obb(
+                        source_data["base_obb"].to_data("object")
+                    )
+                    result.info.add_target_obb(target_data["obb"].to_data("object"))
                     self.result.append(result)
 
         self.end_rule_action()
@@ -1954,10 +2012,16 @@ class OBB_Custom(RuleCheckTwoObjects):
                     geom = shape.geometry
                     entity = ifc_file.by_id(shape.data.id)
 
-                    for clash_obb in self._create_list_of_obb(geom):
+                    base_obb = create_obb_from_TopoDs_Shape(geom)
+                    for clash_obb in self._create_list_of_obb(geom, base_obb):
                         compound = clash_obb.to_TopoDS_Solid()
                         source_geoms.append(
-                            {"entity": entity, "geom": compound, "obb": clash_obb}
+                            {
+                                "entity": entity,
+                                "geom": compound,
+                                "obb": clash_obb,
+                                "base_obb": base_obb,
+                            }
                         )
 
                         # The detection zones, kept in the display
@@ -2017,10 +2081,15 @@ class OBB_Custom(RuleCheckTwoObjects):
                         target=target_data["entity"],
                         state=True,
                     )
+                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
+                    result.info.add_source_obb(
+                        source_data["base_obb"].to_data("object")
+                    )
+                    result.info.add_target_obb(target_data["obb"].to_data("object"))
                     self.result.append(result)
         self.end_rule_action()
 
-    def _create_list_of_obb(self, geom):
+    def _create_list_of_obb(self, geom, base_obb=None):
 
         # expand_sides
         # detach_top_by_extrude
@@ -2028,7 +2097,11 @@ class OBB_Custom(RuleCheckTwoObjects):
         # extend_up
         # extend_down
         # NEW_OBB
-        obb = create_obb_from_TopoDs_Shape(geom)  # Why not use
+        obb = (
+            base_obb
+            if base_obb is not None
+            else create_obb_from_TopoDs_Shape(geom)
+        )
 
         list_of_obb = []
 
@@ -2150,7 +2223,7 @@ class Alignement(RuleCheckOneObject):
         ):
             if clash:
                 result = ClashResultOneObject(source=one_object["entity"], state=True)
-                result.offset = offset
+                result.info.offset = offset  # m — mesure nominale
                 self.result.append(result)
 
         self.end_rule_action()
@@ -2958,22 +3031,32 @@ class SurfaceRecover(RuleCheckTwoObjects):
                         target=target["entity"],
                         state=True,
                     )
-                    result.distance_between = distance
-                    result.surface_contact_area = contact_area
-                    result.ratio = ratio
-                    result.source_faces = contact_triangles
-                    result.source_face = {
-                        "normal": tuple(float(v) for v in direction),
-                        "area": clash_utils.triangles_projected_area(
-                            source_triangles, direction
+                    result.info.contact_area = contact_area  # m2 — nominale
+                    if ratio is not None:
+                        # Stocké en 0..1 (vocabulaire) ; les bornes du
+                        # check restent en pourcentage.
+                        result.info.ratio = ratio / 100.0
+                    result.info.distance = distance  # m
+                    contact_triangles_data = [
+                        tuple(tuple(float(c) for c in vertex) for vertex in triangle)
+                        for triangle in contact_triangles
+                    ]
+                    result.info.add_face_pair(
+                        (   # face de la source : (normal, area, triangles)
+                            tuple(float(v) for v in direction),
+                            clash_utils.triangles_projected_area(
+                                source_triangles, direction
+                            ),
+                            contact_triangles_data,
                         ),
-                    }
-                    result.target_face = {
-                        "normal": tuple(float(-v) for v in direction),
-                        "area": clash_utils.triangles_projected_area(
-                            target_triangles, -direction
+                        (   # face de la target
+                            tuple(float(-v) for v in direction),
+                            clash_utils.triangles_projected_area(
+                                target_triangles, -direction
+                            ),
+                            contact_triangles_data,
                         ),
-                    }
+                    )
                     self.result.append(result)
 
                     # The contact surfaces of the clash, kept in the
@@ -3295,23 +3378,32 @@ class DirectView(RuleCheckTwoObjects):
                         else:
                             blocked_segments.append((origin, aim))
 
-                hit_ratio = 100.0 * hits / casts if casts > 0 else 0.0
+                hit_ratio = hits / casts if casts > 0 else 0.0
                 # The sense of the rule is inverted: the pair clashes
                 # when the rays pass between the two objects, i.e. when
                 # the hit ratio reaches the Threshold (the direct view
                 # is established). A fully occluded pair produces no
                 # result.
-                if hit_ratio >= self.threshold:
+                if hit_ratio >= threshold_fraction:
                     result = ClashResultTwoObjects(
                         source=source_entity,
                         target=target_entity,
                         state=True,
                     )
-                    result.hit_ratio = hit_ratio
-                    result.rays_cast = casts
-                    result.rays_planned = planned
-                    result.hit_segments = hit_segments
-                    result.blocked_segments = blocked_segments
+                    result.info.hit_ratio = hit_ratio  # 0..1 — nominale
+                    result.info.raycast = RaycastData(
+                        planned=planned,
+                        cast=casts,
+                        hit=hits,  # hit_ratio = hit / cast
+                        hit_segments=[
+                            (tuple(float(c) for c in origin), tuple(float(c) for c in aim))
+                            for origin, aim in hit_segments
+                        ],
+                        blocked_segments=[
+                            (tuple(float(c) for c in origin), tuple(float(c) for c in aim))
+                            for origin, aim in blocked_segments
+                        ],
+                    )
                     self.result.append(result)
 
                     # The rays actually cast, kept in the display
@@ -3593,20 +3685,21 @@ class OneObjectFace(RuleCheckOneObject):
 
                 for check, value in self._run_checks(triangle_a, triangle_b):
                     result = ClashResultOneObject(source=entity, state=True)
-                    result.check = check
-                    result.value = value
+                    clash_utils.apply_check_measure(result.info, check, value)
                     normal_a, area_a = self._triangle_data(triangle_a)
                     normal_b, area_b = self._triangle_data(triangle_b)
-                    result.face_a = {
-                        "normal": tuple(float(v) for v in normal_a),
-                        "area": float(area_a),
-                    }
-                    result.face_b = {
-                        "normal": tuple(float(v) for v in normal_b),
-                        "area": float(area_b),
-                    }
-                    result.source_faces = [triangle_a]
-                    result.target_faces = [triangle_b]
+                    result.info.add_face_pair(
+                        (   # face A de l'élément source
+                            tuple(float(v) for v in normal_a),
+                            float(area_a),
+                            [tuple(tuple(float(c) for c in vertex) for vertex in triangle_a)],
+                        ),
+                        (   # face B du même élément
+                            tuple(float(v) for v in normal_b),
+                            float(area_b),
+                            [tuple(tuple(float(c) for c in vertex) for vertex in triangle_b)],
+                        ),
+                    )
                     self.result.append(result)
 
 
@@ -3886,20 +3979,21 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                         target=target_entity,
                         state=True,
                     )
-                    result.check = check
-                    result.value = value
+                    clash_utils.apply_check_measure(result.info, check, value)
                     normal_a, area_a = self._triangle_data(triangle_a)
                     normal_b, area_b = self._triangle_data(triangle_b)
-                    result.face_a = {
-                        "normal": tuple(float(v) for v in normal_a),
-                        "area": float(area_a),
-                    }
-                    result.face_b = {
-                        "normal": tuple(float(v) for v in normal_b),
-                        "area": float(area_b),
-                    }
-                    result.source_faces = [triangle_a]
-                    result.target_faces = [triangle_b]
+                    result.info.add_face_pair(
+                        (   # face de la source
+                            tuple(float(v) for v in normal_a),
+                            float(area_a),
+                            [tuple(tuple(float(c) for c in vertex) for vertex in triangle_a)],
+                        ),
+                        (   # face de la target
+                            tuple(float(v) for v in normal_b),
+                            float(area_b),
+                            [tuple(tuple(float(c) for c in vertex) for vertex in triangle_b)],
+                        ),
+                    )
                     self.result.append(result)
 
 
@@ -4048,15 +4142,18 @@ class ClearanceForDoors(RuleCheckTwoObjects):
     def _build_zones(self, door):
         """The clearance zones of one door.
 
-        Each zone is a dict: leaf, side ("Front"/"Back"), shape
-        ("Arc"/"Rectangle"), dimensions and the OpenCascade solid.
+        Each zone is a dict: leaf, leaf_type (the door OperationType),
+        side ("Front"/"Back"), shape ("Arc"/"Rectangle"), dimensions
+        and the OpenCascade solid.
         """
         origin, x_axis, y_axis, z_axis = clash_utils.get_local_placement_axes(door)
         width, thickness, door_height = self._door_dimensions(door)
 
-        operation = clash_utils.parse_door_operation(
-            clash_utils.get_door_operation_type(door)
-        )
+        operation_type = clash_utils.get_door_operation_type(door)
+        operation = clash_utils.parse_door_operation(operation_type)
+        # Le type de vantail porté par le résultat (ZoneData.leaf) :
+        # l'OperationType IFC, ou le mécanisme déduit si absent.
+        leaf_type = operation_type if operation_type else operation["mechanism"]
         leaves = self.leaves if self.leaves is not None else operation["leaves"]
         leaf_width = width / leaves if leaves > 0 else width
 
@@ -4070,6 +4167,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
             zones.append(
                 {
                     "leaf": leaf,
+                    "leaf_type": leaf_type,
                     "side": side,
                     "shape": "Rectangle",
                     "width": zone_width,
@@ -4092,6 +4190,7 @@ class ClearanceForDoors(RuleCheckTwoObjects):
             zones.append(
                 {
                     "leaf": leaf,
+                    "leaf_type": leaf_type,
                     "side": "Front",
                     "shape": "Arc",
                     "width": zone_width,
@@ -4205,15 +4304,14 @@ class ClearanceForDoors(RuleCheckTwoObjects):
                         result = ClashResultTwoObjects(
                             source=door, target=target["entity"], state=True
                         )
-                        result.penetration_depth = depth
-                        result.zone = {
-                            "shape": zone["shape"],
-                            "side": zone["side"],
-                            "leaf": zone["leaf"],
-                            "width": zone["width"],
-                            "depth": zone["depth"],
-                            "height": zone["height"],
-                        }
+                        result.info.penetration_depth = depth  # m — nominale
+                        result.info.zone = ZoneData(
+                            side=zone["side"],
+                            leaf=zone["leaf_type"],
+                            width=zone["width"],  # m
+                            depth=zone["depth"],  # m
+                            height=zone["height"],  # m
+                        )
                         self.result.append(result)
 
         self.end_rule_action()

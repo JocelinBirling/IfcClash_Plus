@@ -29,6 +29,7 @@ Toutes les fonctions ne pourraient pas en bénéficier. On peut cependant rapide
 
 12. Nettoyage des tests
 Il faudrait faire un nettoyage des tests afin de vérifier qu'ils soient tous bons.
+J'ai fait en partien, mais c'est une tâche à refaire.
 
 
 14. Faire une règle qui vient rechercher les objets les plus proches. => Plutôt une exception ?
@@ -49,3 +50,10 @@ Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, 
 22. Revoir les paramètres à renseigner dans CustomOBB. Revoir aussi la fonction et l'enchainement des modifications de l'OBB.
 
 23. Réparer la Two Rule Face Object pour afficher les objets.
+
+24. Mettre en place une manière de transmettre en script un json, pour que l'on puisse le lancer depuis BonsaiViewer en C++.
+
+
+25. Créer un ID pour chaque resultat. L'ID doit être unique sur le projet. On pourrait numéroter les clash de 1 à X, avec le nom de la règle.
+On aurait aussi un UniqueID, qui serait générer alétoirement.
+

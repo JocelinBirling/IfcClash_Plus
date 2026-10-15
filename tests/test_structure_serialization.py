@@ -17,6 +17,10 @@ sys.path.insert(0, './ifcclash_plus')
 
 from RuleClass import SelectFacet, SelectRule, RuleFile, RuleFolder, AbsoluteOrRelativeChecking
 from Rules import Select, Volume, Area,Intersection
+from Rules import (
+    Alignement, SurfaceRecover, DirectView, OneObjectFace, TwoObjectsFace,
+    ClearanceForDoors, FreeSpace, ClearanceAxisToAxis,
+)
 from booleanrule import BooleanLeaf, OrRule
 from ifctester import ids
 from ifctester.facet import (
@@ -253,6 +257,232 @@ class TestSerializationRoundTrip(unittest.TestCase):
 
         self.assertEqual(len(loaded.contains[0].result), 1)
 
+
+class TestNewRulesRoundTrip(unittest.TestCase):
+    """Round-trip tests of the rules added after the first
+    serialization batch: Alignement, SurfaceRecover, DirectView,
+    OneObjectFace, TwoObjectsFace, ClearanceForDoors, FreeSpace and
+    ClearanceAxisToAxis."""
+
+    def setUp(self):
+        self.ifc_path = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+
+    def _roundtrip(self, rule):
+        """Save a rule to a JSON file and load it back."""
+        rule_file = RuleFile()
+        rule_file.list_ifc_path = [self.ifc_path]
+        rule_file.contains = [rule]
+        filepath = os.path.join(self.temp_dir.name, f"{rule.type}.json")
+        save_to_json(rule_file, filepath)
+        loaded = load_from_json(filepath)
+        self.assertEqual(len(loaded.contains), 1)
+        return loaded.contains[0]
+
+    def _select(self, **facet):
+        select = SelectFacet()
+        select.applicability = [ids.Attribute(**facet)]
+        return select
+
+    def test_clearance_axis_to_axis_roundtrip(self):
+        rule = ClearanceAxisToAxis(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"),
+            mode="MinDistance",
+            min_distance=0.5,
+            max_distance=1.0,
+            tolerance=0.05,
+            linearity_ratio=5.0,
+            on_non_linear="Fallback",
+            parallel_tolerance=2.5,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "ClearanceAxisToAxis")
+        self.assertEqual(loaded.mode, "MinDistance")
+        self.assertEqual(loaded.min_distance, 0.5)
+        self.assertEqual(loaded.max_distance, 1.0)
+        self.assertEqual(loaded.tolerance, 0.05)
+        self.assertEqual(loaded.linearity_ratio, 5.0)
+        self.assertEqual(loaded.on_non_linear, "Fallback")
+        self.assertEqual(loaded.parallel_tolerance, 2.5)
+
+    def test_clearance_axis_to_axis_loaded_runs(self):
+        """The loaded rule runs and produces the same results as the
+        original (the two collinear beam segments of the stair
+        opening)."""
+        rule = ClearanceAxisToAxis(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"),
+            mode="Perpendicular",
+            min_distance=0.5,
+            max_distance=1.0,
+        )
+        rule_file = RuleFile()
+        rule_file.list_ifc_path = [self.ifc_path]
+        rule_file.contains = [rule]
+        rule_file.run()
+
+        loaded = self._roundtrip(rule)
+        loaded_file = RuleFile()
+        loaded_file.list_ifc_path = [self.ifc_path]
+        loaded_file.contains = [loaded]
+        loaded_file.run()
+
+        self.assertEqual(len(loaded.result), len(rule.result))
+        self.assertEqual(
+            [result.info.distance for result in loaded.result],
+            [result.info.distance for result in rule.result],
+        )
+
+    def test_alignement_roundtrip(self):
+        rule = Alignement(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            axis="Vertical",
+            alignment_type="Line",
+            tolerance=0.15,
+            min_group=2,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "Alignement")
+        self.assertEqual(loaded.axis, "Vertical")
+        self.assertEqual(loaded.alignment_type, "Line")
+        self.assertEqual(loaded.tolerance, 0.15)
+        self.assertEqual(loaded.min_group, 2)
+
+    def test_surface_recover_roundtrip(self):
+        rule = SurfaceRecover(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"),
+            direction=(0.0, 0.0, 1.0),
+            reference="Target",
+            tolerance=0.01,
+            min_covering="70%",
+            max_covering=2.5,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "SurfaceRecover")
+        self.assertEqual(loaded.direction, (0.0, 0.0, 1.0))
+        self.assertEqual(loaded.reference, "Target")
+        self.assertEqual(loaded.tolerance, 0.01)
+        self.assertEqual(loaded.min_covering, ("relative", 70.0))
+        self.assertEqual(loaded.max_covering, ("absolute", 2.5))
+
+    def test_direct_view_roundtrip(self):
+        context = SelectFacet()
+        context.applicability = [ids.Entity(name="IFCWALL")]
+        rule = DirectView(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"),
+            context,
+            ray_source="Both",
+            ray_count=25,
+            threshold="50%",
+            max_distance=5.0,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "DirectView")
+        self.assertEqual(loaded.ray_source, "Both")
+        self.assertEqual(loaded.ray_count, 25)
+        self.assertEqual(loaded.threshold, 50.0)
+        self.assertEqual(loaded.max_distance, 5.0)
+        # The context select is restored as a SelectFacet.
+        self.assertIsInstance(loaded.select_context, SelectFacet)
+
+    def test_one_object_face_roundtrip(self):
+        rule = OneObjectFace(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            face_a_selection={"orientation": "Top", "min_surface": 0.5},
+            face_b_selection={"orientation": (0.0, 0.0, -1.0)},
+            distance=True,
+            min_distance=0.1,
+            max_distance=0.4,
+            skip_adjacent=False,
+            intersection=True,
+            intersection_tolerance=0.01,
+            orientation=True,
+            angle=90.0,
+            angle_tolerance=5.0,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "OneObjectFace")
+        self.assertEqual(loaded.face_a_selection["orientation"], "Top")
+        self.assertEqual(loaded.face_a_selection["min_surface"], 0.5)
+        self.assertEqual(
+            loaded.face_b_selection["orientation"], (0.0, 0.0, -1.0)
+        )
+        self.assertTrue(loaded.distance)
+        self.assertEqual(loaded.min_distance, 0.1)
+        self.assertEqual(loaded.max_distance, 0.4)
+        self.assertFalse(loaded.skip_adjacent)
+        self.assertTrue(loaded.intersection)
+        self.assertEqual(loaded.intersection_tolerance, 0.01)
+        self.assertTrue(loaded.orientation)
+        self.assertEqual(loaded.angle, 90.0)
+        self.assertEqual(loaded.angle_tolerance, 5.0)
+
+    def test_two_objects_face_roundtrip(self):
+        rule = TwoObjectsFace(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK$Dv"),
+            source_face_selection={"orientation": "Bottom"},
+            target_face_selection={"extreme_faces": True},
+            distance=True,
+            min_distance=0.1,
+            intersection=True,
+            intersection_tolerance=0.02,
+            orientation=True,
+            angle=180.0,
+            angle_tolerance=1.0,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "TwoObjectsFace")
+        self.assertEqual(loaded.source_face_selection["orientation"], "Bottom")
+        self.assertTrue(loaded.target_face_selection["extreme_faces"])
+        self.assertTrue(loaded.distance)
+        self.assertEqual(loaded.min_distance, 0.1)
+        self.assertTrue(loaded.intersection)
+        self.assertEqual(loaded.intersection_tolerance, 0.02)
+        self.assertTrue(loaded.orientation)
+        self.assertEqual(loaded.angle, 180.0)
+        self.assertEqual(loaded.angle_tolerance, 1.0)
+
+    def test_clearance_for_doors_roundtrip(self):
+        rule = ClearanceForDoors(
+            SelectFacet(),
+            SelectFacet(),
+            zone_shape="Rectangle",
+            sides="Both",
+            leaves=2,
+            width=1.5,
+            depth=2.0,
+            height=2.5,
+            tolerance=0.05,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "ClearanceForDoors")
+        self.assertEqual(loaded.zone_shape, "Rectangle")
+        self.assertEqual(loaded.sides, "Both")
+        self.assertEqual(loaded.leaves, 2)
+        self.assertEqual(loaded.width, 1.5)
+        self.assertEqual(loaded.depth, 2.0)
+        self.assertEqual(loaded.height, 2.5)
+        self.assertEqual(loaded.tolerance, 0.05)
+
+    def test_free_space_roundtrip(self):
+        context = SelectFacet()
+        context.applicability = [ids.Entity(name="IFCBUILDINGELEMENTPROXY")]
+        rule = FreeSpace(
+            self._select(name="GlobalId", value="2OrWItJ6zAwBNp0OUxK_l8"),
+            context,
+            diameter=0.6,
+            height=1.8,
+        )
+        loaded = self._roundtrip(rule)
+        self.assertEqual(loaded.type, "FreeSpace")
+        self.assertEqual(loaded.diameter, 0.6)
+        self.assertEqual(loaded.height, 1.8)
+        self.assertIsInstance(loaded.select_context, SelectFacet)
 
 
 if __name__ == "__main__":

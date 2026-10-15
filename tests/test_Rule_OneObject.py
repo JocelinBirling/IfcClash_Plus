@@ -11,6 +11,8 @@ from ifctester import ids
 
 import ifcopenshell.geom.main
 import ifcopenshell.util.shape
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 class TestRules(unittest.TestCase):
     """
@@ -37,6 +39,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[volume_rule]
         OneRuleFile.run()
+        assert_result_shape(volume_rule)
 
         self.assertEqual(len(volume_rule.result), 2) 
         for result in volume_rule.result:
@@ -57,6 +60,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[area_rule]
         OneRuleFile.run()
+        assert_result_shape(area_rule)
 
         self.assertEqual(len(area_rule.result), 8) 
         for result in area_rule.result:
@@ -76,6 +80,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[top_surface_rule]
         OneRuleFile.run()
+        assert_result_shape(top_surface_rule)
 
         self.assertEqual(len(top_surface_rule.result), 8)
         for result in top_surface_rule.result:
@@ -95,6 +100,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[top_surface_rule]
         OneRuleFile.run()
+        assert_result_shape(top_surface_rule)
 
         self.assertEqual(len(top_surface_rule.result), 8) 
         for result in top_surface_rule.result:
@@ -115,6 +121,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[top_surface_rule]
         OneRuleFile.run()
+        assert_result_shape(top_surface_rule)
 
         
         for result in top_surface_rule.result:
@@ -136,6 +143,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[top_surface_rule]
         OneRuleFile.run()
+        assert_result_shape(top_surface_rule)
 
         
         for result in top_surface_rule.result:
@@ -160,6 +168,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         
         for result in rule.result:
@@ -181,6 +190,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
 
         for result in rule.result:
@@ -205,6 +215,7 @@ class TestRules(unittest.TestCase):
 
         OneRuleFile.contains=[rule]
         OneRuleFile.run()
+        assert_result_shape(rule)
 
         
         for result in rule.result:

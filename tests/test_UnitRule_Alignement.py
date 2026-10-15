@@ -20,6 +20,8 @@ sys.path.insert(0, "./ifcclash_plus")
 
 from Rules import Alignement
 from RuleClass import SelectFacet, RuleFile, ClashResultOneObject
+
+from tests.test_structure_ResultShape import assert_result_shape
 from clash_utils import (
     alignment_clash_flags,
     least_squares_line_2d,
@@ -116,6 +118,7 @@ class TestAlignement(unittest.TestCase):
         rule = Alignement(select, **parameters)
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     # ---- Nominal
@@ -135,8 +138,8 @@ class TestAlignement(unittest.TestCase):
         self.assertIsInstance(result, ClashResultOneObject)
         self.assertEqual(result.source.Name, "C_offset")
         # Offset guides the correction: ~0.43 m from the fitted line.
-        self.assertGreater(result.offset, 0.35)
-        self.assertLess(result.offset, 0.5)
+        self.assertGreater(result.info.offset, 0.35)
+        self.assertLess(result.info.offset, 0.5)
 
     def test_vertical_alignment_info(self):
         """The rule exposes the fitted line and its member objects."""
@@ -225,7 +228,7 @@ class TestAlignement(unittest.TestCase):
 
         self.assertEqual(len(rule.result), 1)
         self.assertEqual(rule.result[0].source.Name, "W_crossing")
-        self.assertGreater(rule.result[0].offset, 1.0)
+        self.assertGreater(rule.result[0].info.offset, 1.0)
 
     # ---- Negative
 

@@ -25,6 +25,8 @@ import ifcopenshell.api
 
 from Rules import DirectView
 from RuleClass import SelectFacet, RuleFile, ClashResultTwoObjects
+
+from tests.test_structure_ResultShape import assert_result_shape
 from clash_utils import (
     direct_view_early_stop,
     plan_ray_counts,
@@ -145,6 +147,7 @@ class TestDirectView(unittest.TestCase):
         )
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     # ---- Nominal
@@ -161,7 +164,7 @@ class TestDirectView(unittest.TestCase):
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.source.Name, "Observer")
             self.assertEqual(result.target.Name, "Target")
-            self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
+            self.assertAlmostEqual(result.info.hit_ratio, 1.0, places=6)
 
     def test_blocked_view_no_clash(self):
         """A wall between the observer and the target blocks every
@@ -182,8 +185,8 @@ class TestDirectView(unittest.TestCase):
 
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertEqual(result.rays_cast, 10)
-        self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
+        self.assertEqual(result.info.raycast.cast, 10)
+        self.assertAlmostEqual(result.info.hit_ratio, 1.0, places=6)
 
     def test_blocked_target_emits(self):
         """Ray_Source = Target: the wall blocks the rays, no result."""
@@ -205,9 +208,9 @@ class TestDirectView(unittest.TestCase):
         )
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
-        self.assertEqual(result.rays_planned, 20)
-        self.assertEqual(result.rays_cast, 20)
-        self.assertAlmostEqual(result.hit_ratio, 100.0, places=6)
+        self.assertEqual(result.info.raycast.planned, 20)
+        self.assertEqual(result.info.raycast.cast, 20)
+        self.assertAlmostEqual(result.info.hit_ratio, 1.0, places=6)
 
     def test_partial_occlusion_below_threshold_no_clash(self):
         """A wall on one side of the corridor: the hit ratio (~10-16%)
@@ -233,11 +236,12 @@ class TestDirectView(unittest.TestCase):
         self.assertEqual(len(rule.result), 1)
         result = rule.result[0]
         # The ratio over the rays actually cast reaches the threshold.
-        self.assertGreaterEqual(result.hit_ratio, 5.0)
+        self.assertGreaterEqual(result.info.hit_ratio, 0.05)
         # The reported zones cover exactly the rays actually cast.
         self.assertEqual(
-            len(result.hit_segments) + len(result.blocked_segments),
-            result.rays_cast,
+            len(result.info.raycast.hit_segments)
+            + len(result.info.raycast.blocked_segments),
+            result.info.raycast.cast,
         )
 
     # ---- Max_Distance
@@ -267,7 +271,7 @@ class TestDirectView(unittest.TestCase):
             self.blocked_model, context_names=("Wall",), threshold="0%"
         )
         self.assertEqual(len(rule.result), 1)
-        self.assertAlmostEqual(rule.result[0].hit_ratio, 0.0, places=6)
+        self.assertAlmostEqual(rule.result[0].info.hit_ratio, 0.0, places=6)
 
     def test_invalid_parameters_raise_value_error(self):
         source = self.select("Observer")

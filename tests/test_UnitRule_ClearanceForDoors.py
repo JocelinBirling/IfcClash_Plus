@@ -33,6 +33,8 @@ from clash_utils import (
 )
 from ifctester import ids
 
+from tests.test_structure_ResultShape import assert_result_shape
+
 
 def make_model(path, operation="SINGLE_SWING_LEFT"):
     """A door with an OperationType and three obstruction boxes."""
@@ -162,6 +164,7 @@ class TestClearanceForDoors(unittest.TestCase):
         )
         rule_file.contains = [rule]
         rule_file.run()
+        assert_result_shape(rule)
         return rule
 
     def target_names(self, rule):
@@ -179,30 +182,31 @@ class TestClearanceForDoors(unittest.TestCase):
         self.assertIsInstance(result, ClashResultTwoObjects)
         self.assertEqual(result.source.Name, "Door")
         self.assertEqual(result.target.Name, "InSweep")
-        self.assertEqual(result.zone["shape"], "Arc")
-        self.assertEqual(result.zone["side"], "Front")
-        self.assertEqual(result.zone["leaf"], 1)
+        # ZoneData carries the serializable dimensions of the zone;
+        # the swept shape (Arc) stays in the rule, not in the result.
+        self.assertEqual(result.info.zone.side, "Front")
+        self.assertEqual(result.info.zone.leaf, "SINGLE_SWING_LEFT")
         # The zone dimensions come from the door: leaf width and height.
-        self.assertAlmostEqual(result.zone["width"], 0.9, places=3)
-        self.assertAlmostEqual(result.zone["height"], 2.1, places=3)
-        self.assertGreater(result.penetration_depth, 0.1)
+        self.assertAlmostEqual(result.info.zone.width, 0.9, places=3)
+        self.assertAlmostEqual(result.info.zone.height, 2.1, places=3)
+        self.assertGreater(result.info.penetration_depth, 0.1)
 
     def test_sides_both_checks_front_and_back(self):
         rule = self.run_rule(zone_shape="Arc", sides="Both")
         self.assertEqual(self.target_names(rule), ["Behind", "InSweep"])
         by_target = {result.target.Name: result for result in rule.result}
-        self.assertEqual(by_target["Behind"].zone["side"], "Back")
-        self.assertEqual(by_target["Behind"].zone["shape"], "Rectangle")
+        self.assertEqual(by_target["Behind"].info.zone.side, "Back")
+        self.assertEqual(by_target["Behind"].info.zone.leaf, "SINGLE_SWING_LEFT")
 
     def test_rectangle_front(self):
         rule = self.run_rule(zone_shape="Rectangle", sides="Front")
         self.assertEqual(self.target_names(rule), ["InSweep"])
-        self.assertEqual(rule.result[0].zone["shape"], "Rectangle")
+        self.assertEqual(rule.result[0].info.zone.side, "Front")
 
     def test_sides_back_only(self):
         rule = self.run_rule(zone_shape="Arc", sides="Back")
         self.assertEqual(self.target_names(rule), ["Behind"])
-        self.assertEqual(rule.result[0].zone["side"], "Back")
+        self.assertEqual(rule.result[0].info.zone.side, "Back")
 
     def test_override_dimensions(self):
         """Regulatory dimensions override the door size."""
@@ -214,9 +218,9 @@ class TestClearanceForDoors(unittest.TestCase):
             height=2.5,
         )
         self.assertEqual(self.target_names(rule), ["InSweep"])
-        self.assertAlmostEqual(rule.result[0].zone["width"], 1.5, places=6)
-        self.assertAlmostEqual(rule.result[0].zone["depth"], 2.0, places=6)
-        self.assertAlmostEqual(rule.result[0].zone["height"], 2.5, places=6)
+        self.assertAlmostEqual(rule.result[0].info.zone.width, 1.5, places=6)
+        self.assertAlmostEqual(rule.result[0].info.zone.depth, 2.0, places=6)
+        self.assertAlmostEqual(rule.result[0].info.zone.height, 2.5, places=6)
 
     # ---- Sliding doors and unknown operation
 
@@ -229,7 +233,8 @@ class TestClearanceForDoors(unittest.TestCase):
         rule = self.run_rule(model=model, zone_shape="Arc", sides="Swing")
         self.assertEqual(self.target_names(rule), ["Behind", "InSweep"])
         self.assertEqual(
-            {result.zone["shape"] for result in rule.result}, {"Rectangle"}
+            {result.info.zone.side for result in rule.result},
+            {"Front", "Back"},
         )
 
     def test_unknown_operation_falls_back_conservative(self):
@@ -240,7 +245,8 @@ class TestClearanceForDoors(unittest.TestCase):
         rule = self.run_rule(model=model, zone_shape="Arc", sides="Swing")
         self.assertEqual(self.target_names(rule), ["Behind", "InSweep"])
         self.assertEqual(
-            {result.zone["shape"] for result in rule.result}, {"Rectangle"}
+            {result.info.zone.side for result in rule.result},
+            {"Front", "Back"},
         )
 
     # ---- Tolerance

@@ -14,7 +14,7 @@ from ifctester.facet import (
     PartOf,
     Material,
 )
-from typing import Literal, TypedDict, Union
+from typing import Literal, NamedTuple, TypedDict, Union
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -1488,6 +1488,577 @@ class AbsoluteOrRelativeChecking:
         return groupresult
 
 
+# ==== Result Info
+class PointEntry(NamedTuple):
+    """Une entrée de source_points / target_points."""
+
+    number: int  # le numéro de paire
+    point: tuple  # (x, y, z)
+    label: str | None = None  # libre (ex. "entry"/"exit")
+
+
+class FaceData(NamedTuple):
+    """Une face d'une paire, côté source ou target."""
+
+    normal: tuple  # unitaire, (x, y, z)
+    area: float  # m2
+    triangles: list = []  # triangles d'origine (3 points chacun) ou []
+
+
+class FaceEntry(NamedTuple):
+    """Une entrée de source_faces / target_faces."""
+
+    number: int  # le numéro de paire
+    face: FaceData
+
+
+class ObbData(NamedTuple):
+    """Un OBB porté par le résultat (objet propre ou zone de détection)."""
+
+    center: tuple  # (x, y, z)
+    axes: tuple  # 3 directions orthonormées, chacune (x, y, z)
+    half_sizes: tuple  # 3 demi-tailles (m)
+    label: str | None = None  # libre ("object", "zone"...)
+
+
+class RaycastData(NamedTuple):
+    """DirectView : le détail du lancer de rayons — provenance : une seule
+    règle (DirectView). Les consommateurs ne lisent que hit_ratio
+    (hit / cast) ; les segments servent à l'affichage."""
+
+    planned: int  # rayons prévus
+    cast: int  # rayons effectivement lancés
+    hit: int  # rayons ayant touché l'autre objet
+    hit_segments: list = []  # segments origine->but, chaque segment : 2 points
+    blocked_segments: list = []
+
+
+class ZoneData(NamedTuple):
+    """ClearanceForDoors : la zone de dégagement balayée par le
+    bloc-porte — provenance : une seule règle (ClearanceForDoors).
+    Le solide OCC reste dans le registre d'affichage ; ces seules
+    dimensions sérialisables suffisent à le reconstruire."""
+
+    side: str  # côté du bloc-porte (ex. "Front")
+    leaf: str  # type de vantail (ex. "SingleSwingLeft")
+    width: float  # largeur balayée (m)
+    depth: float  # profondeur (m)
+    height: float  # hauteur (m)
+
+
+# La forme sérialisable du contrat (voir to_dict) : c'est elle que
+# consomment la sérialisation, le futur C++ et la feuille de test.
+RESULT_SHAPE = {
+    # measure : une entrée par mesure posée, la clé = le nom de la
+    # mesure, dans l'ordre de pose (la première = nominale)
+    "measure": {
+        "distance": {"value": float},
+    },
+    "points": [
+        {
+            "number": int,  # le numéro de paire
+            "source": tuple,  # POINT : (x, y, z)
+            "target": tuple,  # POINT
+            "label": str,  # optionnel, libre
+        },
+    ],
+    "faces": [
+        {
+            "number": int,  # le numéro de paire
+            "source": {
+                "normal": tuple,  # POINT
+                "area": float,
+                "triangles": list,
+            },
+            "target": {"normal": tuple, "area": float, "triangles": list},
+        },
+    ],
+    "volumes": {
+        "intersection": float,  # m3
+        "ratio": float,  # 0..1
+        "containment": float,  # 0..1
+        "clearance_violated": float,  # m3
+    },
+    "obbs": {
+        # deux listes indépendantes, non appariées
+        "source": [
+            {
+                "center": tuple,  # POINT
+                "axes": list,  # [POINT, POINT, POINT]
+                "half_sizes": tuple,
+                "label": str,  # optionnel
+            },
+        ],
+        "target": [dict],
+    },
+    # -- Les blocs propres à une règle : présents seulement si posés,
+    #    documentés dans la classe (fonctionnement + provenance) ;
+    #    les consommateurs génériques les ignorent.
+    "axis": {  # ClearanceAxisToAxis
+        "mode": str,
+        "degraded": bool,
+    },
+    "raycast": {  # DirectView
+        "planned": int,
+        "cast": int,
+        "hit": int,  # hit_ratio = hit / cast
+        "hit_segments": list,  # [(POINT, POINT)]
+        "blocked_segments": list,  # [(POINT, POINT)]
+    },
+    "zone": {  # ClearanceForDoors
+        "side": str,
+        "leaf": str,
+        "width": float,  # m
+        "depth": float,  # m
+        "height": float,  # m
+    },
+}
+
+
+class ResultInfo:
+    """Toutes les données qu'une règle attache à un résultat, hors noyau
+    commun.
+
+    Les mesures scalaires sont des attributs déclarés (vocabulaire de la
+    table des mesures, doc/specification_ResultData.md section 4) :
+    ``info.distance = 0.42``. Les structures sont des listes de
+    NamedTuple — des tuples : l'append direct d'un tuple nu reste
+    valide. Aucun contrôle à l'écriture ni pendant la run — le contrat
+    est vérifié aux tests par validate(). La plupart des propriétés
+    restent vides la plupart du temps — la classe existe aussi pour
+    porter les méthodes qui dispatchent selon le contenu du résultat.
+
+    Les blocs propres à une seule règle sont des attributs déclarés
+    comme les autres (pas de dict) :
+
+    - ``axis_mode`` / ``axis_degraded`` (str / bool | None) — le mode
+      de calcul de l'axe et son caractère dégradé ; produit par
+      ClearanceAxisToAxis uniquement.
+    - ``raycast`` (RaycastData | None) — le détail du lancer de rayons ;
+      produit par DirectView uniquement.
+    - ``zone`` (ZoneData | None) — la zone de dégagement du bloc-porte ;
+      produite par ClearanceForDoors uniquement.
+    """
+
+    # Le vocabulaire des mesures — pour en ajouter une : déclarer
+    # l'attribut dans __init__, l'ajouter ici et à RESULT_SHAPE.
+    MEASURE_ATTRIBUTES = frozenset(
+        {
+            "distance",
+            "penetration_depth",
+            "contact_area",
+            "ratio",
+            "offset",
+            "hit_ratio",
+            "angle",
+        }
+    )
+
+    def __init__(self):
+        # Ordre de pose des mesures (suivi interne pour la nominale) :
+        # posé en premier pour que __setattr__ puisse le lire.
+        self._measure_order: list[str] = []
+
+        # -- Les mesures scalaires : attributs déclarés, None = non
+        #    mesurée. La première mesure POSÉE (non None) est la mesure
+        #    nominale du résultat. L'unité est portée par le
+        #    vocabulaire (section 4), la donnée est un float nu.
+        self.distance: float | None = None  # m
+        self.penetration_depth: float | None = None  # m
+        self.contact_area: float | None = None  # m2
+        self.ratio: float | None = None  # 0..1
+        self.offset: float | None = None  # m
+        self.hit_ratio: float | None = None  # 0..1
+        self.angle: float | None = None  # deg
+
+        # -- Les points de contact / proximité, appariés PAR NUMÉRO :
+        #    l'entrée n° N de source_points répond à l'entrée n° N de
+        #    target_points. Le numéro est posé par add_point_pair ;
+        #    validate() contrôle qu'aucun numéro n'est orphelin.
+        self.source_points: list[PointEntry] = []
+        self.target_points: list[PointEntry] = []
+
+        # -- Les faces, appariées PAR NUMÉRO : la face n° N de
+        #    source_faces est vérifiée contre la face n° N de
+        #    target_faces. Le numéro est posé par add_face_pair. Pour
+        #    une règle mono-objet, les deux côtés de la paire portent
+        #    sur le même élément (le source).
+        self.source_faces: list[FaceEntry] = []
+        self.target_faces: list[FaceEntry] = []
+
+        # -- Les mesures volumiques : attributs scalaires, None = non
+        #    mesurée.
+        self.volume_intersection: float | None = None  # m3
+        self.volume_ratio: float | None = None  # 0..1, relatif au plus petit
+        self.containment_ratio: float | None = None  # 0..1
+        self.clearance_violated_volume: float | None = None  # m3
+
+        # -- Les OBB, NON appariés : deux listes indépendantes (un
+        #    élément peut porter son propre OBB et ses zones de
+        #    détection, distinguées par label). ObbData est complet :
+        #    le solide OCC se reconstruit depuis ses seules données.
+        self.source_obbs: list[ObbData] = []
+        self.target_obbs: list[ObbData] = []
+
+        # -- Les données propres à une seule règle (voir docstring).
+        self.axis_mode: str | None = None  # "Perpendicular" | "MinDistance" | "Fallback"
+        self.axis_degraded: bool | None = None  # True si fallback géométrique
+        self.raycast: RaycastData | None = None  # DirectView
+        self.zone: ZoneData | None = None  # ClearanceForDoors
+
+    def __setattr__(self, name, value):
+        # Écriture suivie, silencieuse : aucune validation, aucune
+        # alarme — seulement l'ordre de pose des mesures (une pose à
+        # None retire la mesure de l'ordre).
+        if name in self.MEASURE_ATTRIBUTES:
+            order = self.__dict__.get("_measure_order")
+            if order is not None:
+                if value is None:
+                    if name in order:
+                        order.remove(name)
+                elif name not in order:
+                    order.append(name)
+        object.__setattr__(self, name, value)
+
+    # ---- L'écriture des listes (append n'est pas intercepté)
+    def add_point_pair(self, source, target, label=None) -> int:
+        """Pose le numéro N sur les deux côtés, retourne N.
+
+        Coerce l'entrée nue : PointEntry(N, tuple(source), label)."""
+        number = len(self.source_points) + 1
+        self.source_points.append(PointEntry(number, tuple(source), label))
+        self.target_points.append(PointEntry(number, tuple(target), label))
+        return number
+
+    def add_face_pair(self, source_face, target_face) -> int:
+        """Pose le numéro N sur les deux côtés, retourne N.
+
+        Coerce via FaceData(*source_face) : un tuple nu passe tel quel,
+        aucune forme d'appel à changer dans les règles."""
+        number = len(self.source_faces) + 1
+        self.source_faces.append(
+            FaceEntry(number, FaceData(*source_face))
+        )
+        self.target_faces.append(
+            FaceEntry(number, FaceData(*target_face))
+        )
+        return number
+
+    def add_source_obb(self, obb) -> None:
+        """Coerce via ObbData(*obb)."""
+        self.source_obbs.append(ObbData(*obb))
+
+    def add_target_obb(self, obb) -> None:
+        """Coerce via ObbData(*obb)."""
+        self.target_obbs.append(ObbData(*obb))
+
+    # ---- Lecture
+    @property
+    def primary_measure(self) -> str | None:
+        """Le nom de la mesure nominale (première posée), None sinon."""
+        return self._measure_order[0] if self._measure_order else None
+
+    def measure(self, check) -> float | None:
+        """La valeur de la mesure demandée, None si non posée."""
+        return getattr(self, check, None)
+
+    @property
+    def has_volumes(self) -> bool:
+        """Vrai si au moins un attribut volumique est renseigné."""
+        return any(
+            getattr(self, name) is not None
+            for name in (
+                "volume_intersection",
+                "volume_ratio",
+                "containment_ratio",
+                "clearance_violated_volume",
+            )
+        )
+
+    # ---- Contrôle (aux tests uniquement)
+    def validate(self) -> list[str]:
+        """Passe de contrôle de tout le contenu : mesures posées
+        numériques, points 3D, faces et OBB bien formés (y compris les
+        appends directs), numéros de paires appariés — aucun numéro
+        orphelin d'un seul côté —, blocs propres à une règle bien
+        formés. Retourne la liste des fautes, sans effet de bord :
+        appelée par la feuille de test, jamais pendant la run. Les
+        champs NamedTuple nomment le fautif dans la faute
+        (``faces[2].face.area: str != float``) au lieu d'un index."""
+
+        def is_number(value):
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+        def point_fault(path, value):
+            if not isinstance(value, tuple) or len(value) != 3:
+                return [f"{path}: {type(value).__name__} != 3-tuple"]
+            for coordinate in value:
+                if not is_number(coordinate):
+                    return [f"{path}: {type(coordinate).__name__} != number"]
+            return []
+
+        def points_fault(path, value):
+            return point_fault(f"{path}.point", value)
+
+        faults = []
+
+        # Les mesures posées doivent être numériques.
+        for name in self.MEASURE_ATTRIBUTES:
+            value = getattr(self, name)
+            if value is not None and not is_number(value):
+                faults.append(f"{name}: {type(value).__name__} != number")
+
+        # Les points : structure PointEntry et appariement par numéro.
+        for attribute in ("source_points", "target_points"):
+            for index, entry in enumerate(getattr(self, attribute)):
+                path = f"{attribute}[{index}]"
+                if not isinstance(entry, tuple) or len(entry) != 3:
+                    faults.append(f"{path}: {type(entry).__name__} != PointEntry")
+                    continue
+                if not isinstance(entry[0], int) or isinstance(entry[0], bool):
+                    faults.append(f"{path}.number: {type(entry[0]).__name__} != int")
+                faults.extend(points_fault(path, entry[1]))
+                if entry[2] is not None and not isinstance(entry[2], str):
+                    faults.append(f"{path}.label: {type(entry[2]).__name__} != str")
+        source_numbers = {
+            entry[0] for entry in self.source_points if isinstance(entry, tuple)
+        }
+        target_numbers = {
+            entry[0] for entry in self.target_points if isinstance(entry, tuple)
+        }
+        for orphan in sorted(source_numbers ^ target_numbers):
+            faults.append(f"points: orphan pair number {orphan}")
+
+        # Les faces : structure FaceEntry/FaceData et appariement.
+        def face_data_faults(path, face):
+            if not isinstance(face, tuple) or len(face) != 3:
+                return [f"{path}: {type(face).__name__} != FaceData"]
+            faults_ = point_fault(f"{path}.normal", face[0])
+            if not is_number(face[1]):
+                faults_.append(f"{path}.area: {type(face[1]).__name__} != float")
+            if not isinstance(face[2], list):
+                faults_.append(f"{path}.triangles: {type(face[2]).__name__} != list")
+            else:
+                for triangle_index, triangle in enumerate(face[2]):
+                    triangle_path = f"{path}.triangles[{triangle_index}]"
+                    if not isinstance(triangle, tuple) or len(triangle) != 3:
+                        faults_.append(
+                            f"{triangle_path}: {type(triangle).__name__} != triangle"
+                        )
+                        continue
+                    for vertex in triangle:
+                        faults_.extend(point_fault(triangle_path, vertex))
+            return faults_
+
+        for attribute in ("source_faces", "target_faces"):
+            for index, entry in enumerate(getattr(self, attribute)):
+                path = f"{attribute}[{index}]"
+                if not isinstance(entry, tuple) or len(entry) != 2:
+                    faults.append(f"{path}: {type(entry).__name__} != FaceEntry")
+                    continue
+                if not isinstance(entry[0], int) or isinstance(entry[0], bool):
+                    faults.append(f"{path}.number: {type(entry[0]).__name__} != int")
+                faults.extend(face_data_faults(f"{path}.face", entry[1]))
+        source_face_numbers = {
+            entry[0] for entry in self.source_faces if isinstance(entry, tuple)
+        }
+        target_face_numbers = {
+            entry[0] for entry in self.target_faces if isinstance(entry, tuple)
+        }
+        for orphan in sorted(source_face_numbers ^ target_face_numbers):
+            faults.append(f"faces: orphan pair number {orphan}")
+
+        # Les OBB : structure ObbData, demi-tailles positives.
+        for attribute in ("source_obbs", "target_obbs"):
+            for index, entry in enumerate(getattr(self, attribute)):
+                path = f"{attribute}[{index}]"
+                if not isinstance(entry, tuple) or len(entry) != 4:
+                    faults.append(f"{path}: {type(entry).__name__} != ObbData")
+                    continue
+                faults.extend(point_fault(f"{path}.center", entry[0]))
+                if not isinstance(entry[1], tuple) or len(entry[1]) != 3:
+                    faults.append(f"{path}.axes: {type(entry[1]).__name__} != 3-tuple")
+                else:
+                    for axis_index, axis in enumerate(entry[1]):
+                        faults.extend(
+                            point_fault(f"{path}.axes[{axis_index}]", axis)
+                        )
+                if (
+                    not isinstance(entry[2], tuple)
+                    or len(entry[2]) != 3
+                    or not all(is_number(size) for size in entry[2])
+                ):
+                    faults.append(
+                        f"{path}.half_sizes: {type(entry[2]).__name__} != 3 numbers"
+                    )
+                elif any(size < 0 for size in entry[2]):
+                    faults.append(f"{path}.half_sizes: negative")
+                if entry[3] is not None and not isinstance(entry[3], str):
+                    faults.append(f"{path}.label: {type(entry[3]).__name__} != str")
+
+        # Les blocs propres à une règle.
+        if self.axis_mode is not None and not isinstance(self.axis_mode, str):
+            faults.append(f"axis_mode: {type(self.axis_mode).__name__} != str")
+        if self.axis_degraded is not None and not isinstance(
+            self.axis_degraded, bool
+        ):
+            faults.append(f"axis_degraded: {type(self.axis_degraded).__name__} != bool")
+
+        if self.raycast is not None:
+            raycast = self.raycast
+            if not isinstance(raycast, tuple) or len(raycast) != 5:
+                faults.append(f"raycast: {type(raycast).__name__} != RaycastData")
+            else:
+                for name in ("planned", "cast", "hit"):
+                    value = raycast[RaycastData._fields.index(name)]
+                    if not isinstance(value, int) or isinstance(value, bool):
+                        faults.append(
+                            f"raycast.{name}: {type(value).__name__} != int"
+                        )
+                for name, position in (("hit_segments", 3), ("blocked_segments", 4)):
+                    segments = raycast[position]
+                    if not isinstance(segments, list):
+                        faults.append(
+                            f"raycast.{name}: {type(segments).__name__} != list"
+                        )
+                        continue
+                    for segment_index, segment in enumerate(segments):
+                        segment_path = f"raycast.{name}[{segment_index}]"
+                        if not isinstance(segment, tuple) or len(segment) != 2:
+                            faults.append(
+                                f"{segment_path}: {type(segment).__name__} != segment"
+                            )
+                            continue
+                        faults.extend(point_fault(f"{segment_path}[0]", segment[0]))
+                        faults.extend(point_fault(f"{segment_path}[1]", segment[1]))
+
+        if self.zone is not None:
+            zone = self.zone
+            if not isinstance(zone, tuple) or len(zone) != 5:
+                faults.append(f"zone: {type(zone).__name__} != ZoneData")
+            else:
+                for name in ("side", "leaf"):
+                    value = zone[ZoneData._fields.index(name)]
+                    if not isinstance(value, str):
+                        faults.append(f"zone.{name}: {type(value).__name__} != str")
+                for name in ("width", "depth", "height"):
+                    value = zone[ZoneData._fields.index(name)]
+                    if not is_number(value):
+                        faults.append(
+                            f"zone.{name}: {type(value).__name__} != float"
+                        )
+
+        return faults
+
+    # ---- La frontière d'export
+    def to_dict(self) -> dict:
+        """La forme sérialisable du contrat (RESULT_SHAPE) : c'est ici,
+        et ici seulement, que les attributs et tuples deviennent des
+        dicts. Les entrées sont appariées par leur numéro de paire ;
+        un bloc absent n'est pas posé (une règle remplit ce qu'elle
+        mesure)."""
+        data = {}
+
+        if self._measure_order:
+            data["measure"] = {
+                name: {"value": getattr(self, name)} for name in self._measure_order
+            }
+
+        source_points = {entry.number: entry for entry in self.source_points}
+        target_points = {entry.number: entry for entry in self.target_points}
+        points = []
+        for number in sorted(source_points):
+            target_entry = target_points.get(number)
+            if target_entry is None:
+                continue
+            source_entry = source_points[number]
+            point = {
+                "number": number,
+                "source": source_entry.point,
+                "target": target_entry.point,
+            }
+            label = source_entry.label or target_entry.label
+            if label is not None:
+                point["label"] = label
+            points.append(point)
+        if points:
+            data["points"] = points
+
+        source_faces = {entry.number: entry for entry in self.source_faces}
+        target_faces = {entry.number: entry for entry in self.target_faces}
+        faces = []
+        for number in sorted(source_faces):
+            target_entry = target_faces.get(number)
+            if target_entry is None:
+                continue
+            faces.append(
+                {
+                    "number": number,
+                    "source": source_faces[number].face._asdict(),
+                    "target": target_entry.face._asdict(),
+                }
+            )
+        if faces:
+            data["faces"] = faces
+
+        volumes = {
+            name: getattr(self, attribute)
+            for name, attribute in (
+                ("intersection", "volume_intersection"),
+                ("ratio", "volume_ratio"),
+                ("containment", "containment_ratio"),
+                ("clearance_violated", "clearance_violated_volume"),
+            )
+            if getattr(self, attribute) is not None
+        }
+        if volumes:
+            data["volumes"] = volumes
+
+        def obb_dict(obb):
+            if not hasattr(obb, "_asdict"):
+                # Un append direct de tuple nu reste valide.
+                obb = ObbData(*obb)
+            export = obb._asdict()
+            if export["label"] is None:
+                del export["label"]
+            # Le contrat exporte les axes en liste.
+            export["axes"] = list(export["axes"])
+            return export
+
+        obbs = {}
+        if self.source_obbs:
+            obbs["source"] = [obb_dict(obb) for obb in self.source_obbs]
+        if self.target_obbs:
+            obbs["target"] = [obb_dict(obb) for obb in self.target_obbs]
+        if obbs:
+            data["obbs"] = obbs
+
+        if self.axis_mode is not None or self.axis_degraded is not None:
+            data["axis"] = {"mode": self.axis_mode, "degraded": self.axis_degraded}
+
+        if self.raycast is not None:
+            raycast = self.raycast
+            if not hasattr(raycast, "_asdict"):
+                # Un tuple nu posé directement reste valide.
+                raycast = RaycastData(*raycast)
+            data["raycast"] = {
+                "planned": raycast.planned,
+                "cast": raycast.cast,
+                "hit": raycast.hit,
+                "hit_segments": list(raycast.hit_segments),
+                "blocked_segments": list(raycast.blocked_segments),
+            }
+
+        if self.zone is not None:
+            zone = self.zone
+            if not hasattr(zone, "_asdict"):
+                # Un tuple nu posé directement reste valide.
+                zone = ZoneData(*zone)
+            data["zone"] = zone._asdict()
+
+        return data
+
+
 # ==== Clash Result
 class ClashResult:
     def __init__(self, source, state, type="OneObjectResult"):
@@ -1501,8 +2072,8 @@ class ClashResult:
         self.criticity: list[str] = []
         self.actor: list[str] = []
 
-        self.point1: tuple()  # @todo Validate the info to export from the clash
-        self.point2: tuple()  # To validate, list of point
+        # Toutes les données hors noyau commun portées par le résultat.
+        self.info: ResultInfo = ResultInfo()
 
 
 class ClashResultOneObject(ClashResult):
@@ -1514,14 +2085,6 @@ class ClashResultTwoObjects(ClashResult):
     def __init__(self, source, target, state, type="TwoObjectsResult"):
         super().__init__(source, state, type)
         self.target: ifcopenshell.entity_instance = target
-        self.distance_between: float = None
-        self.penetration_depth: float = None
-        self.volume_intersection: float = None
-        self.volume_ratio: float = None
-        self.containement_ratio: float = None
-        self.surface_contact_area: float = None
-        self.penetration_direction: float = None
-        self.clearance_violated_volume: float = None
 
 
 class ClashResultComplex:
@@ -1546,6 +2109,9 @@ class ClashResultComplex:
         self.status: bool = state
         self.criticity: list[str] = []
         self.actor: list[str] = []
+
+        # Le noyau commun porte aussi la classe des données du résultat.
+        self.info: ResultInfo = ResultInfo()
 
 
 # ====== Group Result
