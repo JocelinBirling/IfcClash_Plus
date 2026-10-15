@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List
 
 import ifcopenshell
+import uuid
 from ifctester import ids
 from ifctester.facet import (
     Facet,
@@ -1491,7 +1492,7 @@ class AbsoluteOrRelativeChecking:
 class ClashResult:
     def __init__(self, source, state, type="OneObjectResult"):
         # @todo ClashResult, complete all the data.
-        self.id: str
+        self.id: str = str(uuid.uuid4())
         self.type: str = type
         self.source: ifcopenshell.entity_instance = source
         self.rule_name: str = None
@@ -1523,22 +1524,28 @@ class ClashResultTwoObjects(ClashResult):
         self.clearance_violated_volume: float = None
 
 
-class ClashResultComplex(ClashResult):
+class ClashResultComplex:
     """The result of a Must check (AbsoluteOrRelativeChecking): the
     verdict of one evaluated group. The group is the result, an
     atomic whole: sources and targets carry the elements of its two
     sets (the measured set as sources, the others as targets), they
-    can no longer be taken apart."""
+    can no longer be taken apart.
 
-
-    #This result is used as well in the AbsOrRelCheck. 
-    #I should not inherit from ClashResult. Clash_Result is linked to OneObject and TwoObject way to much.
+    Independent from ClashResult: the verdict of a group of
+    elements, not of one object or one pair. It carries the common
+    result core (id, type, status, criticity, actor) but its
+    elements are lists, and it has no single source attribute."""
 
     def __init__(self, sources, targets, state, type="ComplexResult"):
-        super().__init__(None, state, type)
+        self.id: str = str(uuid.uuid4())
+        self.type: str = type
         self.sources: list[ifcopenshell.entity_instance] = list(sources)
         self.targets: list[ifcopenshell.entity_instance] = list(targets)
         self.context: list[ifcopenshell.entity_instance] = None
+
+        self.status: bool = state
+        self.criticity: list[str] = []
+        self.actor: list[str] = []
 
 
 # ====== Group Result
