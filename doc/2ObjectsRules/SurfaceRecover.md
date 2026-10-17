@@ -1,21 +1,71 @@
 # Description
 
-This rule check that the surface of two objects cover each other by max and min value.
+This rule checks that the contact surface between two objects covers an expected value, defined by a min and a max.
 
-This common
+Usage : détecter les objets posés les uns sur les autres mais mal juxtaposés (appui partiel d'une poutre sur un mur : contact réel mais surface d'appui insuffisante).
 
+It could be done from top to bottom, but as well from side to side.
 
+![alt text](image/SurfaceRecover.png)
+
+## Algorithm
+
+1. Filter pairs: only pairs whose distance is below `Tolerance` are analyzed. Pairs not in contact produce no result.
+2. Determine the direction of the check from `Direction`. If `Direction` is a vector, the faces are selected by their normal; if `Direction` is `Auto`, the direction is derived from the paired contact faces. Face pairing in `Auto` mode uses an internal angle tolerance (fixed by the engine).
+3. Select faces on each object: the extreme face(s) along the direction (highest or lowest point of the geometry, like ClearanceAbove). Faces of holes pointing to the same direction are ignored.
+4. Pair the faces of the two objects facing each other, then compute the contact area: triangles quasi coplanar at a distance below `Tolerance`.
+5. If the contact is fragmented into several disjoint zones, all zones of the pair are summed: one single result per pair.
+6. Compute the ratio between the contact area and the reference face area, as defined by `Reference`.
+7. Raise a clash if the covering value is outside `[Min_Covering, Max_Covering]`. Each bound is optional: only the provided bounds are checked.
 
 # Property
 
-direction = direction to consider the 
-min_covering = float or string float, absolute value, string relative value of source
-max_covering = float or string float, absolute value, string relative value of source 
-Value can be 10 for m² or 10%, 
+Source: Object A - the objects that rest on (or against) the target objects.
 
+Target: Object B - the objects that support the source objects.
+
+Direction: how the contact direction is determined. One value:
+- a 3D vector (type: array of 3 floats): the direction the faces must be aligned with. `Top` and `Bottom` are shortcuts for `[0, 0, 1]` and `[0, 0, -1]`.
+- `Auto` (type: string): the direction is derived from the pair itself, by matching faces with opposite normals. Use it for lateral or inclined supports, where no fixed axis fits.
+
+Reference: the face used as denominator when a covering value is relative (a string with %). One value, `Source` or `Target` (default: `Source`). It is the extreme face(s) of the chosen object, as selected in step 3. It is ignored when both covering values are absolute.
+
+Tolerance: the maximum distance, in meter (type: float, default: 0.001), for two objects to be considered in contact, and for two triangles to be counted in the contact area.
+
+Min_Covering: optional (type: float or string). If the covering value is below `Min_Covering`, a clash is raised.
+
+Max_Covering: optional (type: float or string). If the covering value is above `Max_Covering`, a clash is raised.
+
+A covering value can be:
+- a float: an absolute area in m² (e.g. `10` for 10 m²).
+- a string ending with `%`: a relative value of the reference face area (e.g. `"10%"` for 10% of the reference face).
 
 # Result
 
+For each pair in contact, one result containing:
+- contact_area: the summed area of the contact zones, in m².
+- ratio: contact_area divided by the reference face area, in %.
+- the source and target faces used: normal and area, in order to explain the ratio denominator.
 
 # Example
 
+A beam must rest on a wall with at least 70% of its bottom face in contact: Source = beams, Target = walls, Direction = Bottom, Reference = Source, Min_Covering = "70%".
+
+A bearing plate of 0.05 m² minimum must be in contact with its support: Min_Covering = 0.05.
+
+A pipe support must be laterally in contact with its bracket: Direction = Auto.
+
+## Implementation notes
+
+Conventions left open by this specification, as implemented (2026-10-07, updated 2026-10-13):
+
+- A clash result is raised only for the pairs whose covering value is outside the bounds; a compliant pair in contact produces no result.
+- "Distance below Tolerance" is inclusive (at exactly the tolerance, the pair is in contact and the triangles are counted).
+- A pair is analyzed only when its two extreme faces face each other: the distance between the extreme planes along the direction must stay below the Tolerance. A pair in contact whose extreme faces do not face each other (e.g. a wall crossing a slab) is not a support pair and produces no result, whatever the bounds. A pair with no extreme face along the direction (no aligned candidate face) cannot face the other object and produces no result as well.
+- Direction = Auto: the vector from the closest point of the source to the closest point of the target; when they coincide (touching or overlapping objects), the vector between the mesh centroids is used, and the pair is skipped when even that is degenerate.
+- The pairing angle (quasi coplanar triangles) is 25 degrees, the candidate face alignment is 45 degrees; the distance between two triangles is measured along the direction.
+- The contact area and the reference face area are both measured as projections on the contact plane (perpendicular to the direction).
+- The contact zones are triangulated for display; degenerate fan triangles of a sliver zone are dropped (the zone keeps its measured area).
+- The bounds are inclusive: a covering value exactly at a bound is compliant, only strictly lower (Min) or strictly higher (Max) values clash. A covering value given as a string must end with `%` (a numeric string is rejected).
+- A relative bound with an empty reference face (ratio undefined) cannot be verified and clashes. The rule itself never reaches this case (an empty extreme face set produces no result, see above); the convention remains that of the bounds helper.
+- Without any bound, nothing is checked and no clash is raised.

@@ -4,6 +4,8 @@ This rule aims to detect objects based on their orientation relative to a specif
 
 It calculates the oriented bounding box (OBB) for each selected object and extracts its main directions. These directions are then compared against the target orientation vector to check if objects are aligned as specified (parallel or perpendicular). This allows for filtering elements based on their spatial orientation in the model.
 
+![alt text](image/Orientation.png)
+
 # Property
 
 Source: The objects to be analyzed.

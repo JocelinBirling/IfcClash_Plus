@@ -4,6 +4,8 @@ This rule aims to detect intersections between objects within a specified tolera
 
 It will check if any part of the source objects comes within the specified tolerance distance of any part of the target objects. Unlike collision detection which requires actual geometric overlap, intersection detection identifies objects that are close to each other.
 
+![alt text](image/Intersection.png)
+
 # Property
 Source: Object A - The first set of objects to be analyzed.
 

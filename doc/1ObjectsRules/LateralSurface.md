@@ -4,6 +4,8 @@ This rule aims to detect objects based on their surface area in a specific later
 
 It will identify the faces of each selected object that are oriented within 45 degrees of the specified direction vector. These faces are then measured to calculate their combined surface area. This allows for detecting objects based on the area of their faces facing a particular sideways direction.
 
+![alt text](image/LateralSurface.png)
+
 # Property
 
 Source: The objects to be analyzed.

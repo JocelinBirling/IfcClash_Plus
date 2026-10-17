@@ -4,6 +4,8 @@ This rule aims to detect objects based on their volume.
 
 It will calculate the volume of each selected object and check if it falls within the specified minimum and maximum range.
 
+![alt text](image/Volume.png)
+
 # Property
 Source: The objects to be analyzed.
 

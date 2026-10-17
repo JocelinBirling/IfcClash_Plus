@@ -4,6 +4,8 @@ This rule aims to detect objects that are below source objects using Oriented Bo
 
 It creates an OBB for each source object, then extends the bottom of the OBB downward by the specified tolerance to form a detection zone. The rule then checks if any target objects intersect with these extended OBB zones below the source objects.
 
+![alt text](image/OBB_Below.png)
+
 # Property
 Source: Object A - The objects that will have detection zones created below them.
 

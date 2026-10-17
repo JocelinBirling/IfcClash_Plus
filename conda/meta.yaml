@@ -1,0 +1,40 @@
+package:
+  name: ifcclash-plus
+  version: "0.4.0"
+
+source:
+  path: .
+
+build:
+  number: 0
+  script: "{{ PYTHON }} -m pip install . -vv"
+
+requirements:
+  host:
+    - python >=3.10
+    - pip
+    - setuptools
+  run:
+    - python >=3.10
+    # pythonocc-core n'existe que sur conda-forge (pas de wheel PyPI)
+    - pythonocc-core
+    - ifcopenshell
+    - numpy
+    - trimesh
+    - shapely
+    - python-dateutil
+    - lark
+    - svgwrite
+
+test:
+  imports:
+    - ifcclash_plus
+
+about:
+  home: https://github.com/yourusername/IfcClash_Plus
+  license: MIT
+  license_file: LICENSE
+  summary: Extended clash detection rules for IFC models
+  description: |
+    Clash detection rules for IFC models, built on IfcOpenShell,
+    pythonOCC and ifcTester.

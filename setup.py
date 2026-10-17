@@ -5,16 +5,17 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="ifcclash_plus",
-    version="0.4.0",
+    version="0.5.0",
     author="Jocelin",
     author_email="your.email@example.com",
     description="Extended clash detection rules for IFC models",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/IfcClash_Plus",
-    package_dir={"": "ifcclash_plus"},
-    packages=find_packages(where="ifcclash_plus"),
-    python_requires=">=3.8",
+    # pythonocc-core n'est pas sur PyPI : il doit venir de conda-forge
+    # (voir environment.yml / conda/meta.yaml)
+    packages=find_packages(exclude=["tests", "tests.*"]),
+    python_requires=">=3.10",
     install_requires=[
         "ifcopenshell",
         "numpy",

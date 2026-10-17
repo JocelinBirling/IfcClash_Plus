@@ -1,7 +1,7 @@
 from OCC.Core.Bnd import Bnd_Box, Bnd_OBB
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
-from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
+from OCC.Core.gp import gp_Ax2, gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
 from OCC.Core.TopoDS import TopoDS_Compound, TopoDS_Shell, TopoDS_Solid, TopoDS_Face
 from OCC.Core.BRep import BRep_Builder
 from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
@@ -16,6 +16,7 @@ import ifcopenshell.ifcopenshell_wrapper as W
 from typing import Literal, List
 import numpy as np
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakePolygon,BRepBuilderAPI_MakeFace
+from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox
 
 
 
@@ -489,6 +490,25 @@ class Custom_OBB(Bnd_OBB):
             super().__init__(center, x_dir, y_dir, z_dir, x_h, y_h, z_h)
         else:
             super().__init__()
+
+    def to_data(self, label=None) -> tuple:
+        """The serializable data of the OBB, as the ObbData tuple of
+        the results (center, axes, half_sizes, label): plain floats and
+        tuples only, complete enough to rebuild the OCC solid."""
+        center = self.Center()
+        x_dir = self.XDirection()
+        y_dir = self.YDirection()
+        z_dir = self.ZDirection()
+        return (
+            (center.X(), center.Y(), center.Z()),
+            (
+                (x_dir.X(), x_dir.Y(), x_dir.Z()),
+                (y_dir.X(), y_dir.Y(), y_dir.Z()),
+                (z_dir.X(), z_dir.Y(), z_dir.Z()),
+            ),
+            (self.XHSize(), self.YHSize(), self.ZHSize()),
+            label,
+        )
 
     def min_distance_to_obb(self, other_obb: Bnd_OBB) -> float:
         """
@@ -1000,15 +1020,42 @@ class Custom_OBB(Bnd_OBB):
         return Custom_OBB(new_center, x_dir, y_dir, z_dir, new_x_h, new_y_h, new_z_h)
 
     def get_corners(self) -> list[gp_XYZ]:
-        pt1 = self.Center() + gp_XYZ(self.XHSize(), self.YHSize(), self.ZHSize())
-        pt2 = self.Center() + gp_XYZ(self.XHSize(), -self.YHSize(), self.ZHSize())
-        pt3 = self.Center() + gp_XYZ(self.XHSize(), self.YHSize(), -self.ZHSize())
-        pt4 = self.Center() + gp_XYZ(self.XHSize(), -self.YHSize(), -self.ZHSize())
-        pt5 = self.Center() + gp_XYZ(-self.XHSize(), self.YHSize(), self.ZHSize())
-        pt6 = self.Center() + gp_XYZ(-self.XHSize(), -self.YHSize(), self.ZHSize())
-        pt7 = self.Center() + gp_XYZ(-self.XHSize(), self.YHSize(), -self.ZHSize())
-        pt8 = self.Center() + gp_XYZ(-self.XHSize(), -self.YHSize(), -self.ZHSize())
-        return [pt1, pt2, pt3, pt4, pt5, pt6, pt7, pt8]
+        """The 8 corners of the OBB, in world coordinates.
+
+        Each corner is the center plus or minus the half sizes along
+        the axis DIRECTIONS of the box: the half sizes are directed
+        offsets, not coordinate offsets. The axes of the OBB are not
+        the world axes (their order is arbitrary in the OCC
+        computation), so adding the half sizes as raw XYZ offsets
+        scrambles the box for any non-world-aligned OBB.
+        """
+        center = self.Center()  # a gp_XYZ on Bnd_OBB
+        x_half = self.XDirection()  # a gp_XYZ on Bnd_OBB
+        y_half = self.YDirection()
+        z_half = self.ZDirection()
+        x_h, y_h, z_h = self.XHSize(), self.YHSize(), self.ZHSize()
+
+        corners = []
+        for sx in (-1.0, 1.0):
+            for sy in (-1.0, 1.0):
+                for sz in (-1.0, 1.0):
+                    corners.append(
+                        gp_XYZ(
+                            center.X()
+                            + sx * x_half.X() * x_h
+                            + sy * y_half.X() * y_h
+                            + sz * z_half.X() * z_h,
+                            center.Y()
+                            + sx * x_half.Y() * x_h
+                            + sy * y_half.Y() * y_h
+                            + sz * z_half.Y() * z_h,
+                            center.Z()
+                            + sx * x_half.Z() * x_h
+                            + sy * y_half.Z() * y_h
+                            + sz * z_half.Z() * z_h,
+                        )
+                    )
+        return corners
 
     def get_corners_of_dir(self, dir: gp_Dir) -> list[gp_XYZ]:
         """
@@ -1281,63 +1328,28 @@ class Custom_OBB(Bnd_OBB):
         y_dir = self.YDirection()
         z_dir = self.ZDirection()
 
-        # Calculer les 8 coins en combinant ±x, ±y, ±z
-        corners = []
-        for dx in [-1, 1]:
-            for dy in [-1, 1]:
-                for dz in [-1, 1]:
-                    corner = gp_Pnt(
-                        center.X() + dx * x_axis * x_dir.X() + dy * y_axis * y_dir.X() + dz * z_axis * z_dir.X(),
-                        center.Y() + dx * x_axis * x_dir.Y() + dy * y_axis * y_dir.Y() + dz * z_axis * z_dir.Y(),
-                        center.Z() + dx * x_axis * x_dir.Z() + dy * y_axis * y_dir.Z() + dz * z_axis * z_dir.Z()
-                    )
-                    corners.append(corner)
+        # Les OBB construits par detach_*_by_extrude peuvent etre indirects
+        # (repere main gauche quand l'axe up a ete inverse). On normalise en
+        # repere droit en echangeant X et Y : la boite (hx, hy) selon (x, y)
+        # decrit le meme volume que (hy, hx) selon (y, x).
+        if gp_Dir(x_dir).Crossed(gp_Dir(y_dir)).Dot(gp_Dir(z_dir)) < 0:
+            x_dir, y_dir = y_dir, x_dir
+            x_axis, y_axis = y_axis, x_axis
 
-        # Créer les 6 faces avec orientation cohérente (anti-horaire vu de l'extérieur)
-        # Ordre des coins :
-        # 0: (-1,-1,-1), 1: (+1,-1,-1), 2: (-1,+1,-1), 3: (+1,+1,-1)  => Face basse (z-)
-        # 4: (-1,-1,+1), 5: (+1,-1,+1), 6: (-1,+1,+1), 7: (+1,+1,+1)  => Face haute (z+)
-        faces = [
-            # Face basse (z min) - vue de dessous, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[3], corners[2], True).Wire()
-            ).Face(),
-            # Face haute (z max) - vue de dessus, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[5], corners[7], corners[6], corners[4], True).Wire()
-            ).Face(),
-            # Face gauche (x min) - vue de gauche, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[0], corners[4], corners[6], corners[2], True).Wire()
-            ).Face(),
-            # Face droite (x max) - vue de droite, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[1], corners[3], corners[7], corners[5], True).Wire()
-            ).Face(),
-            # Face avant (y min) - vue de devant, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[0], corners[1], corners[5], corners[4], True).Wire()
-            ).Face(),
-            # Face arrière (y max) - vue de derrière, sens anti-horaire
-            BRepBuilderAPI_MakeFace(
-                BRepBuilderAPI_MakePolygon(corners[2], corners[6], corners[7], corners[3], True).Wire()
-            ).Face(),
-        ]
+        # Coin "minimum" de la boite dans le repere de l'OBB
+        corner = gp_Pnt(
+            center.X() - x_axis * x_dir.X() - y_axis * y_dir.X() - z_axis * z_dir.X(),
+            center.Y() - x_axis * x_dir.Y() - y_axis * y_dir.Y() - z_axis * z_dir.Y(),
+            center.Z() - x_axis * x_dir.Z() - y_axis * y_dir.Z() - z_axis * z_dir.Z(),
+        )
 
-        # Créer une coque (shell) à partir des faces
-        shell_builder = BRep_Builder()
-        shell = TopoDS_Shell()
-        shell_builder.MakeShell(shell)
-        for face in faces:
-            shell_builder.Add(shell, face)
-
-        # Créer un solide à partir de la coque
-        solid_builder = BRep_Builder()
-        solid = TopoDS_Solid()
-        solid_builder.MakeSolid(solid)
-        solid_builder.Add(solid, shell)
-
-        return solid
+        # Boite pleine construite dans le repere local de l'OBB :
+        # BRepPrimAPI_MakeBox produit un solide topologiquement valide
+        # (faces cousues entre elles), ce que la construction manuelle
+        # face par face ne garantissait pas.
+        ax2 = gp_Ax2(corner, gp_Dir(z_dir), gp_Dir(x_dir))
+        box = BRepPrimAPI_MakeBox(ax2, 2 * x_axis, 2 * y_axis, 2 * z_axis)
+        return box.Shape()
     
 if __name__ == "__main__":
     import ifcopenshell

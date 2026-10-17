@@ -14,6 +14,7 @@ from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoOb
 from booleanrule import BooleanLeaf
 from ifctester import ids
 import os
+from tests.test_structure_ResultShape import assert_result_shape
 
 
 class TestRuleFileBasic(unittest.TestCase):
@@ -129,6 +130,7 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule_file.contains = [rule1, rule2]
         
         rule_file.run()
+        assert_result_shape(rule_file)
 
 
         
@@ -161,6 +163,7 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule_file.contains = [folder]
         
         rule_file.run()
+        assert_result_shape(rule_file)
 
 
         
@@ -194,6 +197,7 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule_file.contains = [folder]
         
         rule_file.run()
+        assert_result_shape(rule_file)
 
         self.assertEqual(len(rule_file.contains[0].contains[0].result), 7)
 
@@ -223,6 +227,7 @@ class TestRuleFileWithRules(unittest.TestCase):
         rule_file.contains = [folder]
         
         rule_file.run()
+        assert_result_shape(rule_file)
 
         self.assertEqual(len(rule_file.contains[0].contains[0].result), 7)
 
@@ -320,6 +325,9 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(door_select_rule)
+        assert_result_shape(slab_select_rule)
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 24)
         for result in rule.result:
@@ -342,6 +350,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(wall_select_rule)
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 152)
         for result in rule.result:
@@ -364,6 +374,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(wall_select_rule)
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 1)
         for result in rule.result:
@@ -397,6 +409,8 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
 
         OneRuleFile.contains = [rule]
         OneRuleFile.run()
+        assert_result_shape(door_select_rule)
+        assert_result_shape(rule)
 
         self.assertEqual(len(rule.result), 21)
         for result in rule.result:

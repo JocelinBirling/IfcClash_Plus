@@ -4,6 +4,8 @@ This rule aims to detect collisions between objects.
 
 It will check if any part of the source objects intersects with any part of the target objects. A collision is detected when the geometries of two objects overlap in space.
 
+![alt text](image/Collision.png)
+
 # Property
 Source: Object A - The first set of objects to be analyzed.
 

@@ -70,14 +70,18 @@ Each rule has a sheet presenting the rule, its parameters and its special cases.
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Volume](doc/1ObjectsRules/Volume) | One object | OK | KO | OK |
-| [Area](doc/1ObjectsRules/Area) | One object | OK | KO | OK |
-| [Top Or Bottom Surface](doc/1ObjectsRules/TopOrBottomSurface.md) | One object | OK | KO | OK |
-| [Lateral Surface](doc/1ObjectsRules/LateralSurface) | One object | OK | KO | OK |
-| [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | One object | OK | KO | OK |
-| [Orientation](doc/1ObjectsRules/Orientation) | One object | OK | KO | OK |
-| [Object height](doc/1ObjectsRules/ObbHeigh) | One object | OK | OK | OK |
-| [Object length](doc/1ObjectsRules/ObbLength) | One object | OK | OK | OK |
+| [Volume](doc/1ObjectsRules/Volume.md) | One object | OK | OK | OK |
+| [Area](doc/1ObjectsRules/Area.md) | One object | OK | OK | OK |
+| [Top Or Bottom Surface](doc/1ObjectsRules/TopOrBottomSurface.md) | One object | OK | OK | OK |
+| [Lateral Surface](doc/1ObjectsRules/LateralSurface.md) | One object | OK | OK | OK |
+| [Projected Surface](doc/1ObjectsRules/ProjectedSurface.md) | One object | OK | OK | OK |
+| [Orientation](doc/1ObjectsRules/Orientation.md) | One object | OK | OK | OK |
+| [Object height](doc/1ObjectsRules/ObbHeigh.md) | One object | OK | OK | OK |
+| [Object length](doc/1ObjectsRules/ObbLength.md) | One object | OK | OK | OK |
+| [Geometry Quality](doc/1ObjectsRules/Quality.md) | One object | KO | OK | KO |
+| [Stair Quality](doc/1ObjectsRules/StairQuality.md) | One object | KO | OK | KO |
+| [Stability](doc/1ObjectsRules/Stability.md) | One object | KO | OK | KO |
+| [Face Check](doc/1ObjectsRules/OneObjectFace.md) | One object | OK | OK | OK |
 
 ### Two-object rules
 
@@ -85,17 +89,17 @@ Each rule has a sheet presenting the rule, its parameters and its special cases.
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Clearance](doc/2ObjectsRules/Clearance) | Two objects | OK | KO | OK |
-| [Intersection](doc/2ObjectsRules/Intersection) | Two objects | OK | KO | OK |
-| [Collision](doc/2ObjectsRules/Collision) | Two objects | OK | KO | OK |
+| [Clearance](doc/2ObjectsRules/Clearance.md) | Two objects | OK | OK | OK |
+| [Intersection](doc/2ObjectsRules/Intersection.md) | Two objects | OK | OK | OK |
+| [Collision](doc/2ObjectsRules/Collision.md) | Two objects | OK | OK | OK |
 
 #### Advanced clearance rules
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Two objects | OK | KO | OK |
-| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Two objects | KO | KO | OK |
-| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Two objects | OK | KO | OK |
+| [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Two objects | OK | OK | OK |
+| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo.md) | Two objects | OK | OK | OK |
+| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow.md) | Two objects | OK | OK | OK |
 
 #### Clearance with OBB
 
@@ -107,38 +111,78 @@ The last benefit is detecting the front and back of an element. Most of the time
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [OBB Above](doc/2ObjectsRules/OBB_Above) | Two objects | OK | KO | OK |
-| [OBB Below](doc/2ObjectsRules/OBB_Below) | Two objects | OK | KO | OK |
-| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back) | Two objects | OK | KO | OK |
+| [OBB Above](doc/2ObjectsRules/OBB_Above.md) | Two objects | OK | OK | OK |
+| [OBB Below](doc/2ObjectsRules/OBB_Below.md) | Two objects | OK | OK | OK |
+| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back.md) | Two objects | OK | OK | OK |
+| [OBB Custom](doc/2ObjectsRules/OBB_Custom.md) | Two objects | OK | OK | OK |
 
 #### Other types of rules
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Two objects | KO | KO | KO |
-| [Angle Between](doc/2ObjectsRules/AngleBetween) | Two objects | OK | KO | OK |
-| [Direct View](doc/2ObjectsRules/DirectView) | Two objects | OK | KO | OK |
-| [Face Check](doc/2ObjectsRules/FaceCheck) | Two objects | KO | KO | KO |
+| [Surface Recover](doc/2ObjectsRules/SurfaceRecover.md) | Two objects | OK | OK | OK |
+| [Angle Between](doc/2ObjectsRules/AngleBetween.md) | Two objects | OK | OK | OK |
+| [Clearance Axis To Axis](doc/2ObjectsRules/ClearanceAxisToAxis.md) | Two objects | OK | OK | OK |
+| [Direct View](doc/2ObjectsRules/DirectView.md) | Two objects | OK | OK | KO |
+| [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace.md) | Two objects | OK | OK | OK |
+| [Volume Clash](doc/2ObjectsRules/VolumeClash.md) | Two objects | KO | OK | KO |
+| [Inside](doc/2ObjectsRules/Inside.md) | Two objects | KO | OK | KO |
+| [Clearance For Doors](doc/2ObjectsRules/ClearanceForDoors.md) | Two objects | OK | OK | OK |
+| [Face Check](doc/2ObjectsRules/TwoObjectsFace.md) | Two objects | OK | OK | OK |
+
 
 ### Complex rules
 
 | **Rule** | **Type** | **Rule status** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Free Space in Room](doc/ComplexRules/FreeSpaceInRoom) | Complex | KO | KO | KO |
-| [Find Path](doc/ComplexRules/FindPath) | Complex | KO | KO | KO |
-| [EvacuationDistance](doc/ComplexRules/EvacuationDistance) | Complex | NOK | KO | KO |
-| [Alignement](doc/ComplexRules/Alignement) | Complex | NOK | KO | KO |
+| [Free Space in Room](doc/ComplexRules/FreeSpace.md) | Complex | OK | OK | OK |
+| [Alignement](doc/ComplexRules/Alignement.md) | Complex | OK | OK | OK |
+| [Find Path](doc/ComplexRules/FindPath.md) | Complex | KO | KO | KO |
+| [EvacuationDistance](doc/ComplexRules/EvacuationDistance.md) | Complex | KO | OK | KO |
 
 
 
 # Installation
-This project uses the following components.
-IfcOpenShell
-PythonOCC with a Conda installation
+This project uses IfcOpenShell and PythonOCC. PythonOCC is only distributed via the conda-forge channel: installation therefore goes through Conda.
+
+```bash
+conda env create -f environment.yml
+conda activate ifcclash_plus
+pip install -e .
+```
+
+The development environment is described in environment.yml, the Conda deployment recipe in conda/meta.yaml.
 
 
 # Progress
 The first step is to create new rules to extend the possibilities. These rules can be used in any template.
+
+## V0.5
+
+#### Major update
+
+- ClashResult overhaul and ResultInfo class
+    The common core of results (id, type, status, criticity, actor, source/target) is now separated from the data specific to each rule, which migrates to a new ResultInfo class. Scalar measurements become declared attributes (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle) instead of undeclared dynamic attributes, completed by structured per-rule blocks (RaycastData for DirectView, ZoneData for ClearanceForDoors, axis_mode for ClearanceAxisToAxis). Each ClashResult now carries a GUID, and ClashResultComplex no longer inherits from ClashResult. The new specification (specification_ResultData.md) documents this data contract, with its dedicated test sheet.
+
+- Rule serialization
+    The serialization.py module can now save and reload the rules themselves, not only the results: a complete RuleFile can be written to a JSON file and replayed elsewhere, in particular by another process.
+
+- IPC for BonsaiViewer
+    Four new modules open the engine to an external client: ipc.py (JSON Lines server on stdin/stdout, hello, catalogue and run requests), registry.py (catalogue of all rules, facets and selects with their exact parameters, single source of truth shared between the client UI and the engine), result_export.py (JSON export of results, elements becoming cross-references: model index + STEP id) and display_export.py. This is the foundation of the BonsaiViewer integration mock-up.
+
+- Unit tests added
+    I created IFC mock-ups staging simple or complex positions and objects. This allows me to run many tests on the relative positioning of objects and to force the creation of "twisted" cases.
+
+- Significant work on tests
+    I continued the work on creating tests and checking that there are no false negatives and no false positives.
+
+#### Minor update
+
+- Two Objects Face rule
+    The rule has been reworked, with a new triangles_bbox_distance function in clash_utils.py: a fast lower bound of the distance between two triangles, computed from their bounding boxes.
+
+- Documentation
+    The rule pages of doc/ have been enriched (BasicRayCheck, Clearance Above, Below and Next To, Inside, VolumeClash, Quality, Stability, StairQuality, ObbHeigh, ObbLength), and the display tests updated accordingly.
 
 ## V0.4
 
@@ -158,6 +202,15 @@ The first step is to create new rules to extend the possibilities. These rules c
 
 - Serialization
     A new serialization.py module has been created, with tests. All classes can be saved to a json file in order to reuse them elsewhere.
+
+- Absolute or relative result verification
+    The Must check (AbsoluteOrRelativeChecking) is now a rule in its own right: once groups have been evaluated, it produces its own complex result (sources, targets and verdict state) and keeps the original individual results, so that it can be re-run on the same rule. The ResultAnalyze and BCF_Subject classes were created to group results by BCF subject. The AbsOrRel tests were extended accordingly.
+
+- BCF link specification
+    A specification (specification_BCF_Link.md) describes how rule results are grouped into BCF subjects: actor, criticality and references to the objects involved.
+
+- Conda / Pip packaging
+    The project is now installable and deployable: environment.yml provides the development environment (PythonOCC via conda-forge), conda/meta.yaml the Conda deployment recipe. setup.py has been repaired (pip installation installed no module) and requirements.txt has been cleaned of its local build paths.
 
 #### Minor update
 
@@ -188,6 +241,21 @@ The first step is to create new rules to extend the possibilities. These rules c
 
 - Documentation
     The README and many pages of doc/ have been updated, including new pages for ObbHeigh and ObbLength. A new agent.md and a complex_configuration.json have been added. A large test IFC file (44000 lines) has been removed from the repository.
+
+- Fix of the ObbHigh and ObbLength rules
+    The axis order of an OBB computed by OCC is arbitrary: the Z axis is not always the height of the object. The vertical axis is now determined as the most vertical axis of the box, and the plan dimensions carry wide/narrow. The faces of both groups are recorded for display (blue/orange).
+
+- Illustrated documentation
+    Every rule page of doc/ now has a screenshot of the displayed result. A page was created for OBB Custom, and the pages of future rules (Quality, StairQuality, Stability) were specified. The Blender image template was moved to doc/.
+
+- Code audit report
+    A static analysis report (Rapport.md) lists blocking bugs, questionable logic and structural debt by severity.
+
+- agent.md overhaul
+    The agent development guide (agent.md) has been reworked to reflect the current architecture.
+
+- Display tests
+    Display tests have been made more reliable, with colors harmonized between one-object and two-object rules.
 
 ## V0.3
 - Using AI
@@ -243,28 +311,7 @@ Creation of the main structure of the script
 
 
 
-# TODO
-
-0. Finish the documentation
-
-1. Finish the grouping (grouping by)
-
-2. Property extraction
-When using the relative rule, we can extract values from objects in order to sum quantities.
-This has not been tested properly.
-
-3. Orientation rule
-We could make the orientation rule easier to check whether it faces north or south, simply by introducing some text.
 
 
-4. Determine the main side of an OBB
-When looking for the main side of an OBB, the Z face is taken into account.
-For a slab, this can be useful.
-For a wall, this can lead to errors. When a wall is taller than it is long, this can cause inaccuracies.
 
 
-5. Expand the number of rules and create the base rule structure
-
-6. Create the rule association in Python => DONE
-
-7. Study the implementation in ifcclash
