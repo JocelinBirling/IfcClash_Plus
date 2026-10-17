@@ -57,3 +57,5 @@ ifcclash_plus.egg-info/SOURCES.txt
 ifcclash_plus.egg-info/top_level.txt
 doc/Plan_Integration_Cpp_IfcOpenShell.md
 doc/Guide_PR_IfcOpenShell.md
+Rapport.md
+specification_BCF_Link.mdtest_serialization_simple.py

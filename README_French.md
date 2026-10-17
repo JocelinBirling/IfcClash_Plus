@@ -70,18 +70,18 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Volume](doc/1ObjectsRules/Volume) | Un objet | OK | KO | OK |
-| [Area](doc/1ObjectsRules/Area) | Un objet | OK | KO | OK |
-| [Top Or Bottom Surface](doc/1ObjectsRules/TopOrBottomSurface.md) | Un objet | OK | KO | OK |
-| [Lateral Surface](doc/1ObjectsRules/LateralSurface) | Un objet | OK | KO | OK |
-| [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | Un objet | OK | KO | OK |
-| [Orientation](doc/1ObjectsRules/Orientation) | Un objet | OK | KO | OK |
+| [Volume](doc/1ObjectsRules/Volume) | Un objet | OK | OK | OK |
+| [Area](doc/1ObjectsRules/Area) | Un objet | OK | OK | OK |
+| [Top Or Bottom Surface](doc/1ObjectsRules/TopOrBottomSurface.md) | Un objet | OK | OK | OK |
+| [Lateral Surface](doc/1ObjectsRules/LateralSurface) | Un objet | OK | OK | OK |
+| [Projected Surface](doc/1ObjectsRules/ProjectedSurface) | Un objet | OK | OK | OK |
+| [Orientation](doc/1ObjectsRules/Orientation) | Un objet | OK | OK | OK |
 | [Object height](doc/1ObjectsRules/ObbHeigh) | Un objet | OK | OK | OK |
 | [Object length](doc/1ObjectsRules/ObbLength) | Un objet | OK | OK | OK |
-| [Geometry Quality](doc/1ObjectsRules/Quality) | Un objet | KO | KO | KO |
-| [Stair Quality](doc/1ObjectsRules/StairQuality) | Un objet | KO | KO | KO |
-| [Stability](doc/1ObjectsRules/Stability) | Un objet | KO | KO | KO |
-| [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | OK | KO | OK |
+| [Geometry Quality](doc/1ObjectsRules/Quality) | Un objet | KO | OK | KO |
+| [Stair Quality](doc/1ObjectsRules/StairQuality) | Un objet | KO | OK | KO |
+| [Stability](doc/1ObjectsRules/Stability) | Un objet | KO | OK | KO |
+| [Face Check](doc/1ObjectsRules/OneObjectFace) | Un objet | OK | OK | OK |
 
 ### Règles à deux objets
 
@@ -89,17 +89,17 @@ Chaque règle dispose d'une fiche qui présente la règle, ses paramètres et se
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Clearance](doc/2ObjectsRules/Clearance) | Deux objets | OK | KO | OK |
-| [Intersection](doc/2ObjectsRules/Intersection) | Deux objets | OK | KO | OK |
-| [Collision](doc/2ObjectsRules/Collision) | Deux objets | OK | KO | OK |
+| [Clearance](doc/2ObjectsRules/Clearance) | Deux objets | OK | OK | OK |
+| [Intersection](doc/2ObjectsRules/Intersection) | Deux objets | OK | OK | OK |
+| [Collision](doc/2ObjectsRules/Collision) | Deux objets | OK | OK | OK |
 
 #### Règles de clearance avancées
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Deux objets | OK | KO | OK |
-| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Deux objets | OK | KO | OK |
-| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Deux objets | OK | KO | OK |
+| [Clearance Above Object](doc/2ObjectsRules/ClearanceAbove.md) | Deux objets | OK | OK | OK |
+| [Clearance Next To Object](doc/2ObjectsRules/ClearanceNextTo) | Deux objets | OK | OK | OK |
+| [Clearance Below Object](doc/2ObjectsRules/ClearanceBelow) | Deux objets | OK | OK | OK |
 
 #### Clearance avec OBB
 
@@ -110,12 +110,10 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [OBB Above](doc/2ObjectsRules/OBB_Above.md) | Deux objets | OK | KO | OK |
-| [OBB Below](doc/2ObjectsRules/OBB_Below.md) | Deux objets | OK | KO | OK |
-| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back.md) | Deux objets | OK | KO | OK |
-| [OBB Custom](doc/2ObjectsRules/OBB_Custom.md) | Deux objets | OK | KO | OK |
-
-
+| [OBB Above](doc/2ObjectsRules/OBB_Above.md) | Deux objets | OK | OK | OK |
+| [OBB Below](doc/2ObjectsRules/OBB_Below.md) | Deux objets | OK | OK | OK |
+| [OBB Front And Back](doc/2ObjectsRules/OBB_Front_And_Back.md) | Deux objets | OK | OK | OK |
+| [OBB Custom](doc/2ObjectsRules/OBB_Custom.md) | Deux objets | OK | OK | OK |
 
 
 
@@ -123,25 +121,25 @@ Le dernier bénéfice est la détection de l'avant et de l'arrière d'un éléme
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | OK | KO | OK |
-| [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | KO | OK |
+| [Surface Recover](doc/2ObjectsRules/SurfaceRecover) | Deux objets | OK | OK | OK |
+| [Angle Between](doc/2ObjectsRules/AngleBetween) | Deux objets | OK | OK | OK |
 | [Clearance Axis To Axis](doc/2ObjectsRules/ClearanceAxisToAxis) | Deux objets | OK | OK | OK |
-| [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | KO | KO |
+| [Direct View](doc/2ObjectsRules/DirectView) | Deux objets | OK | OK | KO |
 | [Two Objects Face](doc/2ObjectsRules/TwoObjectsFace) | Deux objets | OK | OK | OK |
-| [Volume Clash](doc/2ObjectsRules/VolumeClash) | Deux objets | KO | KO | KO |
-| [Inside](doc/2ObjectsRules/Inside) | Deux objets | KO | KO | KO |
-| [Door Check](doc/2ObjectsRules/Door) | Deux objets | KO | KO | KO |
-| [Face Check](doc/2ObjectsRules/TwoObjectsFace.md) | Deux objets | OK | KO | OK |
+| [Volume Clash](doc/2ObjectsRules/VolumeClash) | Deux objets | KO | OK | KO |
+| [Inside](doc/2ObjectsRules/Inside) | Deux objets | KO | OK | KO |
+| [Clearance For Doors](doc/2ObjectsRules/ClearanceForDoors.md) | Deux objets | OK | OK | OK |
+| [Face Check](doc/2ObjectsRules/TwoObjectsFace.md) | Deux objets | OK | OK | OK |
 
 
 ### Règles complexes
 
 | **Règle** | **Type** | **État de la règle** | **Doc** | **Test** |
 |-----------|----------|-----------|---------|----------|
-| [Free Space in Room](doc/ComplexRules/FreeSpaceInRoom) | Complexe | OK | KO | OK |
-| [Alignement](doc/ComplexRules/Alignement) | Complexe | OK | KO | OK |
+| [Free Space in Room](doc/ComplexRules/FreeSpace.md) | Complexe | OK | OK | OK |
+| [Alignement](doc/ComplexRules/Alignement) | Complexe | OK | OK | OK |
 | [Find Path](doc/ComplexRules/FindPath) | Complexe | KO | KO | KO |
-| [EvacuationDistance](doc/ComplexRules/EvacuationDistance) | Complexe | KO | KO | KO |
+| [EvacuationDistance](doc/ComplexRules/EvacuationDistance) | Complexe | KO | OK | KO |
 
 
 
@@ -160,6 +158,27 @@ L'environnement de développement est décrit dans environment.yml, la recette d
 
 # Progression
 La première étape est de créer de nouvelles règles afin d'étendre les possibilités. Ces règles peuvent être utilisées dans n'importe quel gabarit.
+
+## V0.5
+
+#### Mise à jour majeure
+
+- Refonte des ClashResult et classe ResultInfo
+    Le noyau commun des résultats (id, type, status, criticity, actor, source/target) est désormais séparé des données propres à chaque règle, qui migrent vers une nouvelle classe ResultInfo. Les mesures scalaires deviennent des attributs déclarés (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle) au lieu d'attributs dynamiques non déclarés, complétés par des blocs structurés par règle (RaycastData pour DirectView, ZoneData pour ClearanceForDoors, axis_mode pour ClearanceAxisToAxis). Chaque ClashResult porte désormais un GUID, et ClashResultComplex n'hérite plus de ClashResult. La nouvelle spécification (specification_ResultData.md) documente ce contrat de données, avec sa feuille de test dédiée.
+
+- Sérialisation des règles
+    Le module serialization.py permet désormais de sauvegarder et de recharger les règles elles-mêmes, et pas seulement les résultats : un RuleFile complet peut être écrit dans un JSON puis rejoué ailleurs, notamment par un autre processus.
+
+- IPC pour BonsaiViewer
+    Quatre nouveaux modules ouvrent le moteur vers un client externe : ipc.py (serveur JSON Lines sur stdin/stdout, requêtes hello, catalogue et run), registry.py (catalogue de toutes les règles, facettes et selects avec leurs paramètres exacts, source de vérité partagée entre l'interface cliente et le moteur), result_export.py (export JSON des résultats, les éléments devenant des références croisées : index de modèle + STEP id) et display_export.py. C'est la base du mock-up d'intégration dans BonsaiViewer.
+
+#### Mise à jour mineure
+
+- Règle Two Objects Face
+    La règle a été retravaillée, avec une nouvelle fonction triangles_bbox_distance dans clash_utils.py : une borne inférieure rapide de la distance entre deux triangles par leurs boîtes englobantes.
+
+- Documentation
+    Les pages de règles de doc/ ont été enrichies (BasicRayCheck, Clearance Above, Below et Next To, Inside, VolumeClash, Quality, Stability, StairQuality, ObbHeigh, ObbLength), et les tests d'affichage mis à jour en conséquence.
 
 ## V0.4
 
