@@ -171,6 +171,13 @@ La première étape est de créer de nouvelles règles afin d'étendre les possi
 
 - IPC pour BonsaiViewer
     Quatre nouveaux modules ouvrent le moteur vers un client externe : ipc.py (serveur JSON Lines sur stdin/stdout, requêtes hello, catalogue et run), registry.py (catalogue de toutes les règles, facettes et selects avec leurs paramètres exacts, source de vérité partagée entre l'interface cliente et le moteur), result_export.py (export JSON des résultats, les éléments devenant des références croisées : index de modèle + STEP id) et display_export.py. C'est la base du mock-up d'intégration dans BonsaiViewer.
+    
+- Ajout de tests unitaires
+    J'ai crée des maquettes IFC qui mettent en scène des positions et des objets simples ou complexes. Cela me permet de faire de nombreux tests de positionnement relatif des objets et de forcer la création de cas "Tordu".
+
+- Un travail important sur les tests
+    J'ai continué le travail sur la création des tests et de vérifier qu'il n'y a pas de faux négatif, ni de faux positif.
+
 
 #### Mise à jour mineure
 

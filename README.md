@@ -170,6 +170,12 @@ The first step is to create new rules to extend the possibilities. These rules c
 - IPC for BonsaiViewer
     Four new modules open the engine to an external client: ipc.py (JSON Lines server on stdin/stdout, hello, catalogue and run requests), registry.py (catalogue of all rules, facets and selects with their exact parameters, single source of truth shared between the client UI and the engine), result_export.py (JSON export of results, elements becoming cross-references: model index + STEP id) and display_export.py. This is the foundation of the BonsaiViewer integration mock-up.
 
+- Unit tests added
+    I created IFC mock-ups staging simple or complex positions and objects. This allows me to run many tests on the relative positioning of objects and to force the creation of "twisted" cases.
+
+- Significant work on tests
+    I continued the work on creating tests and checking that there are no false negatives and no false positives.
+
 #### Minor update
 
 - Two Objects Face rule
