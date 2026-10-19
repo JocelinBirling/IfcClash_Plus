@@ -1,0 +1,86 @@
+{
+    "type": "RuleFileResults",
+    "models": [
+        {
+            "name": "Ifc2x3_Duplex_Architecture.ifc",
+            "path": "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+        }
+    ],
+    "configuration": {
+        "type": "RuleFile",
+        "id": "rf_1",
+        "list_ifc_path": [
+            "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
+        ],
+        "path_to_save": null,
+        "contains": [
+            {
+                "type": "Intersection",
+                "id": null,
+                "state": "Final",
+                "select_grouping": null,
+                "select_criticity": [],
+                "select_actor": [],
+                "tolerance": 0.01,
+                "select_source": {
+                    "type": "SelectFacet",
+                    "classification_type": "Facet",
+                    "classification_name": "",
+                    "applicability": [
+                        {
+                            "type": "Entity",
+                            "name": "IFCWALLSTANDARDCASE",
+                            "predefined_type": null,
+                            "instructions": null
+                        }
+                    ]
+                },
+                "select_target": {
+                    "type": "SelectFacet",
+                    "classification_type": "Facet",
+                    "classification_name": "",
+                    "applicability": [
+                        {
+                            "type": "Entity",
+                            "name": "IFCFURNISHINGELEMENT",
+                            "predefined_type": null,
+                            "instructions": null
+                        }
+                    ]
+                }
+            }
+        ]
+    },
+    "rules": [
+        {
+            "node_id": null,
+            "rule_type": "Intersection",
+            "results": [
+                {
+                    "id": "a43467c3-93c4-48bf-8502-5f604132312a",
+                    "type": "TwoObjectsResult",
+                    "rule": "Intersection",
+                    "rule_type": "Intersection",
+                    "node_id": null,
+                    "status": true,
+                    "criticity": [],
+                    "actor": [],
+                    "source": {
+                        "step_id": 5448,
+                        "ifc_type": "IfcWallStandardCase",
+                        "model": "Ifc2x3_Duplex_Architecture.ifc",
+                        "global_id": "2O2Fr$t4X7Zf8NOew3FLQD",
+                        "name": "Basic Wall:Exterior - Brick on Block:143410"
+                    },
+                    "target": {
+                        "step_id": 20657,
+                        "ifc_type": "IfcFurnishingElement",
+                        "model": "Ifc2x3_Duplex_Architecture.ifc",
+                        "global_id": "2OBrcmyk58NupXoVOHUtI8",
+                        "name": "M_Bed-Standard:1981 x 2032mm - King:1981 x 2032mm - King:168717"
+                    }
+                }
+            ]
+        }
+    ]
+}

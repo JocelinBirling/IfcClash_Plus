@@ -12,6 +12,7 @@ value (nested): it is rebuilt as a separate but identical copy when loading.
 """
 
 import json
+import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -1314,6 +1315,113 @@ def load_from_json(filepath: str) -> "RuleFile":
         data = json.load(f)
 
     return deserialize_rule_file(data)
+
+
+# ============================================================================
+# Results export
+# ============================================================================
+
+
+def _model_names(rule_file: "RuleFile") -> dict:
+    """The {file identity or path key: model name} map joined by the
+    element cross-references (see result_export.element_ref).
+
+    The name of a model is the basename of its IFC path. The ifc_file
+    wrappers built by ifcopenshell.file.from_pointer have another id()
+    than the opened files: they are joined back by pathname.
+    """
+    names: dict = {}
+    for path, ifc_file in zip(rule_file.list_ifc_path, rule_file.list_ifc_file):
+        name = os.path.basename(path)
+        names[id(ifc_file)] = name
+        pathname = getattr(ifc_file, "pathname", None)
+        if pathname:
+            names[("path", pathname)] = name
+            names[("path", os.path.abspath(pathname))] = name
+    return names
+
+
+def _iter_rules(items):
+    """The rules of a contains list, folders flattened in run order."""
+    from RuleClass import RuleFolder
+
+    for item in items:
+        if isinstance(item, RuleFolder):
+            yield from _iter_rules(item.contains)
+        else:
+            yield item
+
+
+def rule_results_to_json(rule, model_names: dict) -> dict[str, Any]:
+    """One rule's results as JSON: its configuration (the same
+    dictionary as save_to_json produces), the plain results and, when a
+    grouping or a Must check ran, the grouped results."""
+    from result_export import _rule_type, element_ref, results_to_dicts
+
+    data: dict[str, Any] = {
+        "node_id": rule.id,
+        "rule_type": _rule_type(rule),
+        "configuration": serialize_rule_check(rule),
+        "results": results_to_dicts(rule.result, rule, model_names),
+    }
+
+    groups = []
+    for group in getattr(rule, "grouped_result", []) or []:
+        groups.append(
+            {
+                "id": getattr(group, "id", None),
+                "sources": [
+                    element_ref(element, model_names)
+                    for element in getattr(group, "source_set", []) or []
+                ],
+                "targets": [
+                    element_ref(element, model_names)
+                    for element in getattr(group, "target_set", []) or []
+                ],
+                "result_count": len(getattr(group, "result_group", []) or []),
+            }
+        )
+    if groups:
+        data["grouped"] = groups
+    return data
+
+
+def results_to_json(rule_file: "RuleFile") -> dict[str, Any]:
+    """All the results produced by the rules of a run RuleFile, together
+    with the configuration of the RuleFile, as a JSON-ready dictionary.
+
+    Every element reference carries the GUID of the object (global_id)
+    and the name of its model (model, the basename of the IFC path).
+    The rules of the folders are flattened in run order; each of them
+    carries its own configuration. The results are empty unless
+    rule_file.run() has been called first.
+    """
+    model_names = _model_names(rule_file)
+    return {
+        "type": "RuleFileResults",
+        "models": [
+            {"name": os.path.basename(path), "path": path}
+            for path in rule_file.list_ifc_path
+        ],
+        "configuration": serialize_rule_file(rule_file),
+        "rules": [
+            rule_results_to_json(rule, model_names)
+            for rule in _iter_rules(rule_file.contains)
+        ],
+    }
+
+
+def save_results_to_json(rule_file: "RuleFile", filepath: str) -> None:
+    """Save all the results of a run RuleFile to a JSON file, together
+    with the configuration of the RuleFile (rules, folders, selects,
+    exception, grouping, criticity, actor, Must checks).
+
+    Args:
+        rule_file: The run RuleFile whose results are saved
+        filepath: Path to the JSON file
+    """
+    with open(filepath, "w") as f:
+        json.dump(results_to_json(rule_file), f, indent=4)
 
 
 # ============================================================================

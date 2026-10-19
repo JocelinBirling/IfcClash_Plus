@@ -25,7 +25,8 @@ from .serialization import (
     save_configuration_to_json, load_configuration_from_json,
     create_configuration_from_rule_file, apply_configuration_to_rule_file,
     serialize_rule_file, deserialize_rule_file,
-    serialize_facet, deserialize_facet
+    serialize_facet, deserialize_facet,
+    save_results_to_json, results_to_json
 )
 
 __all__ = [
@@ -41,7 +42,8 @@ __all__ = [
     'save_configuration_to_json', 'load_configuration_from_json',
     'create_configuration_from_rule_file', 'apply_configuration_to_rule_file',
     'serialize_rule_file', 'deserialize_rule_file',
-    'serialize_facet', 'deserialize_facet'
+    'serialize_facet', 'deserialize_facet',
+    'save_results_to_json', 'results_to_json'
 ]
 
 __version__ = "0.3.0"
