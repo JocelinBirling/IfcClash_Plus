@@ -60,12 +60,15 @@ def make_group(nb_source=0, nb_target=0):
 
 
 _ELEMENTS = None
+# The opened files stay alive: an ifcopenshell >= 0.9 entity no longer
+# keeps its file alive, the cached elements would dangle without it.
+_ELEMENTS_FILE = None
 
 
 def ifc_elements():
     """Three IfcBuildingElementProxy of an in-memory file, each with a
     Pset_Test/Value property of 2.5. Built once, no geometry needed."""
-    global _ELEMENTS
+    global _ELEMENTS, _ELEMENTS_FILE
     if _ELEMENTS is None:
         file = ifcopenshell.api.run("project.create_file")
         ifcopenshell.api.run(
@@ -86,18 +89,20 @@ def ifc_elements():
                 "pset.edit_pset", file, pset=pset, properties={"Value": 2.5}
             )
             elements.append(element)
+        _ELEMENTS_FILE = file
         _ELEMENTS = elements
     return _ELEMENTS
 
 
 _TEXT_ELEMENTS = None
+_TEXT_ELEMENTS_FILE = None
 
 
 def ifc_text_elements():
     """Three IfcBuildingElementProxy whose property values are not
     plain numbers: a number written as a string, pure text, and an
     element without the property."""
-    global _TEXT_ELEMENTS
+    global _TEXT_ELEMENTS, _TEXT_ELEMENTS_FILE
     if _TEXT_ELEMENTS is None:
         file = ifcopenshell.api.run("project.create_file")
         ifcopenshell.api.run(
@@ -119,6 +124,7 @@ def ifc_text_elements():
                     "pset.edit_pset", file, pset=pset, properties={"Value": value}
                 )
             elements.append(element)
+        _TEXT_ELEMENTS_FILE = file
         _TEXT_ELEMENTS = elements
     return _TEXT_ELEMENTS
 

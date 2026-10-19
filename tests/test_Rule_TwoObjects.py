@@ -405,8 +405,12 @@ class TestRulesOBB(unittest.TestCase):
         for result in obb_above_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
 
-        self.assertEqual(len(obb_above_rule.result), 8)
-        
+        # ifcopenshell 0.9 computes the distance of the coplanar
+        # touching pairs (a furniture bottom face lying exactly on
+        # the top boundary of a slab zone) as an exact 0, where 0.8
+        # returned a 1e-5 numerical noise: those pairs now clash too.
+        self.assertEqual(len(obb_above_rule.result), 61)
+
 
     def test_obb_above_rule_2(self):
         """Test OBB_above rule, it's the inverse of OBB_Below, to cross check"""

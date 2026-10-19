@@ -47,7 +47,7 @@ class Volume(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -88,7 +88,7 @@ class Area(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -143,7 +143,7 @@ class TopOrBottomSurface(RuleCheckOneObject):
         if self.top_or_bot_method == "Bottom":
             direction = (0.0, 0.0, -1)
 
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -201,7 +201,7 @@ class LateralSurface(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):  # @todo Check if the result is trustworthy
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -245,7 +245,7 @@ class ProjectedSurface(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):  # @todo Check if the result is trustworthy
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -290,7 +290,7 @@ class ObbHigh(RuleCheckOneObject):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -351,7 +351,7 @@ class ObbLength(RuleCheckOneObject):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
 
         for ifc_file in self.select_source.dict_elements.keys():
@@ -544,7 +544,7 @@ class AngleBetween(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -638,7 +638,7 @@ class Intersection(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -669,11 +669,10 @@ class Intersection(RuleCheckTwoObjects):
 
         # @todo make a proper integration, how to deal with extra data ? (Point of entry, distance, etc...)
         for result in temp_result:
-            a_file = ifcopenshell.file.from_pointer(result.a.file_pointer())
-            a__object = a_file.by_id(result.a.id_)
-
-            b__file = ifcopenshell.file.from_pointer(result.b.file_pointer())
-            b_object = b__file.by_id(result.b.id_)
+            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
+            # the tree, re-resolved through the file for stability.
+            a__object = clash_utils.clash_entity(result.a)
+            b_object = clash_utils.clash_entity(result.b)
 
             # source and target are mixed up.
             if a__object in source_elements:
@@ -706,7 +705,7 @@ class Clearance(RuleCheckTwoObjects):
         self.check_all: bool = False
 
     def run(self):
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -727,11 +726,10 @@ class Clearance(RuleCheckTwoObjects):
 
         # @todo make a proper integration, how to deal with extra data ? (Point of entry, distance, etc...)
         for result in temp_result:
-            a_file = ifcopenshell.file.from_pointer(result.a.file_pointer())
-            a__object = a_file.by_id(result.a.id_)
-
-            b__file = ifcopenshell.file.from_pointer(result.b.file_pointer())
-            b_object = b__file.by_id(result.b.id_)
+            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
+            # the tree, re-resolved through the file for stability.
+            a__object = clash_utils.clash_entity(result.a)
+            b_object = clash_utils.clash_entity(result.b)
 
             # source and target are mixed up.
             if a__object in self.select_source.list_of_elements:
@@ -1055,7 +1053,7 @@ class Collision(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1074,11 +1072,10 @@ class Collision(RuleCheckTwoObjects):
         self.result = []
 
         for result in temp_result:
-            a_file = ifcopenshell.file.from_pointer(result.a.file_pointer())
-            a__object = a_file.by_id(result.a.id_)
-
-            b__file = ifcopenshell.file.from_pointer(result.b.file_pointer())
-            b_object = b__file.by_id(result.b.id_)
+            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
+            # the tree, re-resolved through the file for stability.
+            a__object = clash_utils.clash_entity(result.a)
+            b_object = clash_utils.clash_entity(result.b)
 
             # source and target are mixed up.
             if a__object in self.select_source.list_of_elements:
@@ -1129,9 +1126,44 @@ class Ray_Check(RuleCheckTwoObjects):
                         break
         return centers
 
+    def _context_shapes(self):
+        """The OCC shape of every context element, in world
+        coordinates, keyed by entity.
+
+        The elements without geometry are skipped, as the geometry
+        iterator skipped them.
+        """
+        shapes = {}
+        shape_settings = ifcopenshell.geom.settings()
+        shape_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        for elements in self.select_context.dict_elements.values():
+            for element in elements or []:
+                try:
+                    shape = ifcopenshell.geom.create_shape(shape_settings, element)
+                except Exception:
+                    continue
+                shapes[element] = shape.geometry
+        return shapes
+
+    def _segment_blocked(self, start, end, source, target, context_shapes):
+        """True when a context object (other than the two objects of
+        the pair) touches or crosses the start-end segment.
+
+        The blocking test is an exact segment intersection against
+        the context shapes: on ifcopenshell 0.9.0, tree.select_ray can
+        no longer resolve the hit entity (upstream issue #9755).
+        """
+        for entity, shape in context_shapes.items():
+            if entity == source or entity == target:
+                # The source and the target never block their own ray
+                continue
+            if clash_utils.segment_hits_shape(start, end, shape):
+                return True
+        return False
+
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1150,7 +1182,9 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_target.create_list_of_element()
         self.select_context.create_list_of_element()
 
-        self.add_to_tree(self.select_context, "UB")
+        # The context shapes in world coordinates, for the blocking
+        # test of each ray.
+        context_shapes = self._context_shapes()
 
         # The ray is cast between the centers of the objects, not between
         # their placement origins: the origins often lie on the floor plane,
@@ -1190,33 +1224,20 @@ class Ray_Check(RuleCheckTwoObjects):
                     float(direction[2] / distance),
                 )
 
-                results = self.tree.select_ray(
-                    source_position, direction, length=distance
-                )
-
-                # A ray_element has: distance, dot_product, instance,
-                # normal, position, ray_distance, style_index
                 # The clash appears when the source and the target are in
                 # direct view: no context object stands between them.
-                in_direct_view = True
-                for result in results:
-                    result_file = ifcopenshell.file.from_pointer(
-                        result.instance.file_pointer()
-                    )
-                    result_object = result_file.by_id(result.instance.id_)
+                if self._segment_blocked(
+                    source_position,
+                    target_position,
+                    source,
+                    target,
+                    context_shapes,
+                ):
+                    continue
 
-                    # The source and the target never block their own ray
-                    if result_object == source or result_object == target:
-                        continue
-
-                    # A context object stands between the source and the target
-                    in_direct_view = False
-                    break
-
-                if in_direct_view:
-                    self.result.append(
-                        ClashResultTwoObjects(source=source, target=target, state=True)
-                    )
+                self.result.append(
+                    ClashResultTwoObjects(source=source, target=target, state=True)
+                )
 
         if self.state == "Display_Input":
             return self.end_rule_action()
@@ -1244,7 +1265,7 @@ class Above(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1444,7 +1465,7 @@ class Below(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1645,7 +1666,7 @@ class OBB_Above(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1753,7 +1774,7 @@ class OBB_Below(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1862,7 +1883,7 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -1992,7 +2013,7 @@ class OBB_Custom(RuleCheckTwoObjects):
 
     def run(self):
         self.display_items.clear()
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
 
@@ -3327,7 +3348,7 @@ class DirectView(RuleCheckTwoObjects):
                     "context", ("entity", element), (0.5, 0.5, 0.5), 0.85
                 )
 
-        self.tree = ifcopenshell.geom.tree()
+        self.tree = clash_utils.make_ray_tree()
         self.add_to_tree(self.select_context, "UB")
 
         source_meshes = self._collect_meshes(self.select_source)

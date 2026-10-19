@@ -318,9 +318,10 @@ class TestCollision(IFCModelRuleTestCase):
 
     @unittest.expectedFailure
     def test_CubeA_TouchFace_CubeB_allow_touching_true(self):
-        # BUG [calibrated]: the Collision constructor overwrites the
-        # allow_touching argument (`self.allow_touching = False` in Rules.py);
-        # strict contact is never detected. Observed behavior: 0.
+        # BUG [calibrated]: a face-to-face strict contact is still not
+        # detected by the ifcopenshell 0.9 collision backend
+        # (allow_touching=True, observed 0; edge and point contacts
+        # are detected). Observed behavior: 0.
         self._assert_count("CubeA_TouchFace_CubeB.ifc", Collision,
                            "CubeA", "CubeB", 1, allow_touching=True)
 
@@ -329,9 +330,8 @@ class TestCollision(IFCModelRuleTestCase):
         self._assert_count("CubeA_TouchEdge_CubeB.ifc", Collision,
                            "CubeA", "CubeB", 0, allow_touching=False)
 
-    @unittest.expectedFailure
     def test_CubeA_TouchEdge_CubeB_allow_touching_true(self):
-        # BUG: see test_CubeA_TouchFace_CubeB_allow_touching_true.
+        # ifcopenshell 0.9: see test_CubeA_TouchFace_CubeB_allow_touching_true.
         self._assert_count("CubeA_TouchEdge_CubeB.ifc", Collision,
                            "CubeA", "CubeB", 1, allow_touching=True)
 
@@ -340,9 +340,8 @@ class TestCollision(IFCModelRuleTestCase):
         self._assert_count("CubeA_TouchPoint_CubeB.ifc", Collision,
                            "CubeA", "CubeB", 0, allow_touching=False)
 
-    @unittest.expectedFailure
     def test_CubeA_TouchPoint_CubeB_allow_touching_true(self):
-        # BUG: see test_CubeA_TouchFace_CubeB_allow_touching_true.
+        # ifcopenshell 0.9: see test_CubeA_TouchFace_CubeB_allow_touching_true.
         self._assert_count("CubeA_TouchPoint_CubeB.ifc", Collision,
                            "CubeA", "CubeB", 1, allow_touching=True)
 

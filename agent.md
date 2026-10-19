@@ -357,7 +357,7 @@ conda create -c conda-forge -n ifcclash_plus python=3.14 "pythonocc-core=7.9.3=n
 conda activate ifcclash_plus
 
 # 2. IfcOpenShell and the Python dependencies (wheels matching this Python)
-pip install ifcopenshell==0.8.4.post1 ifctester==0.8.4 ifcpatch numpy shapely trimesh pytest
+pip install ifcopenshell==0.9.0.post1 ifctester==0.9.0 ifcclash==0.9.0 ifcpatch numpy shapely trimesh pytest
 
 # 3. The project itself, editable
 pip install -e .
@@ -409,13 +409,49 @@ python -m unittest tests.test_RuleFile.TestRuleFileWithSelectRule -v
 ### Known working environment on this machine
 
 `/home/jocelin/Documents/07 - Programmation/IfcOpenshell/Test_IfcOpenshell/.conda`
-(Python 3.14.3, pythonocc-core 7.9.3-novtk, ifcopenshell 0.8.4.post1) —
+(Python 3.14.3, pythonocc-core 7.9.3-novtk, ifcopenshell 0.9.0.post1,
+ifctester 0.9.0, ifcclash 0.9.0) —
 this is the interpreter used to run the test suite.
 
 Do not use:
 - `.venv/` (project): has ifcopenshell but no PythonOCC.
 - `~/miniconda3/envs/IfcClash_Plus`: has PythonOCC but an ifcopenshell wheel
   built for a different Python.
+
+### IfcOpenShell 0.9 specifics (breaking changes handled by the code)
+
+- `import ifcopenshell.geom` (and `ifcopenshell.api`, `ifcopenshell.util.*`)
+  is no longer implicit: `import ifcopenshell` alone does not expose `geom`.
+  The project modules import them explicitly; a script doing only
+  `import ifcopenshell` must add `import ifcopenshell.geom`.
+- The geometry tree has typed backends: `geom.tree()` defaults to
+  `opencascade.brep`, which refuses the elements of a plain-settings
+  iterator and supports neither `clash_*_many` nor the same element kinds
+  as 0.8. The clash queries live on `opencascade.trianglebvh`
+  (see `clash_utils.make_clash_tree`, fed by `RuleCheck.add_to_tree`
+  with `"BVH"`), and `select_ray` lives on `opencascade.brep`
+  (`clash_utils.make_ray_tree`, fed with `"UB"`). `Ray_Check` no longer
+  uses the tree at all: its blocking test is an exact OCC segment
+  intersection (`clash_utils.segment_hits_shape`), because 0.9.0
+  `select_ray` exposes the hit entity as an opaque SwigPyObject
+  (upstream issue #9755).
+- `tree.clash_*_many` results expose `a`/`b` as entity instances, but
+  the wrappers are owned by the tree and dangle once the tree is
+  released: `clash_utils.clash_entity(result.a)` re-resolves them
+  through their file.
+- `ifcopenshell.file.from_pointer` is gone; `file.pathname` is gone.
+  The element/model joins use `file.file_pointer()` (see
+  `result_export.element_ref`, `serialization._model_names`, `ipc._model_index`).
+- An entity no longer keeps its file alive: keep the `ifcopenshell.file`
+  objects alive as long as their entities are used (the tests cache them
+  next to the cached elements).
+- ifctester 0.9 matches the name of an Entity facet case-sensitively
+  against the uppercased IFC classes: `SelectFacet.run` normalizes the
+  entity names to uppercase (IDS names are case-insensitive).
+- The 0.9 shapes resolve coplanar touching at an exact 0 distance
+  where 0.8 returned a 1e-5 noise, and its collision backend honors
+  `allow_touching` (edge/point contacts now detected): a few
+  border-line test expectations were recalibrated accordingly.
 
 ## Testing
 

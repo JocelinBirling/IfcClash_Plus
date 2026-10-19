@@ -26,10 +26,20 @@ def element_ref(entity, model_of_file: dict[int, int]) -> dict[str, Any] | None:
     if ifc_file is not None:
         model = model_of_file.get(id(ifc_file))
         if model is None:
-            # The wrapper identity may differ: match by pathname.
+            # The wrapper identity may differ: match by pathname
+            # (ifcopenshell < 0.9) or by the underlying file pointer
+            # (ifcopenshell >= 0.9, where file.pathname no longer
+            # exists and every entity.file access builds a fresh
+            # wrapper).
             pathname = getattr(ifc_file, "pathname", None)
             if pathname:
                 model = model_of_file.get(("path", pathname))
+        if model is None:
+            # ifcopenshell >= 0.9: join by the underlying parse file
+            # pointer, shared by every wrapper of the same file.
+            file_pointer = getattr(ifc_file, "file_pointer", None)
+            if file_pointer is not None:
+                model = model_of_file.get(("fp", file_pointer()))
 
     ref: dict[str, Any] = {"step_id": step_id, "ifc_type": entity.is_a()}
     if model is not None:

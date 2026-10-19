@@ -201,7 +201,9 @@ class Select:
 
     def create_list_of_element(self):
         for onefile in self.list_ifc_file:
-            self.list_of_elements = self.dict_elements[onefile] + self.list_of_elements
+            self.list_of_elements = (
+                list(self.dict_elements.get(onefile) or []) + self.list_of_elements
+            )
 
 
 class SelectFacet(Select):
@@ -226,6 +228,17 @@ class SelectFacet(Select):
         result = []
         for onefile in self.list_ifc_file:
             for one_applicability in self.applicability:
+                # ifctester >= 0.9 compares the name of an Entity facet
+                # case-sensitively against the uppercased IFC classes
+                # (its IFC2X3 filter branch): the entity names are
+                # case-insensitive in IDS, they are normalized here.
+                if (
+                    isinstance(one_applicability, Entity)
+                    and isinstance(one_applicability.name, str)
+                    and one_applicability.name != one_applicability.name.upper()
+                ):
+                    one_applicability.name = one_applicability.name.upper()
+
                 if self.dict_elements[onefile] is None:
                     if isinstance(one_applicability, FACETS_REQUIRING_ELEMENTS):
                         result = one_applicability.filter(
@@ -416,28 +429,51 @@ class RuleCheck:
                 exception_same_space()
 
     def add_to_tree(self, Select, type_of_tree):
-        for ifc_file in Select.dict_elements.keys():
+        """Add the elements of a selection to self.tree.
+
+        ifcopenshell >= 0.9 has typed tree backends: "BVH" feeds the
+        clash tree (opencascade.trianglebvh) with the triangulation
+        elements of a plain settings iterator, "UB" feeds the ray tree
+        (opencascade.brep) with the native brep elements of a
+        Python-OCC settings iterator (which also implies world
+        coordinates).
+        """
+        if type_of_tree == "BVH":
+            tree_settings = ifcopenshell.geom.settings()
+        else:
+            tree_settings = ifcopenshell.geom.settings()
+            tree_settings.set("USE_PYTHON_OPENCASCADE", True)
+
+        for ifc_file, elements in Select.dict_elements.items():
+            if not elements:
+                continue
             iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
+                tree_settings,
                 ifc_file,
                 multiprocessing.cpu_count(),
-                include=Select.dict_elements[ifc_file],
+                include=elements,
             )
 
-            if iterator.initialize():
-                while True:
-                    if type_of_tree == "BVH":
-                        self.tree.add_element(iterator.get())
-                    if type_of_tree == "UB":
-                        self.tree.add_element(iterator.get_native())
+            if not iterator.initialize():
+                continue
+            while True:
+                if type_of_tree == "BVH":
+                    self.tree.add_element(iterator.get())
+                else:
+                    self.tree.add_element(iterator.get_native())
 
-                    shape = iterator.get()
-                    if not iterator.next():
-                        break
+                if not iterator.next():
+                    break
 
     def add_OneObject_to_tree(self, Object, type_of_tree):
+        if type_of_tree == "BVH":
+            tree_settings = ifcopenshell.geom.settings()
+        else:
+            tree_settings = ifcopenshell.geom.settings()
+            tree_settings.set("USE_PYTHON_OPENCASCADE", True)
+
         iterator = ifcopenshell.geom.iterator(
-            self.geom_settings,
+            tree_settings,
             Object.file,
             multiprocessing.cpu_count(),
             include=[Object],
@@ -447,10 +483,9 @@ class RuleCheck:
         while True:
             if type_of_tree == "BVH":
                 self.tree.add_element(iterator.get())
-            if type_of_tree == "UB":
+            else:
                 self.tree.add_element(iterator.get_native())
 
-            shape = iterator.get()
             if not iterator.next():
                 break
 

@@ -133,6 +133,13 @@ def load_files(paths):
 def _model_index(files, paths):
     """{file identity: model index} joined by the element cross-references."""
     by_identity = {id(ifc_file): index for index, ifc_file in enumerate(files)}
+    # ifcopenshell >= 0.9: every entity.file access builds a fresh
+    # wrapper, the opened files are also joined by their parse file
+    # pointer.
+    for index, ifc_file in enumerate(files):
+        file_pointer = getattr(ifc_file, "file_pointer", None)
+        if file_pointer is not None:
+            by_identity[("fp", file_pointer())] = index
     by_path = {("path", os.path.abspath(path)): index for index, path in enumerate(paths)}
     by_path.update(by_identity)
     return by_path

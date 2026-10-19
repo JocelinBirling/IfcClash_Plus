@@ -2,6 +2,7 @@ import shapely
 import shapely.ops
 import numpy as np
 import numpy.typing as npt
+import ifcopenshell.geom
 import ifcopenshell.ifcopenshell_wrapper as W
 import ifcopenshell.util.element
 import ifcopenshell.util.placement
@@ -40,6 +41,62 @@ VECTOR_3D = tuple[float, float, float]
 
 MatrixType = npt.NDArray[np.float64]
 """`npt.NDArray[np.float64]`"""
+
+
+# --- ifcopenshell >= 0.9 geometry trees
+#
+# ifcopenshell 0.9 splits the geometry tree into typed backends:
+# - "opencascade.trianglebvh" hosts the clash queries
+#   (clash_intersection_many, clash_clearance_many,
+#   clash_collision_many), fed with the triangulation elements of a
+#   plain settings iterator — the flow of ifcclash.
+# - "opencascade.brep" hosts select_ray, fed with the native brep
+#   elements of a Python-OCC settings iterator.
+# The clash results expose a and b as entity instances directly: no
+# more ifcopenshell.file.from_pointer / by_id round trip.
+
+CLASH_TREE_BACKEND = "opencascade.trianglebvh"
+RAY_TREE_BACKEND = "opencascade.brep"
+
+
+def make_clash_tree():
+    """The geometry tree of the clash queries (typed backend,
+    ifcopenshell >= 0.9)."""
+    return ifcopenshell.geom.tree(backend=CLASH_TREE_BACKEND)
+
+
+def make_ray_tree():
+    """The geometry tree of the ray queries (select_ray lives on the
+    brep backend, ifcopenshell >= 0.9)."""
+    return ifcopenshell.geom.tree(backend=RAY_TREE_BACKEND)
+
+
+def clash_entity(element):
+    """The stable entity behind one side of a clash result.
+
+    The entity wrappers of the clash results hold non-owning pointers
+    into the tree storage: they dangle as soon as the tree (or the
+    clash result tuple) is released. Resolving through the file gives
+    an entity owned by the opened file, stable for the whole run
+    (ifcopenshell >= 0.9). To be called while the tree is still
+    alive.
+    """
+    return element.file.by_id(element.id())
+
+
+def segment_hits_shape(start, end, shape, tolerance: float = 1e-7) -> bool:
+    """True when the start-end segment touches or crosses the shape.
+
+    The OCC distance between the segment edge and the shape is zero
+    (within the tolerance) exactly when they intersect.
+    """
+    edge = BRepBuilderAPI_MakeEdge(gp_Pnt(*start), gp_Pnt(*end)).Edge()
+    dist_tool = BRepExtrema_DistShapeShape()
+    dist_tool.LoadS1(edge)
+    dist_tool.LoadS2(shape)
+    dist_tool.Perform()
+    return dist_tool.Value() <= tolerance
+
 
 
 def get_extreme_faces(

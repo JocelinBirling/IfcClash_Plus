@@ -1334,6 +1334,12 @@ def _model_names(rule_file: "RuleFile") -> dict:
     for path, ifc_file in zip(rule_file.list_ifc_path, rule_file.list_ifc_file):
         name = os.path.basename(path)
         names[id(ifc_file)] = name
+        # ifcopenshell >= 0.9 has no file.pathname anymore and every
+        # entity.file access builds a fresh wrapper: the opened files
+        # are also joined by their underlying parse file pointer.
+        file_pointer = getattr(ifc_file, "file_pointer", None)
+        if file_pointer is not None:
+            names[("fp", file_pointer())] = name
         pathname = getattr(ifc_file, "pathname", None)
         if pathname:
             names[("path", pathname)] = name
