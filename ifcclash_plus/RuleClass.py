@@ -294,7 +294,7 @@ class RuleCheck:
         self.select_exception: BooleanLeaf | str | None = None
 
         self.select_source: Select = source
-        self.select_grouping: SelectFacet | str = None
+        self.select_grouping: SelectFacet | str = None #This select Grouping should produce a Complex Result. Is it still usefull ? (Let this to the viewer)
         self.select_criticity: list[SelectFacet] = []
         self.select_actor: list[SelectFacet] = []
         self.abs_or_rel_check: AbsoluteOrRelativeChecking = None
@@ -2059,9 +2059,13 @@ class ResultInfo:
         return data
 
 
+VALIDATION_STATUS = Literal[
+    "Validate", "Undetermined", "", "Refuse"
+]
+
 # ==== Clash Result
 class ClashResult:
-    def __init__(self, source, state, type="OneObjectResult"):
+    def __init__(self, source, state, type="ClashResult"):
         # @todo ClashResult, complete all the data.
         self.id: str = str(uuid.uuid4())
         self.type: str = type
@@ -2074,6 +2078,9 @@ class ClashResult:
 
         # Toutes les données hors noyau commun portées par le résultat.
         self.info: ResultInfo = ResultInfo()
+
+
+        self.validation_status: ABSOLUTEORRELATIVECHECK_TYPE = VALIDATION_STATUS
 
 
 class ClashResultOneObject(ClashResult):
@@ -2145,7 +2152,6 @@ class ResultAnalyze:
         self.source_set: set(ifcopenshell.entity_instance) = set()
         self.target_set: set(ifcopenshell.entity_instance) = set()
         self.abs_or_rel_check = None
-
 
 class BCF_Subject:
     def __init__(self):

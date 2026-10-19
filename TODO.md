@@ -57,3 +57,7 @@ Il faurait également pouvoir spécifier si l'on cherche un alignement en plan, 
 25. Créer un ID pour chaque resultat. L'ID doit être unique sur le projet. On pourrait numéroter les clash de 1 à X, avec le nom de la règle.
 On aurait aussi un UniqueID, qui serait générer alétoirement.
 
+26. Le grouping des règles
+Faut-il laisser cette fonction au viewer, une visualisation ? Au final, dans l'interface on peut choisir facilement la manière de mettre en forme et on pourra produire un sujet BCF. Cette juste nécéssaire si on veut vraiment industrialiser le procéder et déjà se préfiltrer les éléments.
+
+Si on continue d'utilisation le grouping, il devrait produire un complex_Result. 
