@@ -161,6 +161,17 @@ The first step is to create new rules to extend the possibilities. These rules c
 
 #### Major update
 
+- New rules
+    Eight rules have been added since V0.4. Part of them was generated in bulk with the assistance of an AI coding tool, then corrected and completed. Each has its documentation page and its entry in the IPC registry.
+    - SurfaceRecover: finds the contact triangles between two objects and their exact contact surface/area.
+    - DirectView: casts rays between two objects; clash when the direct line of sight is free (used for supervision posts, operator positions).
+    - OneObjectFace: checks a specific face of a single object (slope, orientation, face quality).
+    - ClearanceForDoors: builds the door swing zone for each door; clash if a target object penetrates it (leaves, width, depth, height parameters).
+    - FreeSpace: verifies the free space left in a room once objects are placed (access, circulation, residual volume).
+    - Alignement: checks that objects are aligned with each other (plan alignment, common axes).
+    - TwoObjectsFace: checks the facing relationship between two objects: which faces of the pair oppose or touch each other.
+    - ClearanceAxisToAxis: measures the clearance between the axes of two linear objects (pipes, beams, ducts); supports several axis computation modes.
+
 - ClashResult overhaul and ResultInfo class
     The common core of results (id, type, status, criticity, actor, source/target) is now separated from the data specific to each rule, which migrates to a new ResultInfo class. Scalar measurements become declared attributes (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle) instead of undeclared dynamic attributes, completed by structured per-rule blocks (RaycastData for DirectView, ZoneData for ClearanceForDoors, axis_mode for ClearanceAxisToAxis). Each ClashResult now carries a GUID, and ClashResultComplex no longer inherits from ClashResult. The new specification (specification_ResultData.md) documents this data contract, with its dedicated test sheet.
 

@@ -163,6 +163,9 @@ La première étape est de créer de nouvelles règles afin d'étendre les possi
 
 #### Mise à jour majeure
 
+- Nouvelles règles
+    Huit règles ont été ajoutées depuis la V0.4 : SurfaceRecover (triangles de contact entre deux objets), DirectView (vue directe entre deux objets par lancer de rayons), OneObjectFace (contrôle de face à un objet), ClearanceForDoors (zone de dégagement de porte), FreeSpace (espace libre dans une pièce), Alignement (alignement entre des objets), TwoObjectsFace (contrôle de face entre deux objets) et ClearanceAxisToAxis (clearance entre les axes de deux objets). Une partie d'entre elles a été générée en masse avec l'assistance d'un outil IA, puis corrigée et complétée. Chacune dispose de sa page de documentation et de son entrée dans le registre IPC.
+
 - Refonte des ClashResult et classe ResultInfo
     Le noyau commun des résultats (id, type, status, criticity, actor, source/target) est désormais séparé des données propres à chaque règle, qui migrent vers une nouvelle classe ResultInfo. Les mesures scalaires deviennent des attributs déclarés (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle) au lieu d'attributs dynamiques non déclarés, complétés par des blocs structurés par règle (RaycastData pour DirectView, ZoneData pour ClearanceForDoors, axis_mode pour ClearanceAxisToAxis). Chaque ClashResult porte désormais un GUID, et ClashResultComplex n'hérite plus de ClashResult. La nouvelle spécification (specification_ResultData.md) documente ce contrat de données, avec sa feuille de test dédiée.
 
