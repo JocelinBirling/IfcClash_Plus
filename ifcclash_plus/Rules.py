@@ -12,6 +12,7 @@ import multiprocessing
 import math
 import clash_utils
 import shapely
+from types import SimpleNamespace
 from ifcopenshell.util.shape import (
     get_vertices,
     get_faces,
@@ -36,6 +37,42 @@ DIRECTION_METHOD = Literal["Wide", "Narrow"]
 
 
 # ===========One Object Rule
+# ---- The display consumers of the migrated one-object rules (SPEC
+# Separation moteur/gestion): the items of the old registry, rebuilt
+# from the info blocks of the results. The rule itself registers
+# nothing anymore.
+
+
+def _register_face_triangles_display_items(rule, results):
+    """The extreme face triangles of the verdicts (TopOrBottomSurface),
+    same lightweight form as the old registry."""
+    for result in results:
+        for entry in result.info.source_faces:
+            for triangle in entry.face.triangles:
+                rule.register_display_item(
+                    "face",
+                    ("face", triangle),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=result.source,
+                )
+
+
+def _register_orientation_display_items(rule, results):
+    """The axes of the verdicts (Orientation): the OBB main direction
+    in purple, the expected orientation in green."""
+    colors = {"obb": (0.5, 0, 1), "expected": (0, 1, 0)}
+    for result in results:
+        for axis in result.info.axes:
+            rule.register_display_item(
+                "axis",
+                ("axis", axis.center, axis.direction, axis.length),
+                colors.get(axis.label, (0.5, 0, 1)),
+                0.2,
+                element=result.source,
+            )
+
+
 class Volume(RuleCheckOneObject):
     from ifcopenshell.util.shape import get_volume
 
@@ -47,34 +84,43 @@ class Volume(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = clash_utils.make_clash_tree()
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    volume = ifcopenshell.util.shape.get_volume(geom)
-                    entity = ifc_file.by_id(shape.id)
-                    if self.volume_min < volume < self.volume_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.volume_min,
+            self.volume_max,
+        )
+        self.result.extend(results)
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self, liste_objet_source, volume_min, volume_max, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the sources whose volume
+        is inside the open bounds ]volume_min, volume_max[.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and
+        nothing is registered for the display: each verdict carries
+        the measured volume in its info blocks.
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            volume = ifcopenshell.util.shape.get_volume(geom)
+            if volume_min < volume < volume_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.volume = volume
+                results.append(result)
+        return results
 
 
 class Area(RuleCheckOneObject):
@@ -88,39 +134,58 @@ class Area(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = clash_utils.make_clash_tree()
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    area = ifcopenshell.util.shape.get_area(geom)
-                    entity = ifc_file.by_id(shape.id)
-                    if self.volume_min < area < self.volume_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.volume_min,
+            self.volume_max,
+        )
+        self.result.extend(results)
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self, liste_objet_source, volume_min, volume_max, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the sources whose area is
+        inside the open bounds ]volume_min, volume_max[ (the area rule
+        keeps the volume_min / volume_max key names of the
+        serialization).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured area in its info blocks.
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            area = ifcopenshell.util.shape.get_area(geom)
+            if volume_min < area < volume_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.area = area
+                results.append(result)
+        return results
 
 
 TOP_OR_BOT = Literal["Top", "Bottom"]
 
 
 class TopOrBottomSurface(RuleCheckOneObject):
+    """The TopOrBottomSurface rule: flags the sources whose top (or
+    bottom) extreme face total area is inside the open bounds.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity list and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(
         self, source, surface_min, surface_max, top_or_bot: TOP_OR_BOT, state="Final"
     ):
@@ -130,68 +195,114 @@ class TopOrBottomSurface(RuleCheckOneObject):
         self.surface_min: float = surface_min
         self.top_or_bot_method: TOP_OR_BOT = top_or_bot
         self.geom_settings = ifcopenshell.geom.settings()
-        # The extreme faces are registered in the display registry:
+        # The extreme faces live in the info blocks of the results:
         # they must be in world coordinates, like the displayed
         # objects, otherwise the surface is offset by the element
         # placement.
         self.geom_settings.set(self.geom_settings.USE_WORLD_COORDS, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        if self.top_or_bot_method == "Top":
+        self.select_source.run()
+        self.select_source.create_list_of_element()
+
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.surface_min,
+            self.surface_max,
+            self.top_or_bot_method,
+        )
+        self.result.extend(results)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_face_triangles_display_items(self, results)
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        surface_min,
+        surface_max,
+        top_or_bot_method,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the sources whose top
+        (or bottom) extreme face total area is inside the open bounds
+        ]surface_min, surface_max[.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured area and its extreme faces
+        (triangulated) in its info blocks — a one-object rule pairs
+        each face with itself.
+        """
+        if top_or_bot_method == "Top":
             direction = (0.0, 0.0, 1)
-        if self.top_or_bot_method == "Bottom":
+        if top_or_bot_method == "Bottom":
             direction = (0.0, 0.0, -1)
 
-        self.tree = clash_utils.make_clash_tree()
-        self.select_source.run()
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            extreme = clash_utils.get_extreme_faces_with_area(geom, direction=direction)
+            area = extreme["total_area"]
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+            if surface_min < area < surface_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.area = area
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.id)
-                    result = clash_utils.get_extreme_faces_with_area(
-                        geom, direction=direction
+                # The extreme faces, triangulated from the mesh
+                # vertices: enough to rebuild the display without
+                # rerunning the rule.
+                vertices = get_vertices(geom)
+                for face in extreme["extrem_faces"]:
+                    triangle = tuple(
+                        tuple(float(coordinate) for coordinate in vertex)
+                        for vertex in vertices[face]
                     )
+                    face_data = clash_utils.triangle_face_data(triangle)
+                    result.info.add_face_pair(face_data, face_data)
 
-                    area = result["total_area"]
+                results.append(result)
+        return results
 
-                    # The extreme faces, kept in the display registry.
-                    # get_extreme_faces_with_area returns vertex indices,
-                    # not displayable shapes: they are converted to the
-                    # lightweight corner triangle, displayable by
-                    # _item_shape.
-                    vertices = get_vertices(geom)
-                    for face in result["extrem_faces"]:
-                        corners = tuple(vertices[face])
-                        self.register_display_item(
-                            "face", ("face", corners), (0.5,0,1), 0.2, element=entity
-                        )
 
-                    if self.surface_min < area < self.surface_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
 
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
+def _register_obb_display_items(rule, results):
+    """The object OBBs of the verdicts (ObbHigh, ObbLength), rebuilt
+    from the info blocks of the results. The display becomes a
+    consumer of the results (SPEC).
+    """
+    for result in results:
+        for obb in result.info.source_obbs:
+            rule.register_display_item(
+                "obb",
+                clash_utils.obb_shape_from_data(obb),
+                (0.5, 0, 1),
+                0.2,
+                element=result.source,
+            )
 
 
 class LateralSurface(RuleCheckOneObject):
+    """The LateralSurface rule: flags the sources whose lateral
+    surface area (toward the direction) is inside the open bounds.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine. The local-coordinates bug documented in Rapport.md §2 is
+    corrected HERE, during the migration (SPEC point 3): the shapes
+    are now read in world coordinates, otherwise a world direction
+    applies to a local geometry and the surface is wrong.
+    """
+
     def __init__(self, source, surface_min, surface_max, direction, state="Final"):
         super().__init__(state, source)
         self.type = "LateralSurface"
@@ -199,43 +310,61 @@ class LateralSurface(RuleCheckOneObject):
         self.surface_min: float = surface_min
         self.direction: float = direction
         self.geom_settings = ifcopenshell.geom.settings()
+        # The direction is a world direction: the shapes must be in
+        # world coordinates (the bug fixed by the migration).
+        self.geom_settings.set("USE_WORLD_COORDS", True)
 
-    def run(self):  # @todo Check if the result is trustworthy
-        self.tree = clash_utils.make_clash_tree()
+    def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.id)
-                    area = ifcopenshell.util.shape.get_side_area(
-                        geom, direction=self.direction, angle=45
-                    )
-
-                    if self.surface_min < area < self.surface_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.surface_min,
+            self.surface_max,
+            self.direction,
+        )
+        self.result.extend(results)
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self, liste_objet_source, surface_min, surface_max, direction, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the sources whose side
+        area toward the direction (45 deg cone) is inside the open
+        bounds ]surface_min, surface_max[.
+
+        Pure computation (SPEC Separation moteur/gestion). Each verdict
+        carries the measured area in its info blocks.
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            area = ifcopenshell.util.shape.get_side_area(
+                geom, direction=direction, angle=45
+            )
+            if surface_min < area < surface_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.area = float(area)
+                results.append(result)
+        return results
 
 
 class ProjectedSurface(RuleCheckOneObject):
+    """The ProjectedSurface rule: flags the sources whose projected
+    surface area (toward the direction) is inside the open bounds.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine. The local-coordinates bug documented in Rapport.md §2 is
+    corrected HERE, during the migration (SPEC point 3): the shapes
+    are now read in world coordinates.
+    """
+
     def __init__(self, source, surface_min, surface_max, direction, state="Final"):
         super().__init__(state, source)
         self.type = "Projected"
@@ -243,43 +372,60 @@ class ProjectedSurface(RuleCheckOneObject):
         self.surface_min: float = surface_min
         self.direction: float = direction
         self.geom_settings = ifcopenshell.geom.settings()
+        # The direction is a world direction: the shapes must be in
+        # world coordinates (the bug fixed by the migration).
+        self.geom_settings.set("USE_WORLD_COORDS", True)
 
-    def run(self):  # @todo Check if the result is trustworthy
-        self.tree = clash_utils.make_clash_tree()
+    def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.id)
-                    area = ifcopenshell.util.shape.get_footprint_area(
-                        geom, direction=self.direction
-                    )
-
-                    if self.surface_min < area < self.surface_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.surface_min,
+            self.surface_max,
+            self.direction,
+        )
+        self.result.extend(results)
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self, liste_objet_source, surface_min, surface_max, direction, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the sources whose
+        footprint area (projected toward the direction) is inside the
+        open bounds ]surface_min, surface_max[.
+
+        Pure computation (SPEC Separation moteur/gestion). Each verdict
+        carries the measured area in its info blocks.
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            area = ifcopenshell.util.shape.get_footprint_area(
+                geom, direction=direction
+            )
+            if surface_min < area < surface_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.area = float(area)
+                results.append(result)
+        return results
 
 
 class ObbHigh(RuleCheckOneObject):
+    """The ObbHigh rule: flags the sources whose OBB height (the Z
+    span of its corners) is inside the open bounds.
+
+    The OBB axes are arbitrarily permuted by OCCT (documented,
+    Rapport.md): the height is measured as the Z span of the corners,
+    not as an axis size.
+    """
+
     def __init__(self, source, length_min, length_max, state="Final"):
         super().__init__(state, source)
         self.type = "ObbHigh"
@@ -289,55 +435,70 @@ class ObbHigh(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.length_min,
+            self.length_max,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    corners = obb.get_corners()
-                    min_z = corners[0].Z()
-                    max_z = corners[0].Z()
+        if self.state in ("Display_Input", "Display_Result"):
+            _register_obb_display_items(self, results)
 
-                    for corner in corners:
-                        min_z = min(min_z, corner.Z())
-                        max_z = max(max_z, corner.Z())
-
-                    value_to_check = max_z - min_z
-
-                    # The OBB, kept in the display registry.
-                    self.register_display_item(
-                        "obb", obb, (0.5,0,1), 0.2, element=entity
-                    )
-
-                    if self.length_min < value_to_check < self.length_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        result.info.add_source_obb(obb.to_data("object"))
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self, liste_objet_source, length_min, length_max, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the sources whose OBB
+        Z span is inside the open bounds ]length_min, length_max[.
+
+        Pure computation (SPEC Separation moteur/gestion). Each verdict
+        carries the measured height in its info blocks (measure
+        "offset", the OBB itself in the obbs block).
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            obb = create_obb_from_TopoDs_Shape(geom)
+            corners = obb.get_corners()
+            min_z = corners[0].Z()
+            max_z = corners[0].Z()
+
+            for corner in corners:
+                min_z = min(min_z, corner.Z())
+                max_z = max(max_z, corner.Z())
+
+            value_to_check = max_z - min_z
+
+            if length_min < value_to_check < length_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.offset = float(value_to_check)  # m — the height
+                result.info.add_source_obb(obb.to_data("object"))
+                results.append(result)
+        return results
 
 
 class ObbLength(RuleCheckOneObject):
+    """The ObbLength rule: flags the sources whose OBB plan dimension
+    (the widest — or the narrowest, per the method) is inside the open
+    bounds.
+
+    The vertical axis of the box is its most vertical axis: the OCCT
+    axis order is arbitrary (documented, Rapport.md). @todo An object
+    tilted around 45 deg has no clear vertical axis: the choice stays
+    arbitrary.
+    """
+
     def __init__(
         self, source, length_min, length_max, method: DIRECTION_METHOD, state="Final"
     ):
@@ -350,74 +511,96 @@ class ObbLength(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.length_min,
+            self.length_max,
+            self.direction_method,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
+        if self.state in ("Display_Input", "Display_Result"):
+            _register_obb_display_items(self, results)
 
-                    # The OBB, kept in the display registry.
-                    self.register_display_item(
-                        "obb", obb, (0.5,0,1), 0.2, element=entity
-                    )
-
-                    # L'axe vertical de la boite est son axe le plus
-                    # vertical : l'ordre des axes de l'OBB est arbitraire
-                    # dans le calcul OCC, l'axe Z n'est pas toujours la
-                    # hauteur. Les deux autres axes portent les dimensions
-                    # de plan de l'objet.
-                    half_sizes = [obb.XHSize(), obb.YHSize(), obb.ZHSize()]
-                    verticality = [
-                        abs(obb.XDirection().Z()),
-                        abs(obb.YDirection().Z()),
-                        abs(obb.ZDirection().Z()),
-                    ]
-                    height_axis = max(range(3), key=lambda i: verticality[i])
-                    plan_sizes = [
-                        2.0 * half_sizes[i] for i in range(3) if i != height_axis
-                    ]
-
-                    # La plus grande (wide) ou la plus petite (narrow) des
-                    # deux dimensions de plan. @todo Un objet incliné à
-                    # environ 45 degrés n'a pas d'axe vertical net : le
-                    # choix de l'axe hauteur reste arbitraire.
-                    if self.direction_method.lower() == "wide":
-                        value_to_check = max(plan_sizes)
-                    else:
-                        value_to_check = min(plan_sizes)
-
-                    if self.length_min < value_to_check < self.length_max:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        result.info.add_source_obb(obb.to_data("object"))
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        length_min,
+        length_max,
+        direction_method,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the sources whose OBB
+        plan dimension — the widest ("Wide") or the narrowest
+        ("Narrow") of the two non-vertical axes — is inside the open
+        bounds ]length_min, length_max[.
+
+        Pure computation (SPEC Separation moteur/gestion). Each verdict
+        carries the measured dimension in its info blocks (measure
+        "offset", the OBB itself in the obbs block).
+        """
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            obb = create_obb_from_TopoDs_Shape(geom)
+
+            # L'axe vertical de la boite est son axe le plus
+            # vertical : l'ordre des axes de l'OBB est arbitraire
+            # dans le calcul OCC, l'axe Z n'est pas toujours la
+            # hauteur. Les deux autres axes portent les dimensions
+            # de plan de l'objet.
+            half_sizes = [obb.XHSize(), obb.YHSize(), obb.ZHSize()]
+            verticality = [
+                abs(obb.XDirection().Z()),
+                abs(obb.YDirection().Z()),
+                abs(obb.ZDirection().Z()),
+            ]
+            height_axis = max(range(3), key=lambda i: verticality[i])
+            plan_sizes = [
+                2.0 * half_sizes[i] for i in range(3) if i != height_axis
+            ]
+
+            # La plus grande (wide) ou la plus petite (narrow) des
+            # deux dimensions de plan.
+            if direction_method.lower() == "wide":
+                value_to_check = max(plan_sizes)
+            else:
+                value_to_check = min(plan_sizes)
+
+            if length_min < value_to_check < length_max:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.offset = float(value_to_check)  # m — the dimension
+                result.info.add_source_obb(obb.to_data("object"))
+                results.append(result)
+        return results
+
 
 
 ORIENTATION_TYPE = Literal["Parrallel", "Perpendicular"]
 
 
 class Orientation(RuleCheckOneObject):
+    """The Orientation rule: flags the sources whose OBB main
+    direction is parallel — or perpendicular, per orientation_type —
+    to the expected orientation, within the angular tolerance.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity list and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(
         self,
         source,
@@ -438,73 +621,134 @@ class Orientation(RuleCheckOneObject):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        occ_orientation = gp_Dir(
-            self.orientation[0], self.orientation[1], self.orientation[2]
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.orientation,
+            self.orientation_type,
+            self.direction_method,
+            self.angular_tolerance,
         )
+        self.result.extend(results)
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_orientation_display_items(self, results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    dir1, dir2 = obb.get_two_main_direction_OBB_shape(
-                        self.direction_method
-                    )
-
-                    is_parrallel = occ_orientation.IsParallel(
-                        dir1, self.angular_tolerance
-                    )
-
-                    # The main direction of the OBB and the expected
-                    # orientation, kept in the display registry.
-                    center = self._shape_center(geom)
-                    self.register_display_item(
-                        "axis", ("axis", center, dir1, 0.5), (0.5,0,1), 0.2,
-                        element=entity,
-                    )
-                    self.register_display_item(
-                        "axis",
-                        ("axis", center, occ_orientation, 0.5),
-                        (0, 1, 0),
-                        0.2,
-                        element=entity,
-                    )
-
-                    if self.orientation_type == "Parrallel":
-                        check_direction = is_parrallel
-                    elif self.orientation_type == "Perpendicular":
-                        check_direction = not is_parrallel
-
-                    if check_direction:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-                    else:
-                        self.result_fail_source.append(entity)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        orientation,
+        orientation_type,
+        direction_method,
+        angular_tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the sources whose OBB
+        main direction (per direction_method) is parallel to the
+        expected orientation — or perpendicular, per
+        orientation_type — within the angular tolerance.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured angle (deg) and the two axes of
+        the check — the OBB main direction and the expected
+        orientation, both at the geometry center — in its info
+        blocks.
+        """
+        occ_orientation = gp_Dir(orientation[0], orientation[1], orientation[2])
+
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            obb = create_obb_from_TopoDs_Shape(geom)
+            dir1, dir2 = obb.get_two_main_direction_OBB_shape(direction_method)
+
+            is_parrallel = occ_orientation.IsParallel(dir1, angular_tolerance)
+
+            if orientation_type == "Parrallel":
+                check_direction = is_parrallel
+            elif orientation_type == "Perpendicular":
+                check_direction = not is_parrallel
+
+            if check_direction:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.angle = math.degrees(dir1.Angle(occ_orientation))
+
+                # The two axes of the check, at the geometry center:
+                # enough to rebuild the display without rerunning the
+                # rule.
+                center = self._shape_center(geom)
+                result.info.add_axis(
+                    (
+                        (center.X(), center.Y(), center.Z()),
+                        (dir1.X(), dir1.Y(), dir1.Z()),
+                        0.5,
+                        "obb",
+                    )
+                )
+                result.info.add_axis(
+                    (
+                        (center.X(), center.Y(), center.Z()),
+                        (occ_orientation.X(), occ_orientation.Y(), occ_orientation.Z()),
+                        0.5,
+                        "expected",
+                    )
+                )
+                results.append(result)
+        return results
+
 
 
 # ===== Two Objects Rule
 
 
+def _register_axes_display_items(rule, results, color=(0.5, 0, 1)):
+    """The axes of the verdicts (AngleBetween, ClearanceAxisToAxis),
+    rebuilt from the info blocks of the results: one axis segment per
+    AxesData block, at the element of its side (label "source" or
+    "target"). The display becomes a consumer of the results (SPEC):
+    the rule itself registers nothing anymore.
+    """
+    for result in results:
+        for axis in result.info.axes:
+            element = result.target if axis.label == "target" else result.source
+            rule.register_display_item(
+                "axis",
+                ("axis", axis.center, axis.direction, axis.length),
+                color,
+                0.2,
+                element=element,
+            )
+
+
 class AngleBetween(RuleCheckTwoObjects):
+    """The AngleBetween rule: flags the pairs whose angle between the
+    OBB main directions of the source and the target matches the
+    expected difference within the tolerance.
+
+    The 180-degree symmetry of an axis is NOT folded: the angle of a
+    direction pair follows the arbitrary direction signs of the OBB
+    (see Rapport.md). There is no spatial prefilter: every pair is
+    measured (see Rapport.md §1.1).
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(
         self,
         source,
@@ -524,113 +768,209 @@ class AngleBetween(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def _get_object_main_direction(self, geom, method):
-        """Get the main direction of an object from its OBB using the specified method"""
+    @staticmethod
+    def _get_object_main_direction(geom, method):
+        """The main direction of an object: the first main direction
+        of its OBB, per the method (Wide or Narrow)."""
         obb = create_obb_from_TopoDs_Shape(geom)
         dir1, dir2 = obb.get_two_main_direction_OBB_shape(method)
         return dir1
 
-    def _calculate_angle_between_dir(self, dir1: gp_Dir, dir2: gp_Dir):
-        """Calculate angle in degrees between two gp_Dir vectors and check if it matches the target angle within tolerance"""
-        # Use OCC's Angle() method which returns angle in radians
-        angle_rad = dir1.Angle(dir2)
-        angle_deg = np.degrees(angle_rad)
-
-        # Handle circular nature of angles and find smallest difference
-        angle_diff = abs(angle_deg - self.angle_difference)
+    @staticmethod
+    def _angle_matches(dir1, dir2, angle_difference, angle_tolerance):
+        """The angle in degrees between two directions, and whether it
+        matches the expected difference within the tolerance: the
+        circular difference taken on the shorter side."""
+        angle = math.degrees(dir1.Angle(dir2))
+        angle_diff = abs(angle - angle_difference)
         angle_diff = min(angle_diff, 360 - angle_diff)
 
-        return angle_diff <= self.angle_tolerance
+        return angle, angle_diff <= angle_tolerance
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        # Collect source objects with their main directions
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.direction_method_for_source,
+            self.direction_method_for_target,
+            self.angle_difference,
+            self.angle_tolerance,
+        )
+        self.result.extend(results)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_axes_display_items(self, results)
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        direction_method_for_source,
+        direction_method_for_target,
+        angle_difference,
+        angle_tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose angle
+        between the OBB main directions (source per
+        direction_method_for_source, target per
+        direction_method_for_target) matches the expected
+        angle_difference within the angle_tolerance — degrees, the
+        circular difference taken on the shorter side.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured angle (deg) and the two main
+        directions of the pair (axes block, at the shape centers) in
+        its info blocks.
+        """
         source_objects = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            direction = self._get_object_main_direction(
+                geom, direction_method_for_source
             )
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    direction = self._get_object_main_direction(
-                        geom, self.direction_method_for_source
-                    )
-                    source_objects.append({"entity": entity, "direction": direction})
+            source_objects.append(
+                {
+                    "entity": entity,
+                    "direction": direction,
+                    "center": self._shape_center(geom),
+                }
+            )
 
-                    # The main direction of the object, kept in the
-                    # display registry.
-                    self.register_display_item(
-                        "axis",
-                        ("axis", self._shape_center(geom), direction, 0.5),
-                        (0.5,0,1),
-                        0.2,
-                        element=entity,
-                    )
-
-                    if not iterator.next():
-                        break
-
-        # Collect target objects with their main directions
         target_objects = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_target, self.geom_settings
+        ):
+            direction = self._get_object_main_direction(
+                geom, direction_method_for_target
             )
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    direction = self._get_object_main_direction(
-                        geom, self.direction_method_for_target
-                    )
-                    target_objects.append({"entity": entity, "direction": direction})
+            target_objects.append(
+                {
+                    "entity": entity,
+                    "direction": direction,
+                    "center": self._shape_center(geom),
+                }
+            )
 
-                    # The main direction of the object, kept in the
-                    # display registry.
-                    self.register_display_item(
-                        "axis",
-                        ("axis", self._shape_center(geom), direction, 0.5),
-                        (0.5,0,1),
-                        0.2,
-                        element=entity,
-                    )
-                    if not iterator.next():
-                        break
-
-        # Check all pairs for angle matches
+        results = []
         for source_obj in source_objects:
             for target_obj in target_objects:
-                if self._calculate_angle_between_dir(
-                    source_obj["direction"], target_obj["direction"]
-                ):
+                angle, matches = self._angle_matches(
+                    source_obj["direction"],
+                    target_obj["direction"],
+                    angle_difference,
+                    angle_tolerance,
+                )
+                if matches:
                     result = ClashResultTwoObjects(
                         source=source_obj["entity"],
                         target=target_obj["entity"],
                         state=True,
                     )
-                    self.result.append(result)
+                    result.info.angle = angle
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+                    # The two main directions of the pair, at the
+                    # shape centers: enough to rebuild the display
+                    # without rerunning the rule.
+                    source_center = source_obj["center"]
+                    target_center = target_obj["center"]
+                    source_dir = source_obj["direction"]
+                    target_dir = target_obj["direction"]
+                    result.info.add_axis(
+                        (
+                            (source_center.X(), source_center.Y(), source_center.Z()),
+                            (source_dir.X(), source_dir.Y(), source_dir.Z()),
+                            0.5,
+                            "source",
+                        )
+                    )
+                    result.info.add_axis(
+                        (
+                            (target_center.X(), target_center.Y(), target_center.Z()),
+                            (target_dir.X(), target_dir.Y(), target_dir.Z()),
+                            0.5,
+                            "target",
+                        )
+                    )
+                    results.append(result)
 
-        self.end_rule_action()
+        return results
+
+
+
+# ---- The tree-clash shared helpers (SPEC Separation moteur/gestion):
+# the BVH rules (Intersection, Clearance, Collision) share the same
+# skeleton — clash tree, tree query, side restoration — and the same
+# result construction.
+
+
+def _tree_clash_results(tree_result, source_elements, target_elements):
+    """The verdicts of a tree clash result, as ClashResultTwoObjects
+    with their info blocks.
+
+    The tree mixes the a/b sides: the source/target order is restored
+    against the queried element lists, and the contact point pair
+    follows the restored order (p1 belongs to a, p2 to b). The a/b
+    wrappers are owned by the tree and dangle once it is released:
+    they are re-resolved through their file while the tree is alive
+    (clash_utils.clash_entity).
+
+    Each verdict carries the distance and the contact point pair of
+    the tree in its info blocks.
+    """
+    results = []
+    for one_result in tree_result:
+        a_object = clash_utils.clash_entity(one_result.a)
+        b_object = clash_utils.clash_entity(one_result.b)
+
+        if a_object in source_elements:
+            source_object, target_object = a_object, b_object
+            source_point, target_point = one_result.p1, one_result.p2
+        else:
+            source_object, target_object = b_object, a_object
+            source_point, target_point = one_result.p2, one_result.p1
+
+        result = ClashResultTwoObjects(
+            source=source_object, target=target_object, state=True
+        )
+        distance = getattr(one_result, "distance", None)
+        if distance is not None:
+            result.info.distance = distance
+        if source_point is not None and target_point is not None:
+            result.info.add_point_pair(
+                (source_point[0], source_point[1], source_point[2]),
+                (target_point[0], target_point[1], target_point[2]),
+            )
+        results.append(result)
+    return results
 
 
 class Intersection(RuleCheckTwoObjects):
+    """The Intersection rule: flags the intersecting source/target
+    pairs, within the tolerance.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(self, source, target, tolerance=0.1, state="Final"):
         super().__init__(state, source, target)
         self.type = "Intersection"
@@ -638,64 +978,63 @@ class Intersection(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
 
     def run(self):
-        self.tree = clash_utils.make_clash_tree()
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        source_elements = []
-        target_elements = []
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.tolerance,
+        )
+        # The former run() replaced the result list on re-run.
+        self.result = results
+        self.end_rule_action()
 
-        self.add_to_tree(self.select_source, "BVH")
-        self.add_to_tree(self.select_target, "BVH")
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
 
-        for file in self.select_source.dict_elements.keys():
-            list = self.select_source.dict_elements[file]
-            for element in list:
-                source_elements.append(element)
+    def compute(
+        self, liste_objet_source, liste_objet_target, tolerance, liste_objet_contexte=None
+    ):
+        """The clash engine of the rule: flags the intersecting pairs,
+        within the tolerance (check_all: every pair, not only the
+        closest).
 
-        for file in self.select_target.dict_elements.keys():
-            list = self.select_target.dict_elements[file]
-            for element in list:
-                target_elements.append(element)
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        clash tree (backend opencascade.trianglebvh, ifcopenshell 0.9)
+        is built here, at each compute — one tree per rule — fed with
+        the triangulation elements of the two entity lists. Each
+        verdict carries the distance and the contact point pair of
+        the tree in its info blocks.
+        """
+        tree = clash_utils.make_clash_tree()
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_source)
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_target)
 
-        temp_result = self.tree.clash_intersection_many(
-            source_elements,
-            target_elements,
-            tolerance=self.tolerance,
+        tree_result = tree.clash_intersection_many(
+            liste_objet_source,
+            liste_objet_target,
+            tolerance=tolerance,
             check_all=True,
         )
-
-        list_result = []  # I need to do that to avoid reusing the same result result in the different intersection.
-
-        # @todo make a proper integration, how to deal with extra data ? (Point of entry, distance, etc...)
-        for result in temp_result:
-            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
-            # the tree, re-resolved through the file for stability.
-            a__object = clash_utils.clash_entity(result.a)
-            b_object = clash_utils.clash_entity(result.b)
-
-            # source and target are mixed up.
-            if a__object in source_elements:
-                source_object = a__object
-                target_object = b_object
-            else:
-                source_object = b_object
-                target_object = a__object
-
-            list_result.append(
-                ClashResultTwoObjects(
-                    source=source_object, target=target_object, state=True
-                )
-            )
-
-        self.result = list_result
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
+        return _tree_clash_results(tree_result, liste_objet_source, liste_objet_target)
 
 
 class Clearance(RuleCheckTwoObjects):
     # @todo create a max distance for clearance
+    """The Clearance rule: flags the pairs closer than the required
+    clearance.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(self, source, target, clearance=0.05, state="Final"):
         super().__init__(state, source, target)
 
@@ -705,49 +1044,137 @@ class Clearance(RuleCheckTwoObjects):
         self.check_all: bool = False
 
     def run(self):
-        self.tree = clash_utils.make_clash_tree()
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.select_source.run()
         self.select_target.run()
-
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
 
-        self.add_to_tree(self.select_source, "BVH")
-        self.add_to_tree(self.select_target, "BVH")
-
-        temp_result = self.tree.clash_clearance_many(
+        results = self.compute(
             self.select_source.list_of_elements,
             self.select_target.list_of_elements,
-            clearance=self.clearance,
-            check_all=self.check_all,
+            self.clearance,
+            self.check_all,
         )
-
-        self.result = []  # I need to do that to avoid reusing the same result result in the different intersection.
-
-        # @todo make a proper integration, how to deal with extra data ? (Point of entry, distance, etc...)
-        for result in temp_result:
-            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
-            # the tree, re-resolved through the file for stability.
-            a__object = clash_utils.clash_entity(result.a)
-            b_object = clash_utils.clash_entity(result.b)
-
-            # source and target are mixed up.
-            if a__object in self.select_source.list_of_elements:
-                source_object = a__object
-                target_object = b_object
-            else:
-                source_object = b_object
-                target_object = a__object
-
-            self.result.append(
-                ClashResultTwoObjects(
-                    source=source_object, target=target_object, state=True
-                )
-            )
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        # The former run() replaced the result list on re-run.
+        self.result = results
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        clearance,
+        check_all=False,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs closer than
+        the required clearance (check_all: every violating pair, not
+        only the closest).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        clash tree (backend opencascade.trianglebvh, ifcopenshell 0.9)
+        is built here, at each compute — one tree per rule. Each
+        verdict carries the measured distance and the closest point
+        pair of the tree in its info blocks.
+        """
+        tree = clash_utils.make_clash_tree()
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_source)
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_target)
+
+        tree_result = tree.clash_clearance_many(
+            liste_objet_source,
+            liste_objet_target,
+            clearance=clearance,
+            check_all=check_all,
+        )
+        return _tree_clash_results(tree_result, liste_objet_source, liste_objet_target)
+
+
+class Collision(RuleCheckTwoObjects):
+    """The Collision rule: flags the colliding source/target pairs;
+    a face contact may be allowed.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
+    def __init__(self, source, target, allow_touching=False, state="Final"):
+        super().__init__(state, source, target)
+        self.type = "Collision"
+        self.allow_touching = allow_touching
+        self.geom_settings = ifcopenshell.geom.settings()
+
+    def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
+        self.select_source.run()
+        self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
+
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.allow_touching,
+        )
+        # The former run() replaced the result list on re-run.
+        self.result = results
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        allow_touching=False,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the colliding pairs
+        (allow_touching: the face contacts are allowed).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        clash tree (backend opencascade.trianglebvh, ifcopenshell 0.9)
+        is built here, at each compute — one tree per rule. Each
+        verdict carries the distance and the contact point pair of
+        the tree in its info blocks.
+        """
+        tree = clash_utils.make_clash_tree()
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_source)
+        clash_utils.add_elements_to_clash_tree(tree, liste_objet_target)
+
+        tree_result = tree.clash_collision_many(
+            liste_objet_source,
+            liste_objet_target,
+            allow_touching=allow_touching,
+        )
+        return _tree_clash_results(tree_result, liste_objet_source, liste_objet_target)
+
+
+
+def _support_axis_data(obj, label):
+    """The support segment of one axis object (ClearanceAxisToAxis) as
+    an AxesData block: the segment center -/+ direction * half length
+    is stored as (start, direction, full length), so the display
+    rebuilds the exact edge of the old registry from these alone."""
+    center = obj["center"]
+    direction = obj["direction"]
+    half = float(obj["half_length"])
+    start = center - direction * half
+    return (
+        (float(start[0]), float(start[1]), float(start[2])),
+        (float(direction[0]), float(direction[1]), float(direction[2])),
+        2.0 * half,
+        label,
+    )
 
 
 class ClearanceAxisToAxis(RuleCheckTwoObjects):
@@ -781,6 +1208,11 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
     directional condition (parallelism) is not tested here: combine
     it with AngleBetween through an exception for a full coaxiality.
     See doc/2ObjectsRules/ClearanceAxisToAxis.md.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
     """
 
     def __init__(
@@ -860,67 +1292,45 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         self.geom_settings.set("USE_WORLD_COORDS", True)
         self.geom_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-    def _collect_axes(self, select):
-        """The axis data of every selected object.
+    def _collect_axes(self, elements):
+        """The axis data of every given element.
 
         Each object carries its entity, its TopoDS shape (for the
         skin-to-skin fallback) and the center, the unit direction, the
         half length and the linearity ratio of its OBB long axis.
         """
         objects = []
-        for ifc_file in select.dict_elements.keys():
-            included = select.dict_elements[ifc_file]
-            if not included:
-                continue
-
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=included,
+        for entity, geom in clash_utils.element_shapes(
+            elements, self.geom_settings
+        ):
+            obb = create_obb_from_TopoDs_Shape(geom)
+            center, direction, half_length, thickness = clash_utils.obb_long_axis(
+                obb
             )
-            if not iterator.initialize():
-                continue
-
-            while True:
-                shape = iterator.get()
-                geom = shape.geometry
-                entity = ifc_file.by_id(shape.data.id)
-                obb = create_obb_from_TopoDs_Shape(geom)
-                center, direction, half_length, thickness = clash_utils.obb_long_axis(
-                    obb
-                )
-                objects.append(
-                    {
-                        "entity": entity,
-                        "geom": geom,
-                        "center": center,
-                        "direction": direction,
-                        "half_length": half_length,
-                        "linearity": (
-                            2.0 * half_length / thickness
-                            if thickness > 1e-9
-                            else float("inf")
-                        ),
-                    }
-                )
-                if not iterator.next():
-                    break
+            objects.append(
+                {
+                    "entity": entity,
+                    "geom": geom,
+                    "center": center,
+                    "direction": direction,
+                    "half_length": half_length,
+                    "linearity": (
+                        2.0 * half_length / thickness
+                        if thickness > 1e-9
+                        else float("inf")
+                    ),
+                }
+            )
 
         return objects
 
-    def _outside_interval(self, distance):
+    @staticmethod
+    def _outside_interval(distance, min_distance, max_distance, tolerance):
         """Whether a measured distance leaves the interval widened by
         the tolerance."""
-        if (
-            self.min_distance is not None
-            and distance < self.min_distance - self.tolerance
-        ):
+        if min_distance is not None and distance < min_distance - tolerance:
             return True
-        if (
-            self.max_distance is not None
-            and distance > self.max_distance + self.tolerance
-        ):
+        if max_distance is not None and distance > max_distance + tolerance:
             return True
         return False
 
@@ -941,41 +1351,75 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         return float(distance_tool.Value()), None, None
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        source_objects = self._collect_axes(self.select_source)
-        target_objects = self._collect_axes(self.select_target)
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.mode,
+            self.min_distance,
+            self.max_distance,
+            self.tolerance,
+            self.linearity_ratio,
+            self.on_non_linear,
+            self.parallel_tolerance,
+        )
+        self.result.extend(results)
 
-        # The support segments (the axes), kept in the display
-        # registry: center +/- direction * half length.
-        for objects, color in (
-            (source_objects, (0.5,0,1)),
-            (target_objects, (0.5,0,1)),
-        ):
-            for one_object in objects:
-                direction = one_object["direction"]
-                self.register_display_item(
-                    "axis",
-                    (
-                        "edge",
-                        one_object["center"] - direction * one_object["half_length"],
-                        one_object["center"] + direction * one_object["half_length"],
-                    ),
-                    color,
-                    0.2,
-                    element=one_object["entity"],
-                )
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the support
+            # segments of the old registry are rebuilt from the info
+            # blocks.
+            _register_axes_display_items(self, results)
 
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        mode="Perpendicular",
+        min_distance=None,
+        max_distance=None,
+        tolerance=0.0,
+        linearity_ratio=10.0,
+        on_non_linear="Skip",
+        parallel_tolerance=1.0,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose
+        axis-to-axis distance leaves the interval [min_distance,
+        max_distance] widened by the tolerance — see the class
+        docstring for the modes (Perpendicular / MinDistance) and the
+        non-linear policy (Skip / Fallback).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured distance (nominale), the axis
+        angle, the closest point pair, the mode used with its degraded
+        flag and the two support segments of the pair (axes block) in
+        its info blocks.
+        """
+        source_objects = self._collect_axes(liste_objet_source)
+        target_objects = self._collect_axes(liste_objet_target)
+
+        results = []
         for source_obj in source_objects:
             for target_obj in target_objects:
                 if source_obj["entity"] == target_obj["entity"]:
                     continue
 
                 linear = (
-                    source_obj["linearity"] >= self.linearity_ratio
-                    and target_obj["linearity"] >= self.linearity_ratio
+                    source_obj["linearity"] >= linearity_ratio
+                    and target_obj["linearity"] >= linearity_ratio
                 )
 
                 angle = clash_utils.axis_angle(
@@ -983,10 +1427,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                 )
 
                 if linear:
-                    if (
-                        self.mode == "Perpendicular"
-                        and angle <= self.parallel_tolerance
-                    ):
+                    if mode == "Perpendicular" and angle <= parallel_tolerance:
                         distance, source_point, target_point = (
                             clash_utils.parallel_line_offset_closest(
                                 source_obj["center"],
@@ -1017,7 +1458,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                         target_point = tuple(float(v) for v in target_point)
                         mode_used = "MinDistance"
                     degraded = False
-                elif self.on_non_linear == "Skip":
+                elif on_non_linear == "Skip":
                     continue
                 else:
                     distance, source_point, target_point = self._skin_distance(
@@ -1026,77 +1467,45 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                     mode_used = "Fallback"
                     degraded = True
 
-                if self._outside_interval(distance):
+                if self._outside_interval(
+                    distance, min_distance, max_distance, tolerance
+                ):
                     result = ClashResultTwoObjects(
                         source=source_obj["entity"],
                         target=target_obj["entity"],
                         state=True,
                     )
-                    result.info.distance = distance  # m — mesure nominale
-                    result.info.angle = angle  # deg — mesure secondaire
+                    result.info.distance = distance  # m — nominale
+                    result.info.angle = angle  # deg — secondaire
                     if source_point is not None and target_point is not None:
                         result.info.add_point_pair(source_point, target_point)
                     result.info.axis_mode = mode_used
                     result.info.axis_degraded = degraded
-                    self.result.append(result)
+                    # The two support segments of the pair: enough to
+                    # rebuild the display without rerunning the rule.
+                    result.info.add_axis(_support_axis_data(source_obj, "source"))
+                    result.info.add_axis(_support_axis_data(target_obj, "target"))
+                    results.append(result)
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
+        return results
 
-
-class Collision(RuleCheckTwoObjects):
-    def __init__(self, source, target, allow_touching=False, state="Final"):
-        super().__init__(state, source, target)
-        self.type = "Collision"
-        self.allow_touching = allow_touching
-        self.geom_settings = ifcopenshell.geom.settings()
-
-    def run(self):
-        self.tree = clash_utils.make_clash_tree()
-        self.select_source.run()
-        self.select_target.run()
-
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        self.add_to_tree(self.select_source, "BVH")
-        self.add_to_tree(self.select_target, "BVH")
-
-        temp_result = self.tree.clash_collision_many(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            allow_touching=self.allow_touching,
-        )
-
-        self.result = []
-
-        for result in temp_result:
-            # ifcopenshell >= 0.9: a and b are entity wrappers owned by
-            # the tree, re-resolved through the file for stability.
-            a__object = clash_utils.clash_entity(result.a)
-            b_object = clash_utils.clash_entity(result.b)
-
-            # source and target are mixed up.
-            if a__object in self.select_source.list_of_elements:
-                source_object = a__object
-                target_object = b_object
-            else:
-                source_object = b_object
-                target_object = a__object
-
-            self.result.append(
-                ClashResultTwoObjects(
-                    source=source_object, target=target_object, state=True
-                )
-            )
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
 
 
 class Ray_Check(RuleCheckTwoObjects):
+    """The Ray_Check rule: flags the source/target pairs in direct
+    view of each other — no context object stands between them —
+    within the maximum ray length.
+
+    The blocking test is an exact segment intersection against the
+    context shapes: on ifcopenshell 0.9.0, tree.select_ray can no
+    longer resolve the hit entity (upstream issue #9755).
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — the context is a THIRD INPUT LIST (liste_objet_contexte),
+    never a hidden select. run() stays the select -> compute ->
+    pipeline adapter for as long as RuleFile drives the rules.
+    """
+
     def __init__(self, source, target, context, max_ray_length, state="Final"):
         super().__init__(state, source, target)
         self.type = "RayCheck"
@@ -1104,29 +1513,18 @@ class Ray_Check(RuleCheckTwoObjects):
         self.max_ray_length: float = max_ray_length
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def _get_elements_centers(self, select: Select, geom_settings):
-        """Compute the center of the bounding box of each selected element,
-        in world coordinates, as a dict {entity: (x, y, z)}"""
+    @staticmethod
+    def _get_elements_centers(elements, geom_settings):
+        """The center of the bounding box of each given element, in
+        world coordinates, as a dict {entity: (x, y, z)}."""
         centers = {}
-        for ifc_file in select.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=select.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    verts = np.array(shape.geometry.verts).reshape(-1, 3)
-                    entity = ifc_file.by_id(shape.id)
-                    centers[entity] = (verts.min(axis=0) + verts.max(axis=0)) / 2.0
-                    if not iterator.next():
-                        break
+        for entity, geom in clash_utils.element_shapes(elements, geom_settings):
+            verts = np.array(geom.verts).reshape(-1, 3)
+            centers[entity] = (verts.min(axis=0) + verts.max(axis=0)) / 2.0
         return centers
 
-    def _context_shapes(self):
+    @staticmethod
+    def _context_shapes(elements):
         """The OCC shape of every context element, in world
         coordinates, keyed by entity.
 
@@ -1137,16 +1535,16 @@ class Ray_Check(RuleCheckTwoObjects):
         shape_settings = ifcopenshell.geom.settings()
         shape_settings.set("USE_PYTHON_OPENCASCADE", True)
 
-        for elements in self.select_context.dict_elements.values():
-            for element in elements or []:
-                try:
-                    shape = ifcopenshell.geom.create_shape(shape_settings, element)
-                except Exception:
-                    continue
-                shapes[element] = shape.geometry
+        for element in elements or []:
+            try:
+                shape = ifcopenshell.geom.create_shape(shape_settings, element)
+            except Exception:
+                continue
+            shapes[element] = shape.geometry
         return shapes
 
-    def _segment_blocked(self, start, end, source, target, context_shapes):
+    @staticmethod
+    def _segment_blocked(start, end, source, target, context_shapes):
         """True when a context object (other than the two objects of
         the pair) touches or crosses the start-end segment.
 
@@ -1163,6 +1561,9 @@ class Ray_Check(RuleCheckTwoObjects):
         return False
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action). The context is a
+        # third input list, fed like the two others.
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
@@ -1171,32 +1572,63 @@ class Ray_Check(RuleCheckTwoObjects):
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
 
-        # The context elements, kept in the display registry.
-        for elements in self.select_context.dict_elements.values():
-            for element in elements or []:
-                self.register_display_item(
-                    "context", ("entity", element), (0.5, 0.5, 0.5), 0.9
-                )
-
         self.select_source.create_list_of_element()
         self.select_target.create_list_of_element()
         self.select_context.create_list_of_element()
 
-        # The context shapes in world coordinates, for the blocking
-        # test of each ray.
-        context_shapes = self._context_shapes()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.max_ray_length,
+            liste_objet_contexte=self.select_context.list_of_elements,
+        )
+        self.result.extend(results)
 
-        # The ray is cast between the centers of the objects, not between
-        # their placement origins: the origins often lie on the floor plane,
-        # where select_ray cannot detect the context faces grazed by the ray
-        # (faces coplanar with the ray, intersections on face edges).
+        if self.state in ("Display_Input", "Display_Result"):
+            # The context elements are not carried by the results:
+            # the adapter keeps the old registry items for them.
+            for elements in self.select_context.dict_elements.values():
+                for element in elements or []:
+                    self.register_display_item(
+                        "context", ("entity", element), (0.5, 0.5, 0.5), 0.9
+                    )
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        max_ray_length,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs in direct view
+        — no element of the context list stands between them — within
+        the max ray length.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        context is a third input list (liste_objet_contexte), never a
+        hidden select. Each verdict carries the measured
+        center-to-center distance and the ray segment (its two
+        centers) in its info blocks.
+        """
+        context_shapes = self._context_shapes(liste_objet_contexte)
+
+        # The ray is cast between the centers of the objects, not
+        # between their placement origins: the origins often lie on
+        # the floor plane, where the grazed context faces would be
+        # missed (faces coplanar with the ray, edge intersections).
         center_settings = ifcopenshell.geom.settings()
         center_settings.set(center_settings.USE_WORLD_COORDS, True)
-        source_centers = self._get_elements_centers(self.select_source, center_settings)
-        target_centers = self._get_elements_centers(self.select_target, center_settings)
+        source_centers = self._get_elements_centers(liste_objet_source, center_settings)
+        target_centers = self._get_elements_centers(liste_objet_target, center_settings)
 
-        for source in self.select_source.list_of_elements:
-            for target in self.select_target.list_of_elements:
+        results = []
+        for source in liste_objet_source:
+            for target in liste_objet_target:
                 if source == target:
                     # It's the same object
                     continue
@@ -1214,7 +1646,7 @@ class Ray_Check(RuleCheckTwoObjects):
                     # It's the same object
                     continue
 
-                if distance > self.max_ray_length:
+                if distance > max_ray_length:
                     # The two objects are too far away from each other
                     continue
 
@@ -1224,8 +1656,9 @@ class Ray_Check(RuleCheckTwoObjects):
                     float(direction[2] / distance),
                 )
 
-                # The clash appears when the source and the target are in
-                # direct view: no context object stands between them.
+                # The clash appears when the source and the target are
+                # in direct view: no context object stands between
+                # them.
                 if self._segment_blocked(
                     source_position,
                     target_position,
@@ -1235,13 +1668,15 @@ class Ray_Check(RuleCheckTwoObjects):
                 ):
                     continue
 
-                self.result.append(
-                    ClashResultTwoObjects(source=source, target=target, state=True)
+                result = ClashResultTwoObjects(source=source, target=target, state=True)
+                result.info.distance = float(distance)
+                result.info.add_point_pair(
+                    source_position, target_position, label="ray"
                 )
+                results.append(result)
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
+        return results
+
 
 
 ABOVE_TYPE = Literal[
@@ -1654,7 +2089,94 @@ class Template(RuleCheckTwoObjects):
         self.end_rule_action()
 
 
+# ---- The OBB_Above/OBB_Below shared engine (SPEC Separation
+# moteur/gestion): the two rules differ only by the side of the
+# extrusion of the detection zone.
+
+
+def _compute_obb_zone_penetration(
+    liste_objet_source,
+    liste_objet_target,
+    geom_settings,
+    zone_height,
+    zone_side,
+):
+    """The OBB_Above/OBB_Below engine: flags the pairs whose target
+    geometry touches or penetrates the detection zone extruded by
+    zone_height on the zone_side ("top" or "bottom") of the source
+    OBB.
+
+    Pure computation (SPEC Separation moteur/gestion): no selection,
+    no post-processing, nothing registered for the display. The
+    verdicts carry in their info blocks the measured distance and the
+    OBBs of the pair: the source detection zone and object, the
+    target object.
+    """
+    sources_data = clash_utils.elements_obb_data(
+        liste_objet_source, geom_settings, zone_height=zone_height, zone_side=zone_side
+    )
+    targets_data = clash_utils.elements_obb_data(liste_objet_target, geom_settings)
+
+    results = []
+    for source in sources_data:
+        for target in targets_data:
+            # Spatial prefilter: the detection zone of the source
+            # against the object OBB of the target.
+            if source["zone_obb"].IsOut(target["object_obb"]):
+                continue
+
+            dist_tool = BRepExtrema_DistShapeShape()
+            dist_tool.LoadS1(source["zone_solid"])
+            dist_tool.LoadS2(target["geom"])
+            dist_tool.Perform()
+            distance = dist_tool.Value()
+
+            # The target touches or penetrates the zone.
+            if distance <= 1e-6:
+                result = ClashResultTwoObjects(
+                    source=source["entity"],
+                    target=target["entity"],
+                    state=True,
+                )
+                result.info.distance = distance
+                result.info.add_source_obb(source["zone_obb"].to_data("zone"))
+                result.info.add_source_obb(source["object_obb"].to_data("object"))
+                result.info.add_target_obb(target["object_obb"].to_data("object"))
+                results.append(result)
+
+    return results
+
+
+def _register_obb_zone_display_items(rule, results):
+    """The display items of the old registry, rebuilt from the info
+    blocks of the results: the detection zone of the source. The
+    display becomes a consumer of the results (SPEC): the rule itself
+    registers nothing anymore.
+    """
+    for result in results:
+        for obb in result.info.source_obbs:
+            if obb.label == "zone":
+                rule.register_display_item(
+                    "obb",
+                    clash_utils.obb_shape_from_data(obb),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=result.source,
+                )
+
+
 class OBB_Above(RuleCheckTwoObjects):
+    """The OBB_Above rule: flags a target penetrating the detection
+    band extruded ABOVE the source OBB (an object LESS than tolerance
+    above the source and touching the band, NOT "> tolerance above" —
+    see Rapport.md §2, OBB_Above).
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules. The engine is shared with OBB_Below.
+    """
+
     def __init__(self, source, target, tolerance, state="Final"):
         super().__init__(state, source, target)
         self.tolerance: float = tolerance
@@ -1662,107 +2184,66 @@ class OBB_Above(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
+
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        # Create OBBs for source objects (these serve as detection zones)
-        source_geoms = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.tolerance,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_obb_zone_display_items(self, results)
 
-                    # Create OBB for the source object (detection zone)
-                    obb = create_obb_from_TopoDs_Shape(geom)  # Why not use
-                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
-
-                    # The detection zone, kept in the display registry.
-                    self.register_display_item(
-                        "obb", clash_obb, (0.5,0,1), 0.2, element=entity
-                    )
-
-                    compound = clash_obb.to_TopoDS_Solid()
-                    source_geoms.append(
-                        {
-                            "entity": entity,
-                            "geom": compound,
-                            "obb": clash_obb,
-                            "base_obb": obb,
-                        }
-                    )
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        # Get target geometries
-        target_geoms = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            # self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE,True)
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    target_geoms.append({"entity": entity, "geom": geom, "obb": obb})
-
-                    if not iterator.next():
-                        break
-
-        # Check for clashes between source OBBs (detection zones) and target geometries
-        for source_data in source_geoms:
-            for target_data in target_geoms:
-                if source_data["obb"].IsOut(target_data["obb"]):
-                    continue
-
-                source_geom = source_data["geom"]
-                target_geom = target_data["geom"]
-
-                # Calculate distance between OBB and geometry
-                dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_geom)
-                dist_tool.LoadS2(target_geom)
-                dist_tool.Perform()
-                distance = dist_tool.Value()
-
-                # If they touch (distance <= tolerance) and target is above source, it's a clash
-                if distance <= 1e-6:
-                    result = ClashResultTwoObjects(
-                        source=source_data["entity"],
-                        target=target_data["entity"],
-                        state=True,
-                    )
-                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
-                    result.info.add_source_obb(
-                        source_data["base_obb"].to_data("object")
-                    )
-                    result.info.add_target_obb(target_data["obb"].to_data("object"))
-                    self.result.append(result)
         self.end_rule_action()
 
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        touches or penetrates the detection band extruded by tolerance
+        (the band height) above the source OBB.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads
+        no file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and
+        nothing is registered for the display.
+        """
+        return _compute_obb_zone_penetration(
+            liste_objet_source,
+            liste_objet_target,
+            self.geom_settings,
+            zone_height=tolerance,
+            zone_side="top",
+        )
 
 
 class OBB_Below(RuleCheckTwoObjects):
+    """The OBB_Below rule: flags a target penetrating the detection
+    band extruded BELOW the source OBB.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules. The engine is shared with OBB_Above.
+    """
+
     def __init__(self, source, target, tolerance, state="Final"):
         super().__init__(state, source, target)
         self.tolerance: float = tolerance
@@ -1770,105 +2251,72 @@ class OBB_Below(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
+
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        # Create OBBs for source objects (these serve as detection zones)
-        source_geoms = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.tolerance,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_obb_zone_display_items(self, results)
 
-                    # Create OBB for the source object (detection zone)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
-
-                    # The detection zone, kept in the display registry.
-                    self.register_display_item(
-                        "obb", clash_obb, (0.5,0,1), 0.2, element=entity
-                    )
-
-                    compound = clash_obb.to_TopoDS_Solid()
-                    source_geoms.append(
-                        {
-                            "entity": entity,
-                            "geom": compound,
-                            "obb": clash_obb,
-                            "base_obb": obb,
-                        }
-                    )
-
-                    if not iterator.next():
-                        break
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        # Get target geometries
-        target_geoms = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    target_geoms.append({"entity": entity, "geom": geom, "obb": obb})
-
-                    if not iterator.next():
-                        break
-
-        # Check for clashes between source OBBs (detection zones) and target geometries
-        for source_data in source_geoms:
-            for target_data in target_geoms:
-                if source_data["obb"].IsOut(target_data["obb"]):
-                    continue
-
-                the_source_geom = source_data["geom"]
-                the_target_geom = target_data["geom"]
-
-                # Calculate distance between OBB and geometry
-                dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(the_source_geom)
-                dist_tool.LoadS2(the_target_geom)
-                dist_tool.Perform()
-                distance = dist_tool.Value()
-
-                # If they touch (distance <= tolerance), it's a clash.
-                if distance <= 1e-6:
-                    result = ClashResultTwoObjects(
-                        source=source_data["entity"],
-                        target=target_data["entity"],
-                        state=True,
-                    )
-                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
-                    result.info.add_source_obb(
-                        source_data["base_obb"].to_data("object")
-                    )
-                    result.info.add_target_obb(target_data["obb"].to_data("object"))
-                    self.result.append(result)
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        touches or penetrates the detection band extruded by tolerance
+        (the band height) below the source OBB.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads
+        no file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and
+        nothing is registered for the display.
+        """
+        return _compute_obb_zone_penetration(
+            liste_objet_source,
+            liste_objet_target,
+            self.geom_settings,
+            zone_height=tolerance,
+            zone_side="bottom",
+        )
 
 
 
 class OBB_Front_And_Back(RuleCheckTwoObjects):
+    """The OBB_Front_And_Back rule: flags a target touching or
+    penetrating the detection bands detached on the two plan sides of
+    the source OBB (along its two main directions, per the method).
+
+    KNOWN DEFECT (documented, Rapport.md): the rule misses expected
+    side clashes — the pre-existing red test
+    TestOBB_Front_And_Back::test_CubeB_Side_45CuboidA fails on HEAD.
+    The migration preserves the behavior as is: repairing the rule is
+    a separate decision.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    """
+
     def __init__(
         self, source, target, tolerance, method: DIRECTION_METHOD, state="Final"
     ):
@@ -1879,129 +2327,135 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         self.direction_method = method
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        # Create OBBs for source objects (these serve as detection zones)
-        source_obbs = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.tolerance,
+            self.direction_method,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-
-                    # Create OBB for the source object (detection zone)
-                    obb = create_obb_from_TopoDs_Shape(
-                        geom
-                    )  # It's the old way, but it can create face that are toward Z.
-                    # obb =create_obb_with_fixed_z(geom)
-
-                    main_directions = obb.get_two_main_direction_OBB_shape(
-                        self.direction_method, True
-                    )
-
-                    clash_obb_1 = obb.detach_side_by_extrude(
-                        main_directions[0], self.tolerance
-                    )
-                    clash_obb_2 = obb.detach_side_by_extrude(
-                        main_directions[1], self.tolerance
-                    )
-
-                    # The detection zones, kept in the display registry.
-                    self.register_display_item(
-                        "obb", clash_obb_1, (0.5,0,1), 0.2, element=entity
-                    )
-                    self.register_display_item(
-                        "obb", clash_obb_2, (0.5,0,1), 0.2, element=entity
-                    )
-
-                    compound_1 = clash_obb_1.to_TopoDS_Solid()
-                    compound_2 = clash_obb_2.to_TopoDS_Solid()
-                    source_obbs.append(
-                        {
-                            "entity": entity,
-                            "geom": compound_1,
-                            "obb": clash_obb_1,
-                            "base_obb": obb,
-                        }
-                    )
-                    source_obbs.append(
-                        {
-                            "entity": entity,
-                            "geom": compound_2,
-                            "obb": clash_obb_2,
-                            "base_obb": obb,
-                        }
-                    )
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-
-        # Get target geometries
-        target_geoms = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    target_geoms.append({"entity": entity, "geom": geom, "obb": obb})
-
-                    if not iterator.next():
-                        break
-
-        # Check for clashes between source OBBs (detection zones) and target geometries
-        for source_data in source_obbs:
-            for target_data in target_geoms:
-                if source_data["obb"].IsOut(target_data["obb"]):
-                    continue
-                # Calculate distance between OBB and geometry
-                dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_data["geom"])
-                dist_tool.LoadS2(target_data["geom"])
-                dist_tool.Perform()
-                distance = dist_tool.Value()
-
-                # If they touch (distance <= tolerance) and target is above source, it's a clash
-                if distance <= 1e-6:
-                    result = ClashResultTwoObjects(
-                        source=source_data["entity"],
-                        target=target_data["entity"],
-                        state=True,
-                    )
-                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
-                    result.info.add_source_obb(
-                        source_data["base_obb"].to_data("object")
-                    )
-                    result.info.add_target_obb(target_data["obb"].to_data("object"))
-                    self.result.append(result)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the bands of
+            # the old registry are rebuilt from the info blocks.
+            _register_obb_zone_display_items(self, results)
 
         self.end_rule_action()
 
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        tolerance,
+        direction_method,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        touches or penetrates one of the two bands of height tolerance
+        detached along the main directions of the source OBB (per
+        direction_method).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured distance and the OBBs of the
+        pair (the touched band, the source object, the target object)
+        in its info blocks.
+        """
+        source_zones = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            # It's the old way, but it can create faces toward Z.
+            obb = create_obb_from_TopoDs_Shape(geom)
+
+            main_directions = obb.get_two_main_direction_OBB_shape(
+                direction_method, True
+            )
+
+            for direction in main_directions[:2]:
+                zone_obb = obb.detach_side_by_extrude(direction, tolerance)
+                source_zones.append(
+                    {
+                        "entity": entity,
+                        "geom": zone_obb.to_TopoDS_Solid(),
+                        "zone_obb": zone_obb,
+                        "base_obb": obb,
+                    }
+                )
+
+        targets_data = clash_utils.elements_obb_data(
+            liste_objet_target, self.geom_settings
+        )
+
+        results = []
+        for source in source_zones:
+            for target in targets_data:
+                # Spatial prefilter: the detection band of the source
+                # against the object OBB of the target.
+                if source["zone_obb"].IsOut(target["object_obb"]):
+                    continue
+
+                dist_tool = BRepExtrema_DistShapeShape()
+                dist_tool.LoadS1(source["geom"])
+                dist_tool.LoadS2(target["geom"])
+                dist_tool.Perform()
+                distance = dist_tool.Value()
+
+                # The target touches or penetrates the band.
+                if distance <= 1e-6:
+                    result = ClashResultTwoObjects(
+                        source=source["entity"],
+                        target=target["entity"],
+                        state=True,
+                    )
+                    result.info.distance = distance
+                    result.info.add_source_obb(source["zone_obb"].to_data("zone"))
+                    result.info.add_source_obb(source["base_obb"].to_data("object"))
+                    result.info.add_target_obb(target["object_obb"].to_data("object"))
+                    results.append(result)
+
+        return results
+
+
+
+def _modification_value(modification):
+    """The value of one OBB_Custom modification: a float for a plain
+    number (meters), the raw string for a percentage — CustomOBB
+    parses the "x%" form itself."""
+    value = modification.split(":")[1]
+    if value.endswith("%"):
+        return value
+    return float(value)
 
 
 class OBB_Custom(RuleCheckTwoObjects):
+    """The OBB_Custom rule: flags a target touching or penetrating
+    one of the custom detection zones built around the source OBB.
+
+    The zones are declared by a list of modification strings — the
+    constructor parameter is misleadingly called "tolerance" for
+    serialization parity (see Rapport.md): each string applies one
+    OBB transformation (expand_sides, detach_top_by_extrude,
+    detach_bottom_by_extrude, extend_up, extend_down) with its
+    ":value" argument, and "NEW_OBB" closes the current zone and
+    starts a new one from the base OBB.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(self, source, target, tolerance, state="Final"):
         super().__init__(state, source, target)
         self.list_of_modifications: list[str] = tolerance
@@ -2009,153 +2463,141 @@ class OBB_Custom(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        # Create OBBs for source objects (these serve as detection zones)
-        source_geoms = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.list_of_modifications,
+        )
+        self.result.extend(results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the zones of
+            # the old registry are rebuilt from the info blocks.
+            _register_obb_zone_display_items(self, results)
 
-                    base_obb = create_obb_from_TopoDs_Shape(geom)
-                    for clash_obb in self._create_list_of_obb(geom, base_obb):
-                        compound = clash_obb.to_TopoDS_Solid()
-                        source_geoms.append(
-                            {
-                                "entity": entity,
-                                "geom": compound,
-                                "obb": clash_obb,
-                                "base_obb": base_obb,
-                            }
-                        )
+        self.end_rule_action()
 
-                        # The detection zones, kept in the display
-                        # registry.
-                        self.register_display_item(
-                            "obb", clash_obb, (0.5,0,1), 0.2, element=entity
-                        )
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
 
-                    if not iterator.next():
-                        break
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        list_of_modifications,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        geometry touches or penetrates one of the detection zones
+        built from the source OBB by the list of modifications.
 
-        # Get target geometries
-        target_geoms = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            # self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE,True)
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. Each
+        verdict carries the measured distance and the OBBs of the
+        pair (the touched zone, the source object, the target object)
+        in its info blocks.
+        """
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    target_geoms.append({"entity": entity, "geom": geom, "obb": obb})
+        def create_list_of_obb(geom, base_obb):
+            # expand_sides
+            # detach_top_by_extrude
+            # detach_bottom_by_extrude
+            # extend_up
+            # extend_down
+            # NEW_OBB
+            obb = base_obb
 
-                    if not iterator.next():
-                        break
+            list_of_obb = []
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-
-        # Check for clashes between source OBBs (detection zones) and target geometries
-        for source_data in source_geoms:
-            for target_data in target_geoms:
-                if source_data["obb"].IsOut(target_data["obb"]):
+            for one_modification in list_of_modifications:
+                if "expand_sides" in one_modification:
+                    value = _modification_value(one_modification)
+                    obb = obb.expand_sides(value)
                     continue
 
-                source_geom = source_data["geom"]
-                target_geom = target_data["geom"]
+                if "detach_top_by_extrude" in one_modification:
+                    value = _modification_value(one_modification)
+                    obb = obb.detach_top_by_extrude(value)
+                    continue
 
-                # Calculate distance between OBB and geometry
+                if "detach_bottom_by_extrude" in one_modification:
+                    value = _modification_value(one_modification)
+                    obb = obb.detach_bottom_by_extrude(value)
+                    continue
+
+                if "extend_up" in one_modification:
+                    value = _modification_value(one_modification)
+                    obb = obb.extend_up(value)
+                    continue
+
+                if "extend_down" in one_modification:
+                    value = _modification_value(one_modification)
+                    obb = obb.extend_down(value)
+                    continue
+
+                if "NEW_OBB" in one_modification:
+                    list_of_obb.append(obb)
+                    obb = create_obb_from_TopoDs_Shape(geom)
+
+            list_of_obb.append(obb)
+
+            return list_of_obb
+
+        source_zones = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            base_obb = create_obb_from_TopoDs_Shape(geom)
+            for zone_obb in create_list_of_obb(geom, base_obb):
+                source_zones.append(
+                    {
+                        "entity": entity,
+                        "geom": zone_obb.to_TopoDS_Solid(),
+                        "zone_obb": zone_obb,
+                        "base_obb": base_obb,
+                    }
+                )
+
+        targets_data = clash_utils.elements_obb_data(
+            liste_objet_target, self.geom_settings
+        )
+
+        results = []
+        for source in source_zones:
+            for target in targets_data:
+                # Spatial prefilter: the detection zone of the source
+                # against the object OBB of the target.
+                if source["zone_obb"].IsOut(target["object_obb"]):
+                    continue
+
                 dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_geom)
-                dist_tool.LoadS2(target_geom)
+                dist_tool.LoadS1(source["geom"])
+                dist_tool.LoadS2(target["geom"])
                 dist_tool.Perform()
                 distance = dist_tool.Value()
 
-                # If they touch (distance <= tolerance) and target is above source, it's a clash
+                # The target touches or penetrates the zone.
                 if distance <= 1e-6:
                     result = ClashResultTwoObjects(
-                        source=source_data["entity"],
-                        target=target_data["entity"],
+                        source=source["entity"],
+                        target=target["entity"],
                         state=True,
                     )
-                    result.info.add_source_obb(source_data["obb"].to_data("zone"))
-                    result.info.add_source_obb(
-                        source_data["base_obb"].to_data("object")
-                    )
-                    result.info.add_target_obb(target_data["obb"].to_data("object"))
-                    self.result.append(result)
-        self.end_rule_action()
+                    result.info.distance = distance
+                    result.info.add_source_obb(source["zone_obb"].to_data("zone"))
+                    result.info.add_source_obb(source["base_obb"].to_data("object"))
+                    result.info.add_target_obb(target["object_obb"].to_data("object"))
+                    results.append(result)
 
-    def _create_list_of_obb(self, geom, base_obb=None):
+        return results
 
-        # expand_sides
-        # detach_top_by_extrude
-        # detach_bottom_by_extrude
-        # extend_up
-        # extend_down
-        # NEW_OBB
-        obb = (
-            base_obb
-            if base_obb is not None
-            else create_obb_from_TopoDs_Shape(geom)
-        )
-
-        list_of_obb = []
-
-        for one_modification in self.list_of_modifications:
-            if "expand_sides" in one_modification:
-                value = one_modification.split(":")[1]
-                obb = obb.expand_sides(value)
-                continue
-
-            if "detach_top_by_extrude" in one_modification:
-                value = one_modification.split(":")[1]
-                obb = obb.detach_top_by_extrude(value)
-                continue
-
-            if "detach_bottom_by_extrude" in one_modification:
-                value = one_modification.split(":")[1]
-                obb = obb.detach_bottom_by_extrude(value)
-                continue
-
-            if "extend_up" in one_modification:
-                value = one_modification.split(":")[1]
-                obb = obb.extend_up(value)
-                continue
-
-            if "extend_down" in one_modification:
-                value = one_modification.split(":")[1]
-                obb = obb.extend_down(value)
-                continue
-
-            if "NEW_OBB" in one_modification:
-                list_of_obb.append(obb)
-                obb = create_obb_from_TopoDs_Shape(geom)
-
-        list_of_obb.append(obb)
-
-        return list_of_obb
 
 
 # ===== Complex Rule
@@ -2173,6 +2615,19 @@ class Alignement(RuleCheckOneObject):
     is still fitted on the whole set, only to report the offset of the
     clashing objects (a guidance value for the correction).
     See doc/ComplexRules/Alignement.md.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — an entity list and the named parameters in, raw results
+    out. run() stays the select -> compute -> pipeline adapter for as
+    long as RuleFile drives the rules. The engine helpers read their
+    configuration off the instance: the compute poses the named
+    parameters on the instance before running (documented exception),
+    and it leaves its engine state (self.alignment, and the
+    objects/groups of the fitted zones) on the node — the alignment is
+    a set-level piece of information consumed by the adapter tests,
+    and the fitted zones are GROUP-level display data: they cannot
+    live in the per-result info blocks, the adapter rebuilds the zone
+    display from the engine state.
     """
 
     # An axis within 45 degrees of the global Z counts as vertical when
@@ -2216,38 +2671,101 @@ class Alignement(RuleCheckOneObject):
         self.tolerance = float(tolerance)
         self.min_group = int(min_group)
         self.alignment = None
+        # The engine state the adapter rebuilds the fitted-zone display
+        # from (posed by the compute).
+        self._engine_objects = []
+        self._engine_groups = []
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        objects = self._collect_axis_data()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.axis,
+            self.alignment_type,
+            self.tolerance,
+            self.min_group,
+        )
+        self.result.extend(results)
+
+        # The fitted zones are GROUP-level display data: they cannot
+        # live in the per-result info blocks, the adapter rebuilds
+        # them from the engine state left by the compute. The display
+        # is a consumer of the registry: the adapter fills it in
+        # every state (as the old run() did).
+        for shape, transparency in self._fitted_zone_shapes(
+            self._engine_objects, self._engine_groups
+        ):
+            self.register_display_item("zone", shape, (0.5,0,1), transparency)
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        axis,
+        alignment_type,
+        tolerance,
+        min_group,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the objects belonging to
+        no valid alignment group of the set.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and nothing
+        is registered for the display.
+
+        The engine helpers read their configuration off the instance:
+        the compute poses the named parameters on the instance before
+        running (documented exception — the node remains the config
+        carrier), and it leaves its engine state on the node:
+        self.alignment (the alignment found, a set-level piece of
+        information) and self._engine_objects / self._engine_groups
+        (the state the adapter rebuilds the fitted-zone display from).
+        Each verdict carries the offset of its object to the globally
+        fitted element (the guidance value for the correction).
+        """
+        self.axis = axis
+        self.alignment_type = alignment_type
+        self.tolerance = float(tolerance)
+        self.min_group = int(min_group)
+
+        objects = self._collect_axis_data(liste_objet_source)
         offsets = self._compute_offsets(objects)
         groups = self._compute_groups(objects)
         self.alignment = self._build_alignment_info(objects, offsets, groups)
+        self._engine_objects = objects
+        self._engine_groups = groups
 
-        # The fitted element of every valid group (the clash detection
-        # zone), kept in the display registry.
-        for shape, transparency in self._fitted_zone_shapes(objects, groups):
-            self.register_display_item("zone", shape, (0.5,0,1), transparency)
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-
+        results = []
         for one_object, clash, offset in zip(
             objects, self._clash_flags(objects, groups), offsets
         ):
             if clash:
-                result = ClashResultOneObject(source=one_object["entity"], state=True)
+                result = ClashResultOneObject(
+                    source=one_object["entity"], state=True
+                )
                 result.info.offset = offset  # m — mesure nominale
-                self.result.append(result)
+                results.append(result)
 
-        self.end_rule_action()
+        return results
 
-    def _collect_axis_data(self):
-        """The length axis of the OBB of each selected object.
+    def _collect_axis_data(self, elements):
+        """The length axis of the OBB of each given object.
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), they are grouped per file to iterate
+        each file once.
 
         The object is taken along its length: the main axis is the
         largest horizontal OBB axis when the footprint is elongated, so
@@ -2262,16 +2780,20 @@ class Alignement(RuleCheckOneObject):
         carries the geometric data of the alignment.
         """
         objects = []
-        for ifc_file in self.select_source.dict_elements.keys():
-            elements = self.select_source.dict_elements[ifc_file]
-            if not elements:
+        by_file = {}
+        for element in elements or []:
+            by_file.setdefault(element.file, []).append(element)
+
+        for ifc_file in by_file.keys():
+            file_elements = by_file[ifc_file]
+            if not file_elements:
                 continue
 
             iterator = ifcopenshell.geom.iterator(
                 self.geom_settings,
                 ifc_file,
                 multiprocessing.cpu_count(),
-                include=elements,
+                include=file_elements,
             )
             if not iterator.initialize():
                 continue
@@ -2793,6 +3315,24 @@ class Alignement(RuleCheckOneObject):
 
 
 
+def _register_contact_faces_display(rule, results):
+    """The display items of the old SurfaceRecover registry, rebuilt
+    from the info blocks of the results: the contact surfaces of the
+    verdicts, one face per contact triangle (the pair carries the same
+    triangles on its two sides). The display becomes a consumer of the
+    results (SPEC): the rule itself registers nothing anymore."""
+    for result in results:
+        for entry in result.info.source_faces:
+            for triangle in entry.face.triangles:
+                rule.register_display_item(
+                    "face",
+                    ("face", triangle),
+                    (1, 0.5, 0),
+                    0.0,
+                    element=result.source,
+                )
+
+
 class SurfaceRecover(RuleCheckTwoObjects):
     """Check that the contact surface between two objects covers an
     expected value, defined by a min and a max.
@@ -2806,6 +3346,11 @@ class SurfaceRecover(RuleCheckTwoObjects):
     disjoint contact zones (quasi coplanar triangles at a distance below
     the tolerance), and a clash is raised when the covering value is
     outside [Min_Covering, Max_Covering]. See doc/2ObjectsRules/SurfaceRecover.md.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
     """
 
     # Two facing triangles are paired when their normals are opposite
@@ -2888,11 +3433,20 @@ class SurfaceRecover(RuleCheckTwoObjects):
             f"with '%', got {value!r}"
         )
 
-    def _collect_geometry(self, select):
-        """OCC shape, OBB and triangulated mesh of each selected element."""
-        elements = []
-        for ifc_file in select.dict_elements.keys():
-            included = select.dict_elements[ifc_file]
+    def _collect_geometry(self, elements):
+        """OCC shape, OBB and triangulated mesh of each given element.
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), they are grouped per file to iterate
+        each file once.
+        """
+        collected = []
+        by_file = {}
+        for element in elements or []:
+            by_file.setdefault(element.file, []).append(element)
+
+        for ifc_file in by_file.keys():
+            included = by_file[ifc_file]
             if not included:
                 continue
 
@@ -2934,7 +3488,7 @@ class SurfaceRecover(RuleCheckTwoObjects):
                             break
                         continue
 
-                    elements.append(
+                    collected.append(
                         {
                             "entity": entity,
                             "occ": occ_shape,
@@ -2947,25 +3501,74 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     if not iterator.next():
                         break
 
-        return elements
+        return collected
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        sources = self._collect_geometry(self.select_source)
-        targets = self._collect_geometry(self.select_target)
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.direction,
+            self.reference,
+            self.tolerance,
+            min_covering=self.min_covering,
+            max_covering=self.max_covering,
+        )
+        self.result.extend(results)
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
+        # The display is a consumer of the registry: the adapter fills
+        # it in every state (as the old run() did), the compute
+        # registers nothing (SPEC).
+        _register_contact_faces_display(self, results)
 
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        direction,
+        reference,
+        tolerance,
+        min_covering=None,
+        max_covering=None,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the source/target pairs
+        whose contact surface covering is outside the bounds.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and nothing
+        is registered for the display. The covering bounds come as the
+        parsed pairs carried by the instance — (kind, value) with kind
+        "absolute" (m2) or "relative" (percent) — the very form of the
+        serialized declaration.
+
+        Each verdict carries in its info blocks the measured contact
+        area (m2), the covering ratio (0..1, when a reference face
+        exists), the pair distance and the contact triangles as a face
+        pair.
+        """
+        sources = self._collect_geometry(liste_objet_source)
+        targets = self._collect_geometry(liste_objet_target)
+
+        results = []
         for source in sources:
             for target in targets:
                 # The OBB prefilter keeps the pairs whose bounding boxes
                 # are within the tolerance, the exact distance is checked
                 # afterwards.
-                if source["obb"].min_distance_to_obb(target["obb"]) > self.tolerance:
+                if source["obb"].min_distance_to_obb(target["obb"]) > tolerance:
                     continue
 
                 dist_tool = BRepExtrema_DistShapeShape()
@@ -2975,32 +3578,32 @@ class SurfaceRecover(RuleCheckTwoObjects):
                 distance = dist_tool.Value()
 
                 # Pairs not in contact produce no result.
-                if distance > self.tolerance:
+                if distance > tolerance:
                     continue
 
-                if self.direction == "Auto":
-                    direction = self._auto_direction(dist_tool)
-                    if direction is None:
+                if direction == "Auto":
+                    pair_direction = self._auto_direction(dist_tool)
+                    if pair_direction is None:
                         # Touching or overlapping objects: the closest
                         # points coincide, fall back on the centroids.
-                        direction = self._centroid_direction(source, target)
-                    if direction is None:
+                        pair_direction = self._centroid_direction(source, target)
+                    if pair_direction is None:
                         continue
                 else:
-                    direction = np.asarray(self.direction, dtype=float)
+                    pair_direction = self._normalized_direction(direction)
 
                 source_triangles = clash_utils.extreme_triangles(
                     source["vertices"],
                     source["faces"],
-                    direction,
-                    tolerance=self.tolerance,
+                    pair_direction,
+                    tolerance=tolerance,
                     alignment_cosine=self.ALIGNED_COSINE,
                 )
                 target_triangles = clash_utils.extreme_triangles(
                     target["vertices"],
                     target["faces"],
-                    -direction,
-                    tolerance=self.tolerance,
+                    -pair_direction,
+                    tolerance=tolerance,
                     alignment_cosine=self.ALIGNED_COSINE,
                 )
 
@@ -3011,27 +3614,27 @@ class SurfaceRecover(RuleCheckTwoObjects):
                 # result, whatever the bounds.
                 if len(source_triangles) == 0 or len(target_triangles) == 0:
                     continue
-                source_plane = source_triangles.mean(axis=1) @ direction
-                target_plane = target_triangles.mean(axis=1) @ direction
-                if abs(source_plane.max() - target_plane.min()) > self.tolerance:
+                source_plane = source_triangles.mean(axis=1) @ pair_direction
+                target_plane = target_triangles.mean(axis=1) @ pair_direction
+                if abs(source_plane.max() - target_plane.min()) > tolerance:
                     continue
 
                 contact_area, contact_triangles = (
                     clash_utils.contact_polygons_between_triangle_sets(
                         source_triangles,
                         target_triangles,
-                        direction,
-                        tolerance=self.tolerance,
+                        pair_direction,
+                        tolerance=tolerance,
                         pairing_cosine=self.PAIRING_COSINE,
                     )
                 )
 
-                if self.reference == "Source":
+                if reference == "Source":
                     reference_triangles = source_triangles
                 else:
                     reference_triangles = target_triangles
                 reference_area = clash_utils.triangles_projected_area(
-                    reference_triangles, direction
+                    reference_triangles, pair_direction
                 )
 
                 ratio = None
@@ -3041,8 +3644,8 @@ class SurfaceRecover(RuleCheckTwoObjects):
                 if clash_utils.covering_out_of_bounds(
                     contact_area,
                     ratio,
-                    self.min_covering,
-                    self.max_covering,
+                    min_covering,
+                    max_covering,
                 ):
                     result = ClashResultTwoObjects(
                         source=source["entity"],
@@ -3061,34 +3664,35 @@ class SurfaceRecover(RuleCheckTwoObjects):
                     ]
                     result.info.add_face_pair(
                         (   # face de la source : (normal, area, triangles)
-                            tuple(float(v) for v in direction),
+                            tuple(float(v) for v in pair_direction),
                             clash_utils.triangles_projected_area(
-                                source_triangles, direction
+                                source_triangles, pair_direction
                             ),
                             contact_triangles_data,
                         ),
                         (   # face de la target
-                            tuple(float(-v) for v in direction),
+                            tuple(float(-v) for v in pair_direction),
                             clash_utils.triangles_projected_area(
-                                target_triangles, -direction
+                                target_triangles, -pair_direction
                             ),
                             contact_triangles_data,
                         ),
                     )
-                    self.result.append(result)
+                    results.append(result)
 
-                    # The contact surfaces of the clash, kept in the
-                    # display registry (one face per contact triangle).
-                    for triangle in contact_triangles:
-                        self.register_display_item(
-                            "face",
-                            ("face", [tuple(vertex) for vertex in triangle]),
-                            (1, 0.5, 0),
-                            0.0,
-                            element=source["entity"],
-                        )
+        return results
 
-        self.end_rule_action()
+    @staticmethod
+    def _normalized_direction(direction):
+        """A direction parameter as a unit numpy vector: the engine
+        accepts the same forms as the constructor — "Auto" excluded —
+        a shortcut name or a 3D vector (the serialized declaration
+        carries a list, the instance a tuple)."""
+        if direction == "Top":
+            return np.array((0.0, 0.0, 1.0))
+        if direction == "Bottom":
+            return np.array((0.0, 0.0, -1.0))
+        return np.asarray(direction, dtype=float)
 
     @staticmethod
     def _auto_direction(dist_tool):
@@ -3129,6 +3733,34 @@ class SurfaceRecover(RuleCheckTwoObjects):
         return vector / norm
 
 
+def _register_raycast_display(rule, results):
+    """The display items of the old DirectView registry, rebuilt from
+    the info blocks of the results: the rays actually cast — green
+    when the ray reached the other object, purple when a context
+    object blocked it. The display becomes a consumer of the results
+    (SPEC): the rule itself registers nothing anymore."""
+    for result in results:
+        raycast = result.info.raycast
+        if raycast is None:
+            continue
+        for origin, aim in raycast.hit_segments:
+            rule.register_display_item(
+                "segment",
+                ("edge", origin, aim),
+                (0, 1, 0),
+                0.0,
+                element=result.source,
+            )
+        for origin, aim in raycast.blocked_segments:
+            rule.register_display_item(
+                "segment",
+                ("edge", origin, aim),
+                (0.5, 0, 1),
+                0.0,
+                element=result.source,
+            )
+
+
 class DirectView(RuleCheckTwoObjects):
     """Determine if the direct view between two objects is free, by
     casting rays between them.
@@ -3142,6 +3774,16 @@ class DirectView(RuleCheckTwoObjects):
 
     This rule tests the mutual geometric visibility: no direction of
     view, no field of view, no viewing cone.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and the named parameters in, raw results
+    out; the context is a THIRD INPUT LIST (liste_objet_contexte),
+    never a hidden select. run() stays the select -> compute ->
+    pipeline adapter for as long as RuleFile drives the rules. The
+    rays actually cast are carried by the info blocks (raycast) and
+    rebuilt for the display by the adapter; the context elements are
+    not carried by the results, the adapter keeps the old registry
+    items for them.
     """
 
     def __init__(
@@ -3196,11 +3838,19 @@ class DirectView(RuleCheckTwoObjects):
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
 
-    def _collect_meshes(self, select):
-        """The triangulated world mesh of each selected element."""
+    def _collect_meshes(self, elements):
+        """The triangulated world mesh of each given element.
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), they are grouped per file to iterate
+        each file once."""
         meshes = {}
-        for ifc_file in select.dict_elements.keys():
-            included = select.dict_elements[ifc_file]
+        by_file = {}
+        for element in elements or []:
+            by_file.setdefault(element.file, []).append(element)
+
+        for ifc_file in by_file.keys():
+            included = by_file[ifc_file]
             if not included:
                 continue
 
@@ -3328,6 +3978,8 @@ class DirectView(RuleCheckTwoObjects):
         return len(hits) == 0
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
@@ -3336,42 +3988,96 @@ class DirectView(RuleCheckTwoObjects):
         self.select_context.list_ifc_path = self.select_source.list_ifc_path
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
+        self.select_context.create_list_of_element()
 
-        # The context objects (the obstacles of the view), kept in the
-        # display registry.
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.ray_source,
+            self.ray_count,
+            self.threshold,
+            self.max_distance,
+            liste_objet_contexte=self.select_context.list_of_elements,
+        )
+        self.result.extend(results)
+
+        # The context elements are not carried by the results: the
+        # adapter keeps the old registry items for them (as for the
+        # context of Ray_Check). The rays actually cast are carried by
+        # the info blocks (raycast). The display is a consumer of the
+        # registry: the adapter fills it in every state (as the old
+        # run() did).
         for elements in self.select_context.dict_elements.values():
             for element in elements or []:
                 self.register_display_item(
                     "context", ("entity", element), (0.5, 0.5, 0.5), 0.85
                 )
+        _register_raycast_display(self, results)
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        ray_source,
+        ray_count,
+        threshold,
+        max_distance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the source/target pairs
+        whose hit ratio over the rays actually cast reaches the
+        threshold — the rays pass between the two objects, the direct
+        view is established.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        context is a THIRD INPUT LIST (liste_objet_contexte), never a
+        hidden select. The ray helpers read their configuration off
+        the instance: the compute poses the named parameters on the
+        instance before running (documented exception — the node
+        remains the config carrier). The threshold is a percentage
+        (0..100), as serialized. Each verdict carries the hit ratio
+        and the full raycast detail (planned/cast/hit and the hit and
+        blocked segments) in its info blocks.
+        """
+        self.ray_source = ray_source
+        self.ray_count = ray_count
+        self.threshold = threshold
+        self.max_distance = (
+            float(max_distance) if max_distance is not None else None
+        )
 
         self.tree = clash_utils.make_ray_tree()
-        self.add_to_tree(self.select_context, "UB")
+        clash_utils.add_elements_to_ray_tree(self.tree, liste_objet_contexte)
 
-        source_meshes = self._collect_meshes(self.select_source)
-        target_meshes = self._collect_meshes(self.select_target)
+        source_meshes = self._collect_meshes(liste_objet_source)
+        target_meshes = self._collect_meshes(liste_objet_target)
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-
-        if self.ray_source == "Both":
+        if ray_source == "Both":
             emitters_of = lambda source_mesh, target_mesh: [
                 (source_mesh, target_mesh),
                 (target_mesh, source_mesh),
             ]
-        elif self.ray_source == "Source":
+        elif ray_source == "Source":
             emitters_of = lambda source_mesh, target_mesh: [(source_mesh, target_mesh)]
         else:
             emitters_of = lambda source_mesh, target_mesh: [(target_mesh, source_mesh)]
 
-        threshold_fraction = self.threshold / 100.0
+        threshold_fraction = threshold / 100.0
 
+        results = []
         for source_entity, source_mesh in source_meshes.items():
             for target_entity, target_mesh in target_meshes.items():
                 if source_entity == target_entity:
                     continue
 
-                planned = self.ray_count * len(emitters_of(source_mesh, target_mesh))
+                planned = ray_count * len(emitters_of(source_mesh, target_mesh))
                 hits = 0
                 casts = 0
                 hit_segments = []
@@ -3422,29 +4128,9 @@ class DirectView(RuleCheckTwoObjects):
                             for origin, aim in blocked_segments
                         ],
                     )
-                    self.result.append(result)
+                    results.append(result)
 
-                    # The rays actually cast, kept in the display
-                    # registry: green when the ray reached the other
-                    # object, red when a context object blocked it.
-                    for origin, aim in hit_segments:
-                        self.register_display_item(
-                            "segment",
-                            ("edge", origin, aim),
-                            (0, 1, 0),
-                            0.0,
-                            element=source_entity,
-                        )
-                    for origin, aim in blocked_segments:
-                        self.register_display_item(
-                            "segment",
-                            ("edge", origin, aim),
-                            (0.5,0,1),
-                            0.0,
-                            element=source_entity,
-                        )
-
-        self.end_rule_action()
+        return results
 
 
 class OneObjectFace(RuleCheckOneObject):
@@ -3463,6 +4149,13 @@ class OneObjectFace(RuleCheckOneObject):
     blue and the faces of group B orange; the other faces of the object
     are not registered, the object keeps its own display color. See
     doc/1ObjectsRules/OneObjectFace.md.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — an entity list and the named parameters in, raw results
+    out. run() stays the select -> compute -> pipeline adapter for as
+    long as RuleFile drives the rules. The selected faces of the two
+    groups are INPUT data, not results: they are not carried by the
+    verdicts, the adapter keeps the old registry items for them.
     """
 
     def __init__(
@@ -3576,117 +4269,178 @@ class OneObjectFace(RuleCheckOneObject):
             normal = normal / magnitude
         return normal, 0.5 * magnitude
 
-    def _run_checks(self, triangle_a, triangle_b):
-        """The failed checks of one pair, as (check, value) tuples."""
+    def _run_checks(self, triangle_a, triangle_b, checks):
+        """The failed checks of one pair, as (check, value) tuples.
+
+        The checks configuration travels as one namespace (the named
+        parameters of the compute): the engine stays pure, it never
+        reads the config off the rule instance."""
         failures = []
 
-        if self.distance:
+        if checks.distance:
             if (
-                self.max_distance is not None
+                checks.max_distance is not None
                 and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
-                > self.max_distance
+                > checks.max_distance
             ):
                 # max_distance is a search radius: a pair farther
                 # apart than max_distance is not checked at all.
                 pass
             else:
                 adjacent = clash_utils.triangles_share_geometry(triangle_a, triangle_b)
-                if not (self.skip_adjacent and adjacent):
+                if not (checks.skip_adjacent and adjacent):
                     measured = clash_utils.distance_between_triangles(
                         triangle_a, triangle_b
                     )
-                    if self.min_distance is not None and measured < self.min_distance:
+                    if checks.min_distance is not None and measured < checks.min_distance:
                         failures.append(("distance", measured))
 
-        if self.intersection:
+        if checks.intersection:
             if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
                 depth = clash_utils.triangle_penetration_depth(triangle_a, triangle_b)
-                if depth > self.intersection_tolerance:
+                if depth > checks.intersection_tolerance:
                     failures.append(("intersection", depth))
 
-        if self.orientation:
+        if checks.orientation:
             normal_a, _ = self._triangle_data(triangle_a)
             normal_b, _ = self._triangle_data(triangle_b)
             dot = float(np.clip(normal_a @ normal_b, -1.0, 1.0))
             measured = math.degrees(math.acos(dot))
-            if abs(measured - self.angle) > self.angle_tolerance:
+            if abs(measured - checks.angle) > checks.angle_tolerance:
                 failures.append(("orientation", measured))
 
         return failures
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
+        self.select_source.create_list_of_element()
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            included = self.select_source.dict_elements[ifc_file]
-            if not included:
-                continue
+        # The faces of the two groups are input data, not results:
+        # they are not carried by the verdicts, the adapter keeps the
+        # old registry items for them (as for the context elements of
+        # Ray_Check). The display is a consumer of the registry: the
+        # adapter fills it in every state (as the old run() did).
+        self._register_face_groups_display(
+            self.select_source.list_of_elements
+        )
 
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=included,
-            )
-            if not iterator.initialize():
-                continue
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.face_a_selection,
+            self.face_b_selection,
+            self.distance,
+            self.min_distance,
+            self.max_distance,
+            self.skip_adjacent,
+            self.intersection,
+            self.intersection_tolerance,
+            self.orientation,
+            self.angle,
+            self.angle_tolerance,
+        )
+        self.result.extend(results)
 
-            while True:
-                shape = iterator.get()
-                entity = ifc_file.by_id(shape.id)
-                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
-                faces = np.asarray(get_faces(shape.geometry))
-                if len(faces) > 0:
-                    material_names = clash_utils.get_element_material_names(entity)
-                    group_a = clash_utils.select_faces(
-                        vertices,
-                        faces,
-                        self.face_a_selection,
-                        material_names,
-                    )
-                    group_b = clash_utils.select_faces(
-                        vertices,
-                        faces,
-                        self.face_b_selection,
-                        material_names,
-                    )
-
-                    # The faces of the two groups, kept in the display
-                    # registry: the faces of group A in blue, the
-                    # faces of group B in orange. The other faces of
-                    # the object are not registered: the object keeps
-                    # its own display color (red/green in
-                    # Display_Result, blue in Display_Input).
-                    for triangle in group_a:
-                        self.register_display_item(
-                            "face",
-                            ("face", [tuple(vertex) for vertex in triangle]),
-                            (0, 0, 1),
-                            0.0,
-                            element=entity,
-                        )
-                    for triangle in group_b:
-                        self.register_display_item(
-                            "face",
-                            ("face", [tuple(vertex) for vertex in triangle]),
-                            (1, 0.45, 0),
-                            0.0,
-                            element=entity,
-                        )
-
-                    self._check_pairs(entity, group_a, group_b)
-
-                if not iterator.next():
-                    break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
         self.end_rule_action()
 
-    def _check_pairs(self, entity, group_a, group_b):
+    def _register_face_groups_display(self, elements):
+        """The faces of the two groups, kept in the display registry:
+        the faces of group A in blue, the faces of group B in orange.
+        The other faces of the object are not registered: the object
+        keeps its own display color (red/green in Display_Result, blue
+        in Display_Input)."""
+        for entity, geometry in clash_utils.element_shapes(
+            elements, self.geom_settings
+        ):
+            vertices = np.asarray(get_vertices(geometry), dtype=float)
+            faces = np.asarray(get_faces(geometry))
+            if len(faces) == 0:
+                continue
+            material_names = clash_utils.get_element_material_names(entity)
+            for selection, color in (
+                (self.face_a_selection, (0, 0, 1)),
+                (self.face_b_selection, (1, 0.45, 0)),
+            ):
+                for triangle in clash_utils.select_faces(
+                    vertices, faces, selection, material_names
+                ):
+                    self.register_display_item(
+                        "face",
+                        ("face", [tuple(vertex) for vertex in triangle]),
+                        color,
+                        0.0,
+                        element=entity,
+                    )
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        face_a_selection,
+        face_b_selection,
+        distance,
+        min_distance,
+        max_distance,
+        skip_adjacent,
+        intersection,
+        intersection_tolerance,
+        orientation,
+        angle,
+        angle_tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: the face-level checks within
+        each source object (distance, intersection, orientation), one
+        verdict per face pair per failed check.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and nothing
+        is registered for the display. The face selections travel as
+        parameters (the FaceSelection dictionaries, None = all the
+        faces). Each verdict carries the failed check, its measured
+        value and the face pair (triangulated) in its info blocks.
+        """
+        checks = SimpleNamespace(
+            distance=distance,
+            min_distance=min_distance,
+            max_distance=max_distance,
+            skip_adjacent=skip_adjacent,
+            intersection=intersection,
+            intersection_tolerance=intersection_tolerance,
+            orientation=orientation,
+            angle=angle,
+            angle_tolerance=angle_tolerance,
+        )
+
+        results = []
+        for entity, geometry in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            vertices = np.asarray(get_vertices(geometry), dtype=float)
+            faces = np.asarray(get_faces(geometry))
+            if len(faces) == 0:
+                continue
+            material_names = clash_utils.get_element_material_names(entity)
+            group_a = clash_utils.select_faces(
+                vertices, faces, face_a_selection, material_names
+            )
+            group_b = clash_utils.select_faces(
+                vertices, faces, face_b_selection, material_names
+            )
+            results.extend(self._check_pairs(entity, group_a, group_b, checks))
+
+        return results
+
+    def _check_pairs(self, entity, group_a, group_b, checks):
         """Every face of A against every face of B, each pair once,
-        self-pairs skipped, one clash per pair per failed check."""
+        self-pairs skipped, one clash per pair per failed check.
+
+        Returns the verdicts: the engine never appends to self.result."""
+        results = []
         seen_pairs = set()
         for triangle_a in group_a:
             key_a = clash_utils._triangle_key(triangle_a)
@@ -3701,7 +4455,7 @@ class OneObjectFace(RuleCheckOneObject):
                     continue
                 seen_pairs.add(pair_key)
 
-                for check, value in self._run_checks(triangle_a, triangle_b):
+                for check, value in self._run_checks(triangle_a, triangle_b, checks):
                     result = ClashResultOneObject(source=entity, state=True)
                     clash_utils.apply_check_measure(result.info, check, value)
                     normal_a, area_a = self._triangle_data(triangle_a)
@@ -3718,7 +4472,8 @@ class OneObjectFace(RuleCheckOneObject):
                             [tuple(tuple(float(c) for c in vertex) for vertex in triangle_b)],
                         ),
                     )
-                    self.result.append(result)
+                    results.append(result)
+        return results
 
 
 
@@ -3740,6 +4495,15 @@ class TwoObjectsFace(RuleCheckTwoObjects):
     source faces are blue and the selected target faces orange, as in
     OneObjectFace; the other faces of the objects are not registered,
     the objects keep their own display color.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and the named parameters in, raw results
+    out. run() stays the select -> compute -> pipeline adapter for as
+    long as RuleFile drives the rules. The selected faces are INPUT
+    data, not results: they are not carried by the verdicts, the
+    adapter keeps the old registry items for them (the display
+    registration of _collect_faces; the compute passes
+    register=False).
 
     Unlike OneObjectFace there is no skip_adjacent: two faces of two
     different objects never share a mesh vertex, and two objects that
@@ -3856,23 +4620,27 @@ class TwoObjectsFace(RuleCheckTwoObjects):
             normal = normal / magnitude
         return normal, 0.5 * magnitude
 
-    def _run_checks(self, triangle_a, triangle_b):
-        """The failed checks of one pair, as (check, value) tuples."""
+    def _run_checks(self, triangle_a, triangle_b, checks):
+        """The failed checks of one pair, as (check, value) tuples.
+
+        The checks configuration travels as one namespace (the named
+        parameters of the compute): the engine stays pure, it never
+        reads the config off the rule instance."""
         failures = []
 
-        if self.distance:
+        if checks.distance:
             if (
-                self.max_distance is not None
+                checks.max_distance is not None
                 and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
-                > self.max_distance
+                > checks.max_distance
             ):
                 # max_distance is a search radius: a pair farther
                 # apart than max_distance is not checked at all.
                 pass
             elif (
-                self.min_distance is not None
+                checks.min_distance is not None
                 and clash_utils.triangles_bbox_distance(triangle_a, triangle_b)
-                >= self.min_distance
+                >= checks.min_distance
             ):
                 # The bounding boxes are already far enough apart:
                 # the exact distance cannot be below the bound.
@@ -3881,117 +4649,193 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                 measured = clash_utils.distance_between_triangles(
                     triangle_a, triangle_b
                 )
-                if self.min_distance is not None and measured < self.min_distance:
+                if checks.min_distance is not None and measured < checks.min_distance:
                     failures.append(("distance", measured))
 
-        if self.intersection:
+        if checks.intersection:
             if clash_utils.triangles_cross_properly(triangle_a, triangle_b):
                 depth = clash_utils.triangle_penetration_depth(triangle_a, triangle_b)
-                if depth > self.intersection_tolerance:
+                if depth > checks.intersection_tolerance:
                     failures.append(("intersection", depth))
 
-        if self.orientation:
+        if checks.orientation:
             normal_a, _ = self._triangle_data(triangle_a)
             normal_b, _ = self._triangle_data(triangle_b)
             dot = float(np.clip(normal_a @ normal_b, -1.0, 1.0))
             measured = math.degrees(math.acos(dot))
-            if abs(measured - self.angle) > self.angle_tolerance:
+            if abs(measured - checks.angle) > checks.angle_tolerance:
                 failures.append(("orientation", measured))
 
         return failures
 
-    def _collect_faces(self, select, selection, color):
-        """The selected faces of each element of a selection, in world
+    def _collect_faces(self, elements, selection, color, register=True):
+        """The selected faces of each given element, in world
         coordinates, as (entity, triangles) pairs. An empty selection
-        selects all the faces of the element. Every selected face is
-        kept in the display registry with the given color, as in
-        OneObjectFace: the other faces of the object are not
-        registered, the object keeps its own display color."""
+        selects all the faces of the element.
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), grouped per file to iterate each
+        file once.
+
+        The display registration of the selected faces (in the color
+        of their group: blue for the source, orange for the target, as
+        in OneObjectFace; the other faces of the object are not
+        registered, the object keeps its own display color) stays an
+        ADAPTER concern (register=True): the compute passes
+        register=False, it registers nothing (SPEC)."""
         element_faces = []
-        for ifc_file in select.dict_elements.keys():
-            included = select.dict_elements[ifc_file]
-            if not included:
+        for entity, geometry in clash_utils.element_shapes(
+            elements, self.geom_settings
+        ):
+            vertices = np.asarray(get_vertices(geometry), dtype=float)
+            faces = np.asarray(get_faces(geometry))
+            if len(faces) == 0:
                 continue
-
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=included,
+            material_names = clash_utils.get_element_material_names(entity)
+            triangles = clash_utils.select_faces(
+                vertices,
+                faces,
+                selection,
+                material_names,
             )
-            if not iterator.initialize():
-                continue
-
-            while True:
-                shape = iterator.get()
-                entity = ifc_file.by_id(shape.id)
-                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
-                faces = np.asarray(get_faces(shape.geometry))
-                if len(faces) > 0:
-                    material_names = clash_utils.get_element_material_names(entity)
-                    triangles = clash_utils.select_faces(
-                        vertices,
-                        faces,
-                        selection,
-                        material_names,
-                    )
-                    if len(triangles) > 0:
-                        element_faces.append((entity, triangles))
-                        # The selected faces, kept in the display
-                        # registry, in the color of their group (blue
-                        # for the source, orange for the target, as in
-                        # OneObjectFace).
-                        for triangle in triangles:
-                            self.register_display_item(
-                                "face",
-                                ("face", [tuple(vertex) for vertex in triangle]),
-                                color,
-                                0.0,
-                                element=entity,
-                            )
-
-                if not iterator.next():
-                    break
+            if len(triangles) > 0:
+                element_faces.append((entity, triangles))
+                if register:
+                    # The selected faces, kept in the display
+                    # registry, in the color of their group.
+                    for triangle in triangles:
+                        self.register_display_item(
+                            "face",
+                            ("face", [tuple(vertex) for vertex in triangle]),
+                            color,
+                            0.0,
+                            element=entity,
+                        )
 
         return element_faces
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
+
+        # The selected faces are input data, not results: they are not
+        # carried by the verdicts, the adapter keeps the old registry
+        # items for them (as for the context elements of Ray_Check).
+        # The display is a consumer of the registry: the adapter
+        # fills it in every state (as the old run() did).
+        self._collect_faces(
+            self.select_source.list_of_elements,
+            self.source_face_selection,
+            (0, 0, 1),
+        )
+        self._collect_faces(
+            self.select_target.list_of_elements,
+            self.target_face_selection,
+            (1, 0.45, 0),
+        )
+
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.source_face_selection,
+            self.target_face_selection,
+            self.distance,
+            self.min_distance,
+            self.max_distance,
+            self.intersection,
+            self.intersection_tolerance,
+            self.orientation,
+            self.angle,
+            self.angle_tolerance,
+        )
+        self.result.extend(results)
+
+        self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        source_face_selection,
+        target_face_selection,
+        distance,
+        min_distance,
+        max_distance,
+        intersection,
+        intersection_tolerance,
+        orientation,
+        angle,
+        angle_tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: the face-level checks between
+        the source and the target sets (distance, intersection,
+        orientation), one verdict per face pair per failed check.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and nothing
+        is registered for the display. The face selections travel as
+        parameters (the FaceSelection dictionaries, None = all the
+        faces). Each verdict carries the failed check, its measured
+        value and the face pair (triangulated) in its info blocks.
+        """
+        checks = SimpleNamespace(
+            distance=distance,
+            min_distance=min_distance,
+            max_distance=max_distance,
+            intersection=intersection,
+            intersection_tolerance=intersection_tolerance,
+            orientation=orientation,
+            angle=angle,
+            angle_tolerance=angle_tolerance,
+        )
 
         source_elements = self._collect_faces(
-            self.select_source, self.source_face_selection, (0, 0, 1)
+            liste_objet_source, source_face_selection, (0, 0, 1), register=False
         )
         target_elements = self._collect_faces(
-            self.select_target, self.target_face_selection, (1, 0.45, 0)
+            liste_objet_target, target_face_selection, (1, 0.45, 0), register=False
         )
 
+        results = []
         for source_entity, source_triangles in source_elements:
             for target_entity, target_triangles in target_elements:
                 if source_entity == target_entity:
                     # An element is not checked against itself, even
                     # when both selections contain it.
                     continue
-                self._check_pairs(
-                    source_entity,
-                    source_triangles,
-                    target_entity,
-                    target_triangles,
+                results.extend(
+                    self._check_pairs(
+                        source_entity,
+                        source_triangles,
+                        target_entity,
+                        target_triangles,
+                        checks,
+                    )
                 )
 
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
+        return results
 
     def _check_pairs(
-        self, source_entity, source_triangles, target_entity, target_triangles
+        self, source_entity, source_triangles, target_entity, target_triangles, checks
     ):
         """Every source face against every target face, one clash per
-        pair per failed check."""
+        pair per failed check.
+
+        Returns the verdicts: the engine never appends to
+        self.result."""
+        results = []
         for triangle_a in source_triangles:
             for triangle_b in target_triangles:
-                for check, value in self._run_checks(triangle_a, triangle_b):
+                for check, value in self._run_checks(triangle_a, triangle_b, checks):
                     result = ClashResultTwoObjects(
                         source=source_entity,
                         target=target_entity,
@@ -4012,7 +4856,8 @@ class TwoObjectsFace(RuleCheckTwoObjects):
                             [tuple(tuple(float(c) for c in vertex) for vertex in triangle_b)],
                         ),
                     )
-                    self.result.append(result)
+                    results.append(result)
+        return results
 
 
 class ClearanceForDoors(RuleCheckTwoObjects):
@@ -4026,6 +4871,18 @@ class ClearanceForDoors(RuleCheckTwoObjects):
     geometry method is not implemented: without a usable operation
     type, the rule falls back on conservative rectangles on both
     sides.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and the named parameters in, raw results
+    out. run() stays the select -> compute -> pipeline adapter for as
+    long as RuleFile drives the rules. The zone builder (_build_zones)
+    reads its configuration off the instance: the compute poses the
+    named parameters on the instance before building the zones — the
+    node remains the config carrier (documented exception), while the
+    outputs stay pure (no result, display or selection side effect).
+    The zone solids are display data: they are rebuilt by the adapter
+    (the ZoneData of the info blocks is enough for the export, not
+    for the OCC solid).
     """
 
     def __init__(
@@ -4087,32 +4944,39 @@ class ClearanceForDoors(RuleCheckTwoObjects):
 
     def _door_dimensions(self, door):
         """The width, thickness and height of the door, from its local
-        mesh (width along the local X axis, height along Z)."""
-        for ifc_file in self.select_source.dict_elements.keys():
-            if door.file != ifc_file:
-                continue
-            iterator = ifcopenshell.geom.iterator(
-                self.local_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=[door],
-            )
-            if not iterator.initialize():
-                break
-            shape = iterator.get()
-            vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
-            return (
-                float(vertices[:, 0].max() - vertices[:, 0].min()),
-                float(vertices[:, 1].max() - vertices[:, 1].min()),
-                float(vertices[:, 2].max() - vertices[:, 2].min()),
-            )
-        return (0.0, 0.0, 0.0)
+        mesh (width along the local X axis, height along Z).
 
-    def _collect_targets(self):
-        """The OCC shape and the world vertices of each target object."""
+        The door knows its file (.file, ifcopenshell 0.9)."""
+        iterator = ifcopenshell.geom.iterator(
+            self.local_settings,
+            door.file,
+            multiprocessing.cpu_count(),
+            include=[door],
+        )
+        if not iterator.initialize():
+            return (0.0, 0.0, 0.0)
+        shape = iterator.get()
+        vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
+        return (
+            float(vertices[:, 0].max() - vertices[:, 0].min()),
+            float(vertices[:, 1].max() - vertices[:, 1].min()),
+            float(vertices[:, 2].max() - vertices[:, 2].min()),
+        )
+
+    def _collect_targets(self, elements):
+        """The OCC shape and the world vertices of each given target
+        object.
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), they are grouped per file to iterate
+        each file once."""
         targets = []
-        for ifc_file in self.select_target.dict_elements.keys():
-            included = self.select_target.dict_elements[ifc_file]
+        by_file = {}
+        for element in elements or []:
+            by_file.setdefault(element.file, []).append(element)
+
+        for ifc_file in by_file.keys():
+            included = by_file[ifc_file]
             if not included:
                 continue
 
@@ -4281,58 +5145,118 @@ class ClearanceForDoors(RuleCheckTwoObjects):
         return zones
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        targets = self._collect_targets()
+        # The zone solids are display data, not results: the adapter
+        # rebuilds them (the ZoneData of the info blocks is enough for
+        # the export, not for the OCC solid). The display is a
+        # consumer of the registry: the adapter fills it in every
+        # state (as the old run() did).
+        for door in self.select_source.list_of_elements:
+            for zone in self._build_zones(door):
+                self.register_display_item(
+                    "zone", zone["solid"], (0.5,0,1), 0.6, element=door
+                )
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            for door in self.select_source.dict_elements[ifc_file] or []:
-                zones = self._build_zones(door)
-
-                # The clearance zones (the clash detection zones), kept
-                # in the display registry.
-                for zone in zones:
-                    self.register_display_item(
-                        "zone", zone["solid"], (0.5,0,1), 0.6, element=door
-                    )
-
-                for target in targets:
-                    worst = None
-                    for zone in zones:
-                        dist_tool = BRepExtrema_DistShapeShape()
-                        dist_tool.LoadS1(target["occ"])
-                        dist_tool.LoadS2(zone["solid"])
-                        dist_tool.Perform()
-                        if dist_tool.Value() > 0:
-                            # No contact with this zone.
-                            continue
-
-                        depth = clash_utils.max_penetration_depth(
-                            zone["solid"], target["vertices"]
-                        )
-                        if depth > self.tolerance and (
-                            worst is None or depth > worst[0]
-                        ):
-                            worst = (depth, zone)
-
-                    if worst is not None:
-                        depth, zone = worst
-                        result = ClashResultTwoObjects(
-                            source=door, target=target["entity"], state=True
-                        )
-                        result.info.penetration_depth = depth  # m — nominale
-                        result.info.zone = ZoneData(
-                            side=zone["side"],
-                            leaf=zone["leaf_type"],
-                            width=zone["width"],  # m
-                            depth=zone["depth"],  # m
-                            height=zone["height"],  # m
-                        )
-                        self.result.append(result)
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.zone_shape,
+            self.sides,
+            self.leaves,
+            self.width,
+            self.depth,
+            self.height,
+            self.tolerance,
+        )
+        self.result.extend(results)
 
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        zone_shape,
+        sides,
+        leaves,
+        width,
+        depth,
+        height,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the target objects
+        penetrating the clearance zone of a door by more than the
+        tolerance.
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        verdicts are returned, self.result is not touched, and nothing
+        is registered for the display.
+
+        The zone builder (_build_zones) reads its configuration off
+        the instance: the compute poses the named parameters on the
+        instance before building the zones — the node remains the
+        config carrier (documented exception). Each verdict carries
+        the measured penetration depth and the swept zone (ZoneData)
+        in its info blocks.
+        """
+        self.zone_shape = zone_shape
+        self.sides = sides
+        self.leaves = leaves
+        self.width = width
+        self.depth = depth
+        self.height = height
+        self.tolerance = tolerance
+
+        targets = self._collect_targets(liste_objet_target)
+
+        results = []
+        for door in liste_objet_source or []:
+            zones = self._build_zones(door)
+
+            for target in targets:
+                worst = None
+                for zone in zones:
+                    dist_tool = BRepExtrema_DistShapeShape()
+                    dist_tool.LoadS1(target["occ"])
+                    dist_tool.LoadS2(zone["solid"])
+                    dist_tool.Perform()
+                    if dist_tool.Value() > 0:
+                        # No contact with this zone.
+                        continue
+
+                    depth = clash_utils.max_penetration_depth(
+                        zone["solid"], target["vertices"]
+                    )
+                    if depth > tolerance and (worst is None or depth > worst[0]):
+                        worst = (depth, zone)
+
+                if worst is not None:
+                    depth, zone = worst
+                    result = ClashResultTwoObjects(
+                        source=door, target=target["entity"], state=True
+                    )
+                    result.info.penetration_depth = depth  # m — nominale
+                    result.info.zone = ZoneData(
+                        side=zone["side"],
+                        leaf=zone["leaf_type"],
+                        width=zone["width"],  # m
+                        depth=zone["depth"],  # m
+                        height=zone["height"],  # m
+                    )
+                    results.append(result)
+
+        return results
 
 
 class FreeSpace(RuleCheckOneObject):
@@ -4349,6 +5273,18 @@ class FreeSpace(RuleCheckOneObject):
     the region with the largest clearance. A clash is raised for each
     source where no free placement is found. See
     doc/ComplexRules/FreeSpace.md.
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — an entity list, the named parameters and the context as a
+    THIRD INPUT LIST (liste_objet_contexte), raw results out. run()
+    stays the select -> compute -> pipeline adapter for as long as
+    RuleFile drives the rules. The search helpers read their
+    configuration off the instance: the compute poses the named
+    parameters on the instance before running (documented exception),
+    and it leaves its engine state on the node — the found placements
+    (self.placements, the adapter-level information) and the probe
+    positions (self._probe_positions): the probe cylinders are
+    set-level display data, the adapter rebuilds them from that state.
     """
 
     # The mesh deflection of the obstacle projections is a fraction of
@@ -4372,21 +5308,32 @@ class FreeSpace(RuleCheckOneObject):
         self.diameter = float(diameter)
         self.height = float(height)
         self.placements = {}
+        # The engine state the adapter rebuilds the probe display
+        # from (posed by the compute).
+        self._probe_positions = {}
 
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.mesh_settings = ifcopenshell.geom.settings()
         self.mesh_settings.set("USE_WORLD_COORDS", True)
 
-    def _collect_context(self):
-        """The OCC shape of each context object, with its bounding box
-        (to pre-filter the obstacles of each source)."""
+    def _collect_context(self, elements):
+        """The OCC shape of each given context object, with its
+        bounding box (to pre-filter the obstacles of each source).
+
+        The elements come as a flat list: each one knows its file
+        (.file, ifcopenshell 0.9), they are grouped per file to iterate
+        each file once."""
         from OCC.Core.Bnd import Bnd_Box
         from OCC.Core.BRepBndLib import brepbndlib
 
         obstacles = []
-        for ifc_file in self.select_context.dict_elements.keys():
-            included = self.select_context.dict_elements[ifc_file]
+        by_file = {}
+        for element in elements or []:
+            by_file.setdefault(element.file, []).append(element)
+
+        for ifc_file in by_file.keys():
+            included = by_file[ifc_file]
             if not included:
                 continue
             iterator = ifcopenshell.geom.iterator(
@@ -4544,18 +5491,35 @@ class FreeSpace(RuleCheckOneObject):
         return (point.x, point.y), margin
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
         self.select_source.run()
 
+        # The context needs the same files as the source to be able to run.
         self.select_context.list_ifc_path = self.select_source.list_ifc_path
         self.select_context.list_ifc_file = self.select_source.list_ifc_file
         self.select_context.run()
+        self.select_source.create_list_of_element()
+        self.select_context.create_list_of_element()
 
-        obstacles = self._collect_context()
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.diameter,
+            self.height,
+            liste_objet_contexte=self.select_context.list_of_elements,
+        )
+        self.result.extend(results)
 
-        # The context objects (the obstacles of the free space search),
-        # kept in the display registry.
-        for obstacle in obstacles:
+        # The obstacles (context) are input data, not results: the
+        # adapter keeps the old registry items for them. The probe
+        # cylinders (the clash detection zones) are set-level display
+        # data: the adapter rebuilds them from the engine state left
+        # by the compute. The display is a consumer of the registry:
+        # the adapter fills it in every state (as the old run() did).
+        for obstacle in self._collect_context(
+            self.select_context.list_of_elements
+        ):
             self.register_display_item(
                 "context",
                 obstacle["occ"],
@@ -4563,56 +5527,88 @@ class FreeSpace(RuleCheckOneObject):
                 0.85,
                 element=obstacle["entity"],
             )
-
-        for ifc_file in self.select_source.dict_elements.keys():
-            for source in self.select_source.dict_elements[ifc_file] or []:
-                iterator = ifcopenshell.geom.iterator(
-                    self.mesh_settings,
-                    ifc_file,
-                    multiprocessing.cpu_count(),
-                    include=[source],
-                )
-                footprint, z_base = shapely.Polygon(), 0.0
-                if iterator.initialize():
-                    shape = iterator.get()
-                    vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
-                    faces = np.asarray(get_faces(shape.geometry))
-                    footprint, z_base = clash_utils.lowest_footprint(vertices, faces)
-
-                if footprint.is_empty:
-                    # No footprint: no placement can be evaluated.
-                    self.result.append(ClashResultOneObject(source=source, state=True))
-                    continue
-
-                found, margin = self._search_placement(footprint, z_base, obstacles)
-                if found is None:
-                    self.result.append(ClashResultOneObject(source=source, state=True))
-                    # No free placement: the probe stays at the center
-                    # of the footprint in the display registry.
-                    center = footprint.representative_point()
-                    probe_position = (center.x, center.y)
-                else:
-                    self.placements[source] = {
-                        "position": (found[0], found[1], z_base),
-                        "margin": margin,
-                    }
-                    probe_position = found
-
-                # The probe cylinder (the clash detection zone), kept
-                # in the display registry.
-                self.register_display_item(
-                    "zone",
-                    clash_utils.cylinder_solid(
-                        probe_position[0],
-                        probe_position[1],
-                        z_base,
-                        self.diameter / 2.0,
-                        self.height,
-                    ),
-                    (0.5,0,1),
-                    0.6,
-                    element=source,
-                )
+        for source, (x, y, z_base) in self._probe_positions.items():
+            self.register_display_item(
+                "zone",
+                clash_utils.cylinder_solid(
+                    x, y, z_base, self.diameter / 2.0, self.height
+                ),
+                (0.5,0,1),
+                0.6,
+                element=source,
+            )
 
         self.end_rule_action()
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        diameter,
+        height,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags each source where no
+        free placement of the cylinder exists (the cylinder fits
+        entirely inside the footprint and touches no context object).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. The
+        context is a THIRD INPUT LIST (liste_objet_contexte), never a
+        hidden select. The search helpers read their configuration off
+        the instance: the compute poses the named parameters on the
+        instance before running (documented exception — the node
+        remains the config carrier), and it leaves its engine state on
+        the node: the found placements (self.placements — position
+        (x, y, z_base) and clearance margin) and the probe positions
+        (self._probe_positions, the state the adapter rebuilds the
+        probe display from).
+        """
+        self.diameter = float(diameter)
+        self.height = float(height)
+
+        obstacles = self._collect_context(liste_objet_contexte)
+
+        results = []
+        for source in liste_objet_source or []:
+            iterator = ifcopenshell.geom.iterator(
+                self.mesh_settings,
+                source.file,
+                multiprocessing.cpu_count(),
+                include=[source],
+            )
+            footprint, z_base = shapely.Polygon(), 0.0
+            if iterator.initialize():
+                shape = iterator.get()
+                vertices = np.asarray(get_vertices(shape.geometry), dtype=float)
+                faces = np.asarray(get_faces(shape.geometry))
+                footprint, z_base = clash_utils.lowest_footprint(vertices, faces)
+
+            if footprint.is_empty:
+                # No footprint: no placement can be evaluated.
+                results.append(ClashResultOneObject(source=source, state=True))
+                continue
+
+            found, margin = self._search_placement(footprint, z_base, obstacles)
+            if found is None:
+                results.append(ClashResultOneObject(source=source, state=True))
+                # No free placement: the probe stays at the center of
+                # the footprint.
+                center = footprint.representative_point()
+                probe_position = (center.x, center.y)
+            else:
+                self.placements[source] = {
+                    "position": (found[0], found[1], z_base),
+                    "margin": margin,
+                }
+                probe_position = found
+
+            self._probe_positions[source] = (
+                probe_position[0],
+                probe_position[1],
+                z_base,
+            )
+
+        return results
 

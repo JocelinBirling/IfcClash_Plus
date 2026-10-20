@@ -201,28 +201,32 @@ class TestNonClashedSourceExtraction(unittest.TestCase):
         return select
 
     def test_clashed_sources_and_complement(self):
-        from ifctester import or_
+        from ifctester.facet import Restriction
         from RuleClass import SelectRule
 
         path = os.path.join(MODEL_DIR, "CubeA_Above_CubeB_1m.ifc")
         file = ifcopenshell.open(path)
 
+        # The OR of the two names, as an IDS enumeration restriction
+        # (ifctester 0.9 has no or_ combinator).
         sources = self._select(
-            or_(
-                ids.Attribute(name="Name", value="CubeB"),
-                ids.Attribute(name="Name", value="45CuboidB"),
+            ids.Attribute(
+                name="Name",
+                value=Restriction(options={"enumeration": ["CubeB", "45CuboidB"]}),
             )
         )
         rule = Above(sources, self._select(ids.Attribute(name="Name", value="CubeA")),
                       "Above_MaxToMin", 1.0)
-        rule.update_file_info([path], [file])
 
         # The chaining consumer: a SelectRule drives the rule in
-        # "Select" state and reads its selection product.
+        # "Select" state and reads its selection product. Its files
+        # are set as RuleFile.update_file_info would do (it also
+        # propagates them to the rule and its selects).
         select_clashed = SelectRule()
         select_clashed.rule = rule
         select_clashed.element_to_pass = "source"
         select_clashed.element_state_to_pass = True
+        select_clashed.update_file_info([path], [file])
         select_clashed.run()
         select_clashed.create_list_of_element()
 

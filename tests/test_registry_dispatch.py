@@ -24,7 +24,7 @@ import ifcopenshell
 from ifctester import ids
 
 from registry import compute_from_config, engine_params
-from Rules import Above, Volume
+from Rules import Above
 from RuleClass import SelectFacet
 from serialization import serialize_rule_check
 
@@ -120,14 +120,24 @@ class TestComputeFromConfig(unittest.TestCase):
         self.assertEqual(len(results), 1)
 
     def test_unmigrated_rule_raises(self):
-        """A rule type without a compute yet cannot be dispatched."""
-        rule = Volume(_select("CubeB"), 0, 1)
+        """A rule type without a compute cannot be dispatched. Every
+        rule being migrated at the end of the deployment, a class
+        still waiting for its compute is simulated by removing the
+        compute of the class for the duration of the call."""
+        rule = Above(_select("CubeB"), _select("CubeA"), "Above_MaxToMin", 1.0)
         config = json.loads(json.dumps(serialize_rule_check(rule)))
 
-        with self.assertRaises(NotImplementedError):
-            compute_from_config(
-                config, [self._element(self.file, "CubeB")]
-            )
+        compute = Above.compute
+        del Above.compute
+        try:
+            with self.assertRaises(NotImplementedError):
+                compute_from_config(
+                    config,
+                    [self._element(self.file, "CubeB")],
+                    [self._element(self.file, "CubeA")],
+                )
+        finally:
+            Above.compute = compute
 
 
 if __name__ == "__main__":

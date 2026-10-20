@@ -123,11 +123,14 @@ class TestRules(unittest.TestCase):
         OneRuleFile.run()
         assert_result_shape(top_surface_rule)
 
-        
+
         for result in top_surface_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
-        self.assertEqual(len(top_surface_rule.result), 5) 
+        # 7 walls with a side area in ]1, 2[ toward +X — recalibrated
+        # for the world-coordinates fix of the migration (the shapes
+        # were read in local coordinates before, SPEC point 3).
+        self.assertEqual(len(top_surface_rule.result), 7)
 
     def test_projected_rule(self):
         """Test TopSurface rule"""
@@ -145,11 +148,15 @@ class TestRules(unittest.TestCase):
         OneRuleFile.run()
         assert_result_shape(top_surface_rule)
 
-        
+
         for result in top_surface_rule.result:
             self.assertIsInstance(result, ClashResultOneObject)
 
-        self.assertEqual(len(top_surface_rule.result), 11) 
+        # 9 walls with a projected area in ]1, 2[ toward +X —
+        # recalibrated for the world-coordinates fix of the migration
+        # (the shapes were read in local coordinates before, SPEC
+        # point 3).
+        self.assertEqual(len(top_surface_rule.result), 9)
 
     def test_orientation_rule(self):
         """Test TopSurface rule"""

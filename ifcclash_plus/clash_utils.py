@@ -2,6 +2,7 @@ import shapely
 import shapely.ops
 import numpy as np
 import numpy.typing as npt
+import multiprocessing
 import ifcopenshell.geom
 import ifcopenshell.ifcopenshell_wrapper as W
 import ifcopenshell.util.element
@@ -971,6 +972,178 @@ def check_extrem_face_distance(
         verdict["side"] = "Need_More_Check"
 
     return verdict
+
+
+def elements_obb_data(
+    elements,
+    geom_settings,
+    zone_height: float = None,
+    zone_side: str = "top",
+) -> list[dict]:
+    """Per element: the object OBB, the native geometry and — with a
+    zone_height — the detection zone OBB extruded by zone_height on
+    the zone_side ("top" or "bottom") of the object, with its OCC
+    solid (the OBB_Above/OBB_Below engine primitive).
+
+    The elements come as a flat list: each one knows its file
+    (.file, ifcopenshell 0.9), they are grouped per file to build one
+    reusable geometry kernel per file. An element without computable
+    geometry is skipped, as the plain-settings iterator did.
+    """
+    by_file = {}
+    for element in elements:
+        by_file.setdefault(element.file, []).append(element)
+
+    data = []
+    for ifc_file, file_elements in by_file.items():
+        kernel = ifcopenshell.geom.kernel(geom_settings, ifc_file)
+        for entity in file_elements:
+            try:
+                shape = kernel.create_shape(inst=entity)
+            except Exception:
+                # No computable geometry: the plain-settings iterator
+                # skipped these elements, create_shape raises instead.
+                continue
+            geom = shape.geometry
+            if geom is None:
+                continue
+
+            obb = create_obb_from_TopoDs_Shape(geom)
+            entry = {
+                "entity": entity,
+                "geom": geom,
+                "object_obb": obb,
+            }
+            if zone_height is not None:
+                if zone_side == "top":
+                    entry["zone_obb"] = obb.detach_top_by_extrude(zone_height)
+                else:
+                    entry["zone_obb"] = obb.detach_bottom_by_extrude(zone_height)
+                entry["zone_solid"] = entry["zone_obb"].to_TopoDS_Solid()
+            data.append(entry)
+
+    return data
+
+
+def element_shapes(elements, geom_settings):
+    """Yield (entity, geometry) per element: the generic one-object
+    engine primitive (SPEC Separation moteur/gestion).
+
+    The elements come as a flat list: each one knows its file
+    (.file, ifcopenshell 0.9), they are grouped per file to build one
+    reusable geometry kernel per file (new in 0.9) — the speed of the
+    iterator without its include bookkeeping. An element without
+    computable geometry is skipped, as the plain-settings iterator
+    did.
+    """
+    by_file = {}
+    for element in elements:
+        by_file.setdefault(element.file, []).append(element)
+
+    for ifc_file, file_elements in by_file.items():
+        kernel = ifcopenshell.geom.kernel(geom_settings, ifc_file)
+        for entity in file_elements:
+            try:
+                shape = kernel.create_shape(inst=entity)
+            except Exception:
+                # No computable geometry: the plain-settings iterator
+                # skipped these elements, create_shape raises instead.
+                continue
+            if shape is None:
+                # Same skip when create_shape returns None (an element
+                # without any representation, e.g. IfcProject).
+                continue
+            geom = shape.geometry
+            if geom is None:
+                continue
+            yield entity, geom
+
+
+def triangle_face_data(triangle) -> tuple:
+    """The serializable FaceData (normal, area, triangles) of ONE
+    triangle given as 3 points: the normal by the cross product, the
+    area by its half norm, the triangle as its own tessellation.
+    Plain floats, JSON-ready — the display or a third-party software
+    rebuilds the face from these alone.
+    """
+    points = np.asarray(triangle, dtype=float)
+    cross = np.cross(points[1] - points[0], points[2] - points[0])
+    norm = float(np.linalg.norm(cross))
+    if norm > 0.0:
+        normal = tuple(float(value) for value in cross / norm)
+    else:
+        normal = (0.0, 0.0, 0.0)
+    triangles = [
+        tuple(tuple(float(coordinate) for coordinate in point) for point in points)
+    ]
+    return (normal, norm / 2.0, triangles)
+
+
+def add_elements_to_clash_tree(tree, elements):
+    """Feed a clash tree with the triangulation elements of the given
+    entities: the engine primitive of the BVH rules (Intersection,
+    Collision, Clearance), the entity-list counterpart of
+    RuleCheck.add_to_tree with "BVH".
+
+    The elements come as a flat list: each one knows its file
+    (.file, ifcopenshell 0.9), they are grouped per file and each file
+    is iterated with plain settings — the tree queries stay
+    internally consistent, whatever the coordinate system of the
+    elements. The elements without computable geometry are skipped,
+    as the iterator always did.
+    """
+    by_file = {}
+    for element in elements:
+        by_file.setdefault(element.file, []).append(element)
+
+    tree_settings = ifcopenshell.geom.settings()
+    for ifc_file, file_elements in by_file.items():
+        iterator = ifcopenshell.geom.iterator(
+            tree_settings,
+            ifc_file,
+            multiprocessing.cpu_count(),
+            include=file_elements,
+        )
+
+        if not iterator.initialize():
+            continue
+        while True:
+            tree.add_element(iterator.get())
+            if not iterator.next():
+                break
+
+
+def add_elements_to_ray_tree(tree, elements):
+    """Feed a ray tree with the native brep elements of the given
+    entities: the engine primitive of DirectView, the entity-list
+    counterpart of RuleCheck.add_to_tree with "UB".
+
+    The elements come as a flat list: each one knows its file
+    (.file, ifcopenshell 0.9), they are grouped per file and each file
+    is iterated with Python-OCC settings (which also imply world
+    coordinates). The elements without computable geometry are
+    skipped, as the iterator always did.
+    """
+    by_file = {}
+    for element in elements or []:
+        by_file.setdefault(element.file, []).append(element)
+
+    tree_settings = ifcopenshell.geom.settings()
+    tree_settings.set("USE_PYTHON_OPENCASCADE", True)
+    for ifc_file, file_elements in by_file.items():
+        iterator = ifcopenshell.geom.iterator(
+            tree_settings,
+            ifc_file,
+            multiprocessing.cpu_count(),
+            include=file_elements,
+        )
+
+        if not iterator.initialize():
+            continue
+        while True:
+            tree.add_element(iterator.get_native())
+            if not iterator.next():
+                break
 
 
 def is_face_oriented_toward_direction(

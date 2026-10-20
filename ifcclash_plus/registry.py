@@ -20,6 +20,7 @@ simple value (Enumeration / Pattern / Bounds / Length), the IDS form.
 """
 
 from typing import Any
+import inspect
 
 CATALOGUE_VERSION = 1
 
@@ -330,6 +331,18 @@ RULES: list[dict[str, Any]] = [
             _p("direction", "enum", "Auto", "Recovery direction", ["Auto", "Top", "Bottom"]),
             _p("reference", "enum", "Source", "Reference surface", ["Source", "Target"]),
             _p("tolerance", "float", 0.001, "Tolerance", unit="model"),
+            _p(
+                "min_covering",
+                "string",
+                None,
+                "Minimum covering: an area (ex. 1.5) or a percentage (ex. '50%')",
+            ),
+            _p(
+                "max_covering",
+                "string",
+                None,
+                "Maximum covering: an area (ex. 1.5) or a percentage (ex. '50%')",
+            ),
         ],
     ),
     _rule(
@@ -583,10 +596,18 @@ def compute_from_config(
             "(SPEC Separation moteur/gestion: migration pending)"
         )
 
-    params = {name: config[name] for name in engine_params(rule_type) if name in config}
-    return rule.compute(
-        liste_objet_source,
-        liste_objet_target,
-        liste_objet_contexte=liste_objet_contexte,
-        **params,
-    )
+    # The call is driven by the signature of the compute: a
+    # one-object rule takes no liste_objet_target, a complex rule
+    # takes the liste_objet_contexte of its contract (SPEC).
+    parameters = inspect.signature(rule.compute).parameters
+    call = {
+        name: config[name]
+        for name in engine_params(rule_type)
+        if name in config
+    }
+    call["liste_objet_source"] = liste_objet_source
+    if "liste_objet_target" in parameters:
+        call["liste_objet_target"] = liste_objet_target
+    if "liste_objet_contexte" in parameters:
+        call["liste_objet_contexte"] = liste_objet_contexte
+    return rule.compute(**call)

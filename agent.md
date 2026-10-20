@@ -135,7 +135,34 @@ format) stays FLAT and gathers everything under ONE rule: the selects
   selects/management keys of the same declaration are not consumed
   here (orchestrator and `ResultPipeline` respectively).
 - Only migrated rules (a `compute`) can be dispatched; the others
-  raise `NotImplementedError` until their migration.
+  raise `NotImplementedError` until their migration. All the rules of
+  the catalogue are migrated (the guard is kept for robustness —
+  `tests/test_registry_dispatch.py::test_unmigrated_rule_raises`
+  simulates an unmigrated class).
+
+### Conventions of the migrated rules (SPEC moteur/gestion)
+
+- The `compute()` is pure: no IFC loading, no selection, no
+  post-processing, it never touches `self.result`, `self.output` or
+  the display registry. Two documented exceptions: a few engines whose
+  helpers read their config off the instance (ClearanceForDoors,
+  Alignement, DirectView, FreeSpace) POSE the named parameters on the
+  instance at the start of the compute — the node remains the config
+  carrier.
+- `run()` stays the select → compute → pipeline adapter for as long
+  as RuleFile drives the rules (step 4 of the SPEC is pending): it
+  fills the DISPLAY REGISTRY in every state, exactly as the old
+  `run()` did — the display is a read-only consumer of the registry
+  (`tests/test_structure_DisplayUpdate.py` pins this behavior). The
+  data rebuilt from the info blocks travels through the
+  `_register_*_display_items` helpers; input data not carried by the
+  results (context elements, selected faces of the FaceCheck family,
+  zone solids, fitted elements) stays an adapter concern.
+- `Select.create_list_of_element()` rebuilds `list_of_elements` fresh
+  on every call: the same select instance feeds several rules, an
+  accumulated list would duplicate the elements (a select shared by
+  two rules used to quadruple the pairs — fixed with a regression
+  test).
 
 ---
 
@@ -655,33 +682,33 @@ point2 = dist_tool.PointOnShape2()
 
 | Rule | Type | Status | Doc | Test |
 |------|------|--------|-----|------|
-| Volume | 1-Object | ✅ | ❌ | ✅ |
-| Area | 1-Object | ✅ | ❌ | ✅ |
-| TopOrBottomSurface | 1-Object | ✅ | ❌ | ✅ |
-| LateralSurface | 1-Object | ⚠️ (local coords, see Rapport.md) | ❌ | ❌ |
-| ProjectedSurface | 1-Object | ⚠️ (local coords, see Rapport.md) | ❌ | ❌ |
-| ObbHigh | 1-Object | ⚠️ (OBB axes arbitrarily permuted by OCCT — confirmed, see Rapport.md) | ❌ | ❌ |
-| ObbLength | 1-Object | ⚠️ (Z exclusion assumption, see Rapport.md) | ❌ | ❌ |
-| Orientation | 1-Object | ✅ | ❌ | ✅ |
-| Intersection | 2-Objects | ✅ | ❌ | ✅ |
-| Clearance | 2-Objects | ✅ | ❌ | ✅ |
-| ClearanceAxisToAxis | 2-Objects | ✅ | ✅ | ✅ |
-| Collision | 2-Objects | ✅ | ❌ | ✅ |
+| Volume | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObject.py) | ❌ | ✅ |
+| Area | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObject.py) | ❌ | ✅ |
+| TopOrBottomSurface | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObject.py) | ❌ | ✅ |
+| LateralSurface | 1-Object | ⚠️ → ✅ — engine migrated to `compute()` ; le bug coordonnées locales est CORRIGÉ pendant la migration (SPEC point 3) : shapes en coordonnées monde ; tests compute : `tests/test_compute_LotsAB.py` (le test adaptateur `test_Rule_OneObject.py::test_lateral_rule` est recalibré pour le comportement corrigé : 5 → 7) | ❌ | ✅ |
+| ProjectedSurface | 1-Object | ⚠️ → ✅ — engine migrated to `compute()` ; le bug coordonnées locales est CORRIGÉ pendant la migration (SPEC point 3) ; tests compute : `tests/test_compute_LotsAB.py` (test adaptateur recalibré : 11 → 9) | ❌ | ✅ |
+| ObbHigh | 1-Object | ⚠️ → ✅ (OBB axes arbitrarily permuted by OCCT — confirmed, see Rapport.md) — engine migrated to `compute()` (hauteur mesurée par l'étendue Z des coins, axes OCCT non fiables) ; tests compute : `tests/test_compute_LotsAB.py` | ❌ | ✅ |
+| ObbLength | 1-Object | ⚠️ → ✅ (Z exclusion assumption, see Rapport.md) — engine migrated to `compute()` (axe vertical = axe le plus vertical de l'OBB) ; tests compute : `tests/test_compute_LotsAB.py` | ❌ | ✅ |
+| Orientation | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObject.py) | ❌ | ✅ |
+| Intersection | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
+| Clearance | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
+| ClearanceAxisToAxis | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Angles.py) | ✅ | ✅ |
+| Collision | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
 | Above | 2-Objects | ⚠️ (contradictory conventions, see Rapport.md §2) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Above.py) | ❌ | ✅ |
 | Below | 2-Objects | ⚠️ (semantics to clarify, see Rapport.md §2) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Below.py) | ❌ | ✅ |
-| Ray_Check | 2-Objects | ⚠️ | ❌ | ❌ |
-| OBB_Above | 2-Objects | ✅ | ❌ | ✅ |
-| OBB_Below | 2-Objects | ✅ | ❌ | ⚠️ |
-| OBB_Front_And_Back | 2-Objects | ⚠️ | ❌ | ❌ |
-| OBB_Custom | 2-Objects | ✅ (API misleading: `tolerance` is a list of modification strings) | ❌ | ❌ |
-| AngleBetween | 2-Objects | ✅ (no spatial prefilter, 180° symmetry unhandled, see Rapport.md) | ❌ | ❌ |
-| Alignement | 1-Object (Complexe) | ✅ | ✅ | ✅ |
-| SurfaceRecover | 2-Objects | ✅ | ✅ | ✅ |
-| DirectView | 2-Objects + context | ✅ | ✅ | ✅ |
-| OneObjectFace | 1-Object | ✅ | ✅ | ✅ |
-| TwoObjectsFace | 2-Objects (famille FaceCheck) | ✅ | ✅ | ✅ |
-| ClearanceForDoors | 2-Objects | ✅ | ✅ | ✅ |
-| FreeSpace | Complexe (1-Object + context) | ✅ | ✅ | ✅ |
+| Ray_Check | 2-Objects | ⚠️ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_RaysAndCustom.py) ; le contexte est une 3e liste d'entrée (liste_objet_contexte) | ❌ | ❌ |
+| OBB_Above | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OBB_Above_Below.py) | ❌ | ✅ |
+| OBB_Below | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OBB_Above_Below.py) | ❌ | ✅ |
+| OBB_Front_And_Back | 2-Objects | ⚠️ — engine migrated to `compute()` (comportement préservé, défaut documenté : le test rouge préexistant reste rouge) ; tests compute : `tests/test_compute_LotsAB.py` | ❌ | ✅ |
+| OBB_Custom | 2-Objects | ✅ (API misleading: `tolerance` is a list of modification strings) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_RaysAndCustom.py) ; les valeurs de modification acceptent un nombre (m) ou un pourcentage ("x%") : `_modification_value` | ❌ | ✅ |
+| AngleBetween | 2-Objects | ✅ (no spatial prefilter, 180° symmetry unhandled, see Rapport.md) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Angles.py) | ❌ | ❌ |
+| Alignement | 1-Object (Complexe) | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Alignement.py) ; les params sont posés sur l'instance par le compute (exception documentée : le nœud reste porteur de config), l'état moteur (alignment + objects/groups des zones) reste sur le nœud pour l'affichage | ✅ | ✅ |
+| SurfaceRecover | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_SurfaceRecover.py) ; bornes min_covering/max_covering au registre ; display des faces de contact reconstruit des blocs info (`_register_contact_faces_display`) | ✅ | ✅ |
+| DirectView | 2-Objects + context | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_DirectView.py) ; le contexte est une 3e liste d'entrée ; ray tree alimenté par `clash_utils.add_elements_to_ray_tree` ; display des rayons reconstruit des blocs info (`_register_raycast_display`) | ✅ | ✅ |
+| OneObjectFace | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObjectFace.py) ; `_run_checks`/`_check_pairs` reçoivent la config en paramètre (namespace), les faces des groupes restent un display d'adaptateur | ✅ | ✅ |
+| TwoObjectsFace | 2-Objects (famille FaceCheck) | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TwoObjectsFace.py) ; `_collect_faces` prend une liste plate + `register=True` : le compute passe register=False, l'enregistrement display reste à l'adaptateur | ✅ | ✅ |
+| ClearanceForDoors | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_ClearanceForDoors.py) ; le compute POSE les params sur l'instance avant `_build_zones` (le nœud reste porteur de config) ; les solides de zones sont reconstruits à l'adaptateur | ✅ | ✅ |
+| FreeSpace | Complexe (1-Object + context) | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_FreeSpace.py) ; LE cas du contrat 3 listes ; l'état moteur (placements + positions de sondes) reste sur le nœud pour l'affichage | ✅ | ✅ |
 
 See `Rapport.md` at the repository root for the full per-rule analysis:
 blocking bugs, doubtful logic and the spatial-prefilter inventory (§1.1).

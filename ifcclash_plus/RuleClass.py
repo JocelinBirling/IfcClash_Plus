@@ -201,10 +201,13 @@ class Select:
         self.dict_elements = Dict
 
     def create_list_of_element(self):
+        # Rebuilt fresh on every call: the same select instance feeds
+        # several rules (and several runs), an accumulated list would
+        # duplicate the elements and quadruple the pairs.
+        elements = []
         for onefile in self.list_ifc_file:
-            self.list_of_elements = (
-                list(self.dict_elements.get(onefile) or []) + self.list_of_elements
-            )
+            elements.extend(self.dict_elements.get(onefile) or [])
+        self.list_of_elements = elements
 
 
 class SelectFacet(Select):
@@ -1588,6 +1591,19 @@ class ZoneData(NamedTuple):
     height: float  # hauteur (m)
 
 
+class AxesData(NamedTuple):
+    """Orientation : un axe de la vérification d'orientation —
+    provenance : une seule règle (Orientation). Chaque axe est la
+    direction principale d'un OBB ou l'orientation attendue, posé au
+    centre de la géométrie de l'élément : le segment reconstruit la
+    visualisation sans relancer la règle."""
+
+    center: tuple  # (x, y, z)
+    direction: tuple  # unitaire, (x, y, z)
+    length: float  # m
+    label: str | None = None  # libre ("obb", "expected"...)
+
+
 # La forme sérialisable du contrat (voir to_dict) : c'est elle que
 # consomment la sérialisation, le futur C++ et la feuille de test.
 RESULT_SHAPE = {
@@ -1654,6 +1670,14 @@ RESULT_SHAPE = {
         "depth": float,  # m
         "height": float,  # m
     },
+    "axes": [  # Orientation
+        {
+            "center": tuple,  # POINT
+            "direction": tuple,  # POINT
+            "length": float,  # m
+            "label": str,  # optionnel
+        },
+    ],
 }
 
 
@@ -1693,6 +1717,8 @@ class ResultInfo:
             "offset",
             "hit_ratio",
             "angle",
+            "volume",
+            "area",
         }
     )
 
@@ -1712,6 +1738,8 @@ class ResultInfo:
         self.offset: float | None = None  # m
         self.hit_ratio: float | None = None  # 0..1
         self.angle: float | None = None  # deg
+        self.volume: float | None = None  # m3
+        self.area: float | None = None  # m2
 
         # -- Les points de contact / proximité, appariés PAR NUMÉRO :
         #    l'entrée n° N de source_points répond à l'entrée n° N de
@@ -1747,6 +1775,7 @@ class ResultInfo:
         self.axis_degraded: bool | None = None  # True si fallback géométrique
         self.raycast: RaycastData | None = None  # DirectView
         self.zone: ZoneData | None = None  # ClearanceForDoors
+        self.axes: list[AxesData] = []  # Orientation
 
     def __setattr__(self, name, value):
         # Écriture suivie, silencieuse : aucune validation, aucune
@@ -1793,6 +1822,10 @@ class ResultInfo:
     def add_target_obb(self, obb) -> None:
         """Coerce via ObbData(*obb)."""
         self.target_obbs.append(ObbData(*obb))
+
+    def add_axis(self, axis) -> None:
+        """Coerce via AxesData(*axis)."""
+        self.axes.append(AxesData(*axis))
 
     # ---- Lecture
     @property
@@ -1990,6 +2023,19 @@ class ResultInfo:
                             f"zone.{name}: {type(value).__name__} != float"
                         )
 
+        # Les axes : structure AxesData.
+        for index, axis in enumerate(self.axes):
+            path = f"axes[{index}]"
+            if not isinstance(axis, tuple) or len(axis) != 4:
+                faults.append(f"{path}: {type(axis).__name__} != AxesData")
+                continue
+            faults.extend(point_fault(f"{path}.center", axis[0]))
+            faults.extend(point_fault(f"{path}.direction", axis[1]))
+            if not is_number(axis[2]) or isinstance(axis[2], bool):
+                faults.append(f"{path}.length: {type(axis[2]).__name__} != float")
+            if axis[3] is not None and not isinstance(axis[3], str):
+                faults.append(f"{path}.label: {type(axis[3]).__name__} != str")
+
         return faults
 
     # ---- La frontière d'export
@@ -2097,6 +2143,21 @@ class ResultInfo:
                 # Un tuple nu posé directement reste valide.
                 zone = ZoneData(*zone)
             data["zone"] = zone._asdict()
+
+        if self.axes:
+            data["axes"] = []
+            for axis in self.axes:
+                if not hasattr(axis, "_asdict"):
+                    # Un tuple nu posé directement reste valide.
+                    axis = AxesData(*axis)
+                entry = {
+                    "center": axis.center,
+                    "direction": axis.direction,
+                    "length": axis.length,
+                }
+                if axis.label is not None:
+                    entry["label"] = axis.label
+                data["axes"].append(entry)
 
         return data
 
