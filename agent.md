@@ -26,6 +26,7 @@ You will never commit in git.
 ifcclash_plus/
 ├── __init__.py          # Package exports
 ├── RuleClass.py         # Base classes (RuleCheck, Select, Grouping, etc.)
+├── pipeline.py          # ResultPipeline + RuleOutput (SPEC moteur/gestion)
 ├── Rules.py             # Rule implementations (Volume, Clearance, OBB_Above, etc.)
 ├── CustomOBB.py          # Custom OBB generation and manipulation
 ├── clash_utils.py       # Geometry utilities (face extraction, distance calc)
@@ -115,6 +116,26 @@ rule.run()                         # run() takes NO argument
 Important: the state is an attribute set on the rule (`rule.state`), never an
 argument of `run()`. `SelectRule` sets `rule.state = "Select"` before calling
 `rule.run()`.
+
+### Rule Declaration (JSON) — SPEC moteur/gestion
+
+The engine/management separation lives in the CODE only. The JSON
+declaration of a rule (`serialize_rule_check`, the canonical on-disk
+format) stays FLAT and gathers everything under ONE rule: the selects
+(`select_source`, `select_target`), the engine parameters
+(`above_type`, `tolerance`...) and the management configuration
+(`select_exception`, `select_criticity`, `select_actor`,
+`select_grouping`, `abs_or_rel_check`) sit at the same level.
+
+- `registry.engine_params(rule_type)`: the flat keys of a rule
+  declaration that feed its named `compute()` call (from the
+  catalogue `params`).
+- `registry.compute_from_config(config, sources, targets, context)`:
+  the dispatch — flat declaration → named `compute()` call. The
+  selects/management keys of the same declaration are not consumed
+  here (orchestrator and `ResultPipeline` respectively).
+- Only migrated rules (a `compute`) can be dispatched; the others
+  raise `NotImplementedError` until their migration.
 
 ---
 
@@ -380,6 +401,11 @@ Tests must be run from the repository root (the IFC model paths are relative).
 > the human developer can close. An automated run of a display test
 > blocks the session until the window is closed by hand — it hangs and
 > wastes time. Display tests exist for manual, visual verification only.
+>
+> **One command = one test.** Never batch: no loop over several test
+> files in one shell command, no several paths in one pytest call.
+> Launch each test file (or single test) in its own command, check its
+> result, then move to the next one.
 
 ```bash
 # One test file at a time, display tests excluded
@@ -495,7 +521,8 @@ class TestYourNewRule(unittest.TestCase):
 
 ### Running Tests
 ```bash
-# One test file at a time — NOT the whole tests/ directory
+# One test file per command — NOT the whole tests/ directory, NOT a
+# batch of several files in one command
 python -m pytest tests/test_Rule_OneObject.py
 
 # One single test, verbose
@@ -640,8 +667,8 @@ point2 = dist_tool.PointOnShape2()
 | Clearance | 2-Objects | ✅ | ❌ | ✅ |
 | ClearanceAxisToAxis | 2-Objects | ✅ | ✅ | ✅ |
 | Collision | 2-Objects | ✅ | ❌ | ✅ |
-| Above | 2-Objects | ⚠️ (contradictory conventions, see Rapport.md §2) | ❌ | ❌ |
-| Below | 2-Objects | ⚠️ (semantics to clarify, see Rapport.md §2) | ❌ | ❌ |
+| Above | 2-Objects | ⚠️ (contradictory conventions, see Rapport.md §2) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Above.py) | ❌ | ✅ |
+| Below | 2-Objects | ⚠️ (semantics to clarify, see Rapport.md §2) — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Below.py) | ❌ | ✅ |
 | Ray_Check | 2-Objects | ⚠️ | ❌ | ❌ |
 | OBB_Above | 2-Objects | ✅ | ❌ | ✅ |
 | OBB_Below | 2-Objects | ✅ | ❌ | ⚠️ |

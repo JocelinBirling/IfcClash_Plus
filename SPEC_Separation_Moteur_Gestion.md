@@ -15,7 +15,7 @@ les Must rules.
 | Point | Décision |
 |---|---|
 | Contrat de la règle | `compute(liste_objet_source, liste_objet_target, *paramètres_de_la_règle, liste_objet_contexte=None) -> list[ClashResult]`. Les paramètres de la règle sont des **propriétés de la fonction** (arguments nommés), chaque type de règle a sa signature propre. La règle ne charge aucun fichier, ne prépare aucune sélection, ne post-traite aucun résultat. |
-| Configuration | Le dictionnaire produit par `serialize_rule_check` (`serialization.py`) reste le format canonique **sur disque** (JSON). Au niveau du code, la couche de dispatch (registre `type` → fonction) mappe le dictionnaire de config vers l'appel nommé de `compute`. Les selects ne font pas partie de la configuration de la règle. |
+| Configuration | Le dictionnaire produit par `serialize_rule_check` (`serialization.py`) reste le format canonique **sur disque** (JSON). **Arbitrage** : la déclaration JSON d'une règle reste **plate** et rassemble tout sous la même règle — selects, paramètres moteur et configuration de gestion au même niveau. La séparation moteur/gestion vit uniquement dans le code : la couche de dispatch (`registry.compute_from_config`) extrait la partie moteur et appelle `compute` en nommé ; le `ResultPipeline` lit la partie gestion ; l'orchestrateur lit les selects. |
 | BVH | Le tree est construit **par la règle elle-même** à chaque `compute` : contrat minimal, autonome. Un cache partagé par fichier serait une optimisation future, hors périmètre de cette refonte. |
 | Entrées | Des listes d'entités ifcopenshell. Chaque entité connaît son fichier (`.file`) : plus besoin de `update_file_info` ni de `dict_elements` par fichier à l'intérieur des règles. |
 | Sortie | Une liste de `ClashResult` brute (OneObject, TwoObjects ou Complex). Aucun post-traitement dans la règle : `status` est le verdict du calcul seul. |
@@ -90,7 +90,10 @@ def compute(liste_objet_source, liste_objet_target, *paramètres_de_la_règle,
 Le registre `registry.py` devient le dispatch `type` → fonction
 `compute` : il reçoit le dictionnaire de configuration sérialisé et le
 traduit en appel nommé (la sérialisation/désérialisation de
-configuration branche directement).
+configuration branche directement) — c'est `registry.compute_from_config`,
+implanté pour les règles migrées. La déclaration reçue reste la
+déclaration JSON plate d'une seule règle (voir l'arbitrage
+« Configuration » ci-dessus).
 
 ### Données de display portées par les résultats
 

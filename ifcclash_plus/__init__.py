@@ -13,6 +13,7 @@ from .RuleClass import (
     ResultInfo, RESULT_SHAPE,
     PointEntry, FaceData, FaceEntry, ObbData, RaycastData, ZoneData,
 )
+from .pipeline import ResultPipeline, RuleOutput
 from .CustomOBB import Custom_OBB
 
 # Create aliases for TopSurface and BottomSurface for backward compatibility
@@ -37,6 +38,8 @@ __all__ = [
     # Result data structure
     'ResultInfo', 'RESULT_SHAPE', 'PointEntry', 'FaceData', 'FaceEntry',
     'ObbData', 'RaycastData', 'ZoneData',
+    # Result management pipeline
+    'ResultPipeline', 'RuleOutput',
     # Serialization functions
     'save_to_json', 'load_from_json',
     'save_configuration_to_json', 'load_configuration_from_json',

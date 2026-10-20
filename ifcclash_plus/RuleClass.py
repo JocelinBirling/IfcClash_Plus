@@ -20,6 +20,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 
 from booleanrule import BooleanRule, BooleanLeaf
+from pipeline import ResultPipeline, RuleOutput
 
 from ifctester.facet import Entity, Attribute
 import ifcopenshell.geom
@@ -325,6 +326,10 @@ class RuleCheck:
         # on the same rule.
         self.result_before_abs_or_rel: list[ClashResult] = []
 
+        # The output of the ResultPipeline (results, selection,
+        # groups), produced by end_rule_action.
+        self.output: RuleOutput = None
+
         # The display geometry registry: filled during run() as a
         # by-product of the computation, read by the generic display.
         self.display_items: list[DisplayItem] = []
@@ -334,7 +339,12 @@ class RuleCheck:
         self.keep_display_items: bool = True
 
     def end_rule_action(self):
-        self.run_exception()
+        # The management steps (exception, criticity, actor,
+        # grouping/must, select) live in the ResultPipeline, outside
+        # of the rule computation (SPEC Separation moteur/gestion).
+        # The state routing below stays on the rule until the
+        # orchestrator migration.
+        self.output = ResultPipeline(self).apply()
 
         if self.state == "Display_Input":
             self._display_input_generic()
@@ -344,13 +354,10 @@ class RuleCheck:
         if self.state == "Display_Result":
             self.display_result()
         if self.state == "Final":
-            self.manage_result()
             if not self.keep_display_items:
                 # The registry is a temporary by-product: free the
                 # memory on the big models when it is not kept.
                 self.display_items.clear()
-        if self.state == "Select":
-            self.produce_select()
 
     def run_exception(self):
         def exception_same_ifcsystem(result) -> bool:

@@ -24,6 +24,7 @@ from OCC.Core.BRep import BRep_Builder
 from OCC.Core.TopoDS import TopoDS_Compound, TopoDS_Shell, topods
 from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing
 from OCC.Core.TopAbs import TopAbs_SHELL
+from OCC.Core.TopLoc import TopLoc_Location
 import math
 from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec
 from OCC.Core.BRepGProp import BRepGProp_Face
@@ -33,7 +34,7 @@ from OCC.Core.BRep import BRep_Builder
 from OCC.Core.BRepCheck import BRepCheck_Analyzer
 from OCC.Core.TopoDS import TopoDS_Shape
 from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
-
+from CustomOBB import create_obb_from_TopoDs_Shape
 
 AXIS_LITERAL = Literal["X", "Y", "Z"]
 
@@ -747,6 +748,229 @@ def get_face_center(face: TopoDS_Face) -> gp_Pnt:
     props = GProp_GProps()
     brepgprop.SurfaceProperties(face, props)
     return props.CentreOfMass()
+
+
+def get_face_area(face: TopoDS_Face) -> float:
+    """L'aire d'une face (les propriétés de surface d'OCC, en m2 modèle)."""
+    props = GProp_GProps()
+    brepgprop.SurfaceProperties(face, props)
+    return props.Mass()
+
+
+def face_triangles(face: TopoDS_Face, linear_deflection: float = 0.01) -> list[tuple]:
+    """Les triangles d'une face, en tuples sérialisables : une liste de
+    triangles, chaque triangle 3 points (x, y, z).
+
+    La face est maillée en place (BRepMesh, déflection linéaire) : une
+    face plane donne ses triangles exacts, une face courbée donne sa
+    tessellation. Liste vide quand la face ne porte pas de triangulation.
+
+    Le bloc ``faces`` des résultats (FaceData) porte ces triangles : le
+    display ou un logiciel tiers reconstruit la face depuis ses seules
+    données, sans relancer la règle.
+    """
+    BRepMesh_IncrementalMesh(face, linear_deflection, False, 0.5, True)
+    triangulation = BRep_Tool.Triangulation(face, TopLoc_Location())
+    if triangulation is None:
+        return []
+
+    triangles = []
+    for index in range(1, triangulation.NbTriangles() + 1):
+        nodes = triangulation.Triangle(index).Get()
+        triangles.append(
+            tuple(
+                (
+                    triangulation.Node(node).X(),
+                    triangulation.Node(node).Y(),
+                    triangulation.Node(node).Z(),
+                )
+                for node in nodes
+            )
+        )
+    return triangles
+
+
+def obb_shape_from_data(obb_data) -> TopoDS_Compound:
+    """Un solide affichable reconstruit d'un bloc ObbData des résultats
+    (center, axes, half_sizes[, label]) : le consommateur de display
+    reconstruit la boîte depuis les seules données sérialisées, sans
+    la règle (SPEC : le display consomme les résultats).
+
+    Un composé des 6 faces de la boîte : assez pour l'affichage, la
+    boîte n'est jamais clashée depuis cette reconstruction.
+    """
+    center, axes, half_sizes = obb_data[0], obb_data[1], obb_data[2]
+    cx, cy, cz = center
+    (ax, ay, az), (bx, by, bz), (dx, dy, dz) = axes
+    hx, hy, hz = half_sizes
+
+    # Les 8 coins, indexés par le motif de signes (sx, sy, sz) :
+    # index = sx*4 + sy*2 + sz avec s = -1 -> 0, +1 -> 1.
+    corners = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for sz in (-1, 1):
+                corners.append(
+                    gp_Pnt(
+                        cx + sx * ax * hx + sy * bx * hy + sz * dx * hz,
+                        cy + sx * ay * hx + sy * by * hy + sz * dy * hz,
+                        cz + sx * az * hx + sy * bz * hy + sz * dz * hz,
+                    )
+                )
+
+    # Les 6 faces, chacune un quadrilatère fermé de 4 coins.
+    face_indices = (
+        (0, 1, 3, 2),  # x -
+        (4, 6, 7, 5),  # x +
+        (0, 4, 5, 1),  # y -
+        (2, 3, 7, 6),  # y +
+        (0, 2, 6, 4),  # z -
+        (1, 5, 7, 3),  # z +
+    )
+
+    compound = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(compound)
+    for indices in face_indices:
+        polygon = BRepBuilderAPI_MakePolygon()
+        for index in indices:
+            polygon.Add(corners[index])
+        polygon.Close()
+        builder.Add(compound, BRepBuilderAPI_MakeFace(polygon.Wire()).Face())
+    return compound
+
+
+# ---- The Above/Below engine primitives (SPEC Separation
+# moteur/gestion): shared by the two rules, parameterized by the
+# searched side.
+
+
+def elements_extrem_data(
+    elements,
+    geom_settings,
+    direction: gp_Dir,
+    zone_height: float = None,
+    zone_side: str = "top",
+) -> list[dict]:
+    """Per element: the extrem faces toward the direction, the object
+    OBB and — with a zone_height — the detection zone extruded by
+    zone_height on the zone_side ("top" or "bottom") of the object.
+
+    The elements come as a flat list: each one knows its file
+    (.file, ifcopenshell 0.9), they are grouped per file to build one
+    reusable geometry kernel per file (ifcopenshell.geom.kernel, new
+    in 0.9) — the speed of the iterator without its include
+    bookkeeping. An element without computable geometry is skipped,
+    as the plain-settings iterator did.
+    """
+    by_file = {}
+    for element in elements:
+        by_file.setdefault(element.file, []).append(element)
+
+    data = []
+    for ifc_file, file_elements in by_file.items():
+        kernel = ifcopenshell.geom.kernel(geom_settings, ifc_file)
+        for entity in file_elements:
+            try:
+                shape = kernel.create_shape(inst=entity)
+            except Exception:
+                # No computable geometry: the plain-settings iterator
+                # skipped these elements, create_shape raises instead.
+                continue
+            geom = shape.geometry
+            if geom is None:
+                continue
+
+            obb = create_obb_from_TopoDs_Shape(geom)
+            extrem_faces = get_faces_visible_from_direction_with_plane(
+                shape=geom, direction=direction
+            )
+
+            entry = {
+                "entity": entity,
+                "extrem_faces": extrem_faces["visible_faces"],
+                "object_obb": obb,
+            }
+            if zone_height is not None:
+                if zone_side == "top":
+                    entry["zone_obb"] = obb.detach_top_by_extrude(zone_height)
+                else:
+                    entry["zone_obb"] = obb.detach_bottom_by_extrude(zone_height)
+            data.append(entry)
+
+    return data
+
+
+def check_extrem_face_distance(
+    list_of_source_face, list_of_target_face, tolerance: float, side: str
+) -> dict:
+    """The verdict of the extrem faces of one pair: "Right_Side" when
+    a source point sits exactly on the searched side of a target
+    point of two extrem faces closer than the tolerance, "Too_Far"
+    when no extrem face pair is close enough, "Need_More_Check" with
+    the candidate points otherwise.
+
+    side "above": a solution with pt_source above pt_source is
+    rejected (the target must sit above the source). side "below":
+    the mirror. The X/Y alignment threshold (1e-3) is the one of the
+    former Above._check_distance / Below._check_distance.
+
+    The candidate points carry their faces and distance: the caller
+    casts its rays from them and builds the info blocks of its
+    verdict.
+    """
+    verdict = {"side": None, "details": None, "candidates": []}
+    for source_face in list_of_source_face:
+        for target_face in list_of_target_face:
+            dist_tool = BRepExtrema_DistShapeShape()
+            dist_tool.LoadS1(source_face)
+            dist_tool.LoadS2(target_face)
+            dist_tool.Perform()
+            distance = dist_tool.Value()
+
+            # If they touch (distance <= tolerance), it's close
+            # enough to check the exact side relation.
+            if distance <= tolerance:
+                # OCC solutions are indexed from 1 to NbSolution()
+                # inclusive.
+                for i in range(1, dist_tool.NbSolution() + 1):
+                    pt_source = dist_tool.PointOnShape1(i)
+                    pt_target = dist_tool.PointOnShape2(i)
+
+                    if side == "above":
+                        if pt_source.Z() > pt_target.Z():
+                            continue
+                    else:
+                        if pt_source.Z() < pt_target.Z():
+                            continue
+
+                    if abs(pt_source.X() - pt_target.X()) < 1e-3:
+                        if abs(pt_source.Y() - pt_target.Y()) < 1e-3:
+                            verdict["side"] = "Right_Side"
+                            verdict["details"] = {
+                                "source_face": source_face,
+                                "target_face": target_face,
+                                "source_point": (pt_source.X(), pt_source.Y(), pt_source.Z()),
+                                "target_point": (pt_target.X(), pt_target.Y(), pt_target.Z()),
+                                "distance": distance,
+                            }
+                            return verdict
+
+                    verdict["candidates"].append(
+                        {
+                            "point": pt_target,
+                            "source_face": source_face,
+                            "target_face": target_face,
+                            "distance": distance,
+                        }
+                    )
+
+    if verdict["candidates"] == []:
+        verdict["side"] = "Too_Far"
+    else:
+        verdict["side"] = "Need_More_Check"
+
+    return verdict
 
 
 def is_face_oriented_toward_direction(

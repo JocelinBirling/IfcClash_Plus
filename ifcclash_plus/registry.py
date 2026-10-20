@@ -525,3 +525,68 @@ def find_facet(facet_type: str) -> dict[str, Any]:
         if facet["type"] == facet_type:
             return facet
     raise KeyError(f"Unknown facet type: {facet_type}")
+
+
+# ---- The dispatch of a serialized rule declaration to its compute
+# (SPEC Separation moteur/gestion).
+#
+# The JSON declaration of a rule stays FLAT and gathers everything
+# under one same rule (arbitration of the SPEC): the selects, the
+# engine parameters and the management configuration sit at the same
+# level of the dictionary produced by serialize_rule_check. The
+# engine/gestion separation lives in the code only: this dispatch
+# reads the engine part of the flat declaration and calls compute
+# with it, the ResultPipeline reads the management part, the
+# orchestrator reads the selects.
+
+
+def engine_params(rule_type: str) -> list[str]:
+    """The engine parameters of a rule, as declared by the catalogue:
+    the flat keys of the serialized rule declaration that feed the
+    named compute() call of the rule.
+
+    The params of a catalogue entry are the engine parameters of the
+    rule, in the signature order of its compute.
+    """
+    return [param["name"] for param in find_rule(rule_type)["params"]]
+
+
+def compute_from_config(
+    config: dict[str, Any],
+    liste_objet_source: list,
+    liste_objet_target: list = None,
+    liste_objet_contexte: list = None,
+) -> list:
+    """The dispatch of one serialized rule declaration to its compute.
+
+    The flat declaration (serialize_rule_check, the canonical JSON
+    format) is rebuilt into its executable rule, then its engine
+    parameters — the ones the catalogue declares — are extracted and
+    passed to compute() as the named arguments of the rule. The
+    selects, the exceptions, criticity, actor, grouping and Must
+    configuration of the same declaration are NOT consumed here:
+    they belong to the orchestrator and to the ResultPipeline.
+
+    Only the migrated rules expose a compute: dispatching a rule
+    type still waiting for its migration raises NotImplementedError.
+    """
+    # A local import: the registry stays import-light (the IPC loads
+    # it for the catalogue), the serialization pulls the rules.
+    from serialization import deserialize_rule_check
+
+    rule_type = config["type"]
+    rule = deserialize_rule_check(config)
+
+    if not hasattr(rule, "compute"):
+        raise NotImplementedError(
+            f"the rule type '{rule_type}' has no compute yet "
+            "(SPEC Separation moteur/gestion: migration pending)"
+        )
+
+    params = {name: config[name] for name in engine_params(rule_type) if name in config}
+    return rule.compute(
+        liste_objet_source,
+        liste_objet_target,
+        liste_objet_contexte=liste_objet_contexte,
+        **params,
+    )

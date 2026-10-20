@@ -1253,7 +1253,120 @@ BELOW_TYPE = Literal[
 ]
 
 
+# ---- The Above/Below shared helpers (SPEC Separation moteur/gestion).
+#
+# The two rules are near mirrors: the same extrem-face detection, the
+# same OBB prefilter, the same result construction — parameterized by
+# the searched side. The geometry primitives live in clash_utils
+# (elements_extrem_data, check_extrem_face_distance); these helpers
+# carry the rule-side conventions.
+
+
+def above_below_directions(rule_type):
+    """The extrem faces of each side, from the bounding method encoded
+    in the type string (Above_* / Below_*): "MinTo" looks at the
+    bottom faces of the source, "ToMin" at the bottom faces of the
+    target (the Max side is the default)."""
+    if "MinTo" in rule_type:
+        source_direction = gp_Dir(0.0, 0.0, -1.0)
+    else:
+        source_direction = gp_Dir(0.0, 0.0, 1.0)
+
+    if "ToMin" in rule_type:
+        target_direction = gp_Dir(0.0, 0.0, -1.0)
+    else:
+        target_direction = gp_Dir(0.0, 0.0, 1.0)
+
+    return source_direction, target_direction
+
+
+def _point_tuple(point):
+    """A gp_Pnt as a plain (x, y, z) tuple."""
+    return (point.X(), point.Y(), point.Z())
+
+
+def _extrem_face_data(face):
+    """The serializable FaceData of one extrem face (normal, area,
+    triangles): enough to rebuild the face, in the display or in
+    another software, without rerunning the rule."""
+    normal = clash_utils.get_face_normal(face)
+    return (
+        (normal.X(), normal.Y(), normal.Z()) if normal else (0.0, 0.0, 0.0),
+        clash_utils.get_face_area(face),
+        clash_utils.face_triangles(face),
+    )
+
+
+def _make_extrem_result(source, target, details, label):
+    """One Above/Below verdict with its display data in the info
+    blocks: the extrem face pair (triangulated), the point pair, the
+    measured distance and the OBBs of the two elements, the source
+    detection zone included."""
+    result = ClashResultTwoObjects(
+        source=source["entity"],
+        target=target["entity"],
+        state=True,
+    )
+    info = result.info
+    info.distance = details["distance"]
+    info.add_point_pair(details["source_point"], details["target_point"], label=label)
+    info.add_face_pair(
+        _extrem_face_data(details["source_face"]),
+        _extrem_face_data(details["target_face"]),
+    )
+    info.add_source_obb(source["object_obb"].to_data("object"))
+    info.add_source_obb(source["zone_obb"].to_data("zone"))
+    info.add_target_obb(target["object_obb"].to_data("object"))
+    return result
+
+
+def _register_extrem_display_items(rule, results):
+    """The display items of the old registry, rebuilt from the info
+    blocks of the results: the extrem faces of the verdicts and the
+    detection zone of the source. The display becomes a consumer of
+    the results (SPEC): the rule itself registers nothing anymore.
+    """
+    for result in results:
+        for entry in result.info.source_faces:
+            for triangle in entry.face.triangles:
+                rule.register_display_item(
+                    "face",
+                    ("face", triangle),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=result.source,
+                )
+        for entry in result.info.target_faces:
+            for triangle in entry.face.triangles:
+                rule.register_display_item(
+                    "face",
+                    ("face", triangle),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=result.target,
+                )
+        for obb in result.info.source_obbs:
+            if obb.label == "zone":
+                rule.register_display_item(
+                    "zone",
+                    clash_utils.obb_shape_from_data(obb),
+                    (1, 0.5, 0),
+                    0.7,
+                    element=result.source,
+                )
+
+
 class Above(RuleCheckTwoObjects):
+    """The Above rule: flags the source/target pairs whose target sits
+    above the source, per the bounding method of above_type (see
+    Rapport.md §2 about the directional conventions).
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules.
+    """
+
     def __init__(
         self, source, target, above_type: ABOVE_TYPE, tolerance=0.1, state="Final"
     ):
@@ -1264,196 +1377,143 @@ class Above(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
+
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        sources_data = []
-        targets_data = []
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.type,
+            self.tolerance,
+        )
+        self.result.extend(results)
 
-        if "MinTo" in self.type:
-            source_direction = gp_Dir(0.0, 0.0, -1.0)
-        else:
-            source_direction = gp_Dir(0.0, 0.0, 1.0)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_extrem_display_items(self, results)
 
-        if "ToMin" in self.type:
-            target_direction = gp_Dir(0.0, 0.0, -1.0)
-        else:
-            target_direction = gp_Dir(0.0, 0.0, 1.0)
+        self.end_rule_action()
 
-        # Check the extrem face of the source
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        above_type,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        sits above the source, per the bounding method of above_type.
 
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_top_by_extrude(self.tolerance)
+        Pure computation (SPEC Separation moteur/gestion): it loads
+        no file, runs no selection and post-processes no result — no
+        exception, criticity, actor, grouping nor select runs here.
+        The verdicts are returned, self.result is not touched, and
+        nothing is registered for the display: the display data
+        travels in the info blocks of the results.
 
-                    #@todo Implement a fonction to determine the number of faces that are toward the direction. We need to have at least the same number of ray.
+        The shapes are read through a reusable ifcopenshell.geom.kernel
+        (new in 0.9, see clash_utils.elements_extrem_data): one kernel
+        per file, built once, shared by every create_shape of the
+        sources and the targets.
 
-                    extrem_faces = (
-                        clash_utils.get_faces_visible_from_direction_with_plane(
-                            shape=geom, direction=source_direction
-                        )
-                    )
+        Each verdict carries in its info blocks: the extrem face pair
+        that produced it (faces, triangulated), its point pair
+        (points), the measured distance and the OBBs of the two
+        elements, the source detection zone included (obbs).
+        """
+        source_direction, target_direction = above_below_directions(above_type)
 
-                    # The extreme faces, kept in the display registry.
-                    for face in extrem_faces["visible_faces"]:
-                        self.register_display_item(
-                            "face", face, (0.5,0,1), 0.2, element=entity
-                        )
+        sources_data = clash_utils.elements_extrem_data(
+            liste_objet_source,
+            self.geom_settings,
+            source_direction,
+            zone_height=tolerance,
+            zone_side="top",
+        )
+        targets_data = clash_utils.elements_extrem_data(
+            liste_objet_target, self.geom_settings, target_direction
+        )
 
-                    dict = {
-                        "entity": entity,
-                        "extrem_faces": extrem_faces["visible_faces"],
-                        "obb": clash_obb,
-                    }
-                    sources_data.append(dict)
-
-                    if not iterator.next():
-                        break
-
-        # Check the extrem face of the target
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    extrem_faces = (
-                        clash_utils.get_faces_visible_from_direction_with_plane(
-                            shape=geom, direction=target_direction
-                        )
-                    )
-
-                    # The extreme faces, kept in the display registry.
-                    for face in extrem_faces["visible_faces"]:
-                        self.register_display_item(
-                            "face", face, (0.5,0,1), 0.2, element=entity
-                        )
-
-                    dict = {
-                        "entity": entity,
-                        "extrem_faces": extrem_faces["visible_faces"],
-                        "obb": obb,
-                    }
-                    targets_data.append(dict)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        # Check if part of extrem faces are close to each other
+        results = []
         for source in sources_data:
-            flag_is_above = False
-            source_globalid = str(source["entity"].GlobalId)
-
             for target in targets_data:
-                target_globalid = target["entity"].GlobalId
-
-                if source["obb"].IsOut(target["obb"]):
+                # Spatial prefilter: the detection zone of the source
+                # against the object OBB of the target.
+                if source["zone_obb"].IsOut(target["object_obb"]):
                     continue
 
-                source_geom = source["extrem_faces"]
-                target_geom = target["extrem_faces"]
+                check = clash_utils.check_extrem_face_distance(
+                    source["extrem_faces"],
+                    target["extrem_faces"],
+                    tolerance,
+                    side="above",
+                )
 
-                result = self._check_distance(source_geom, target_geom)
-
-                if result["is_above"] == "Right_Above":
-                    self.result.append(
-                        ClashResultTwoObjects(
-                            source=source["entity"],
-                            target=target["entity"],
-                            state=True,
+                if check["side"] == "Right_Side":
+                    results.append(
+                        _make_extrem_result(
+                            source, target, check["details"], label="above"
                         )
                     )
                     continue
-                if result["is_above"] == "Too_Far":
+                if check["side"] == "Too_Far":
                     continue
 
+                # Need_More_Check: a ray cast down from each candidate
+                # point must hit a source extrem face below.
                 pair_detected = False
-                for source_face in source_geom:
+                for source_face in source["extrem_faces"]:
                     if pair_detected:
                         break
-                    for point_on_target in result["list_of_point_on_target"]:
-                        bottom_direction = gp_Dir(0.0, 0.0, -1.0)
-                        ray = gp_Lin(point_on_target, bottom_direction)
+                    for candidate in check["candidates"]:
+                        ray = gp_Lin(candidate["point"], gp_Dir(0.0, 0.0, -1.0))
 
-                        # Trouver les intersections avec la shape
+                        # Trouver les intersections avec la face
                         inter = BRepIntCurveSurface_Inter()
                         inter.Init(source_face, ray, 1e-7)
 
                         if inter.More():
-                            self.result.append(
-                                ClashResultTwoObjects(
-                                    source=source["entity"],
-                                    target=target["entity"],
-                                    state=True,
+                            details = {
+                                "source_face": source_face,
+                                "target_face": candidate["target_face"],
+                                "source_point": _point_tuple(inter.Pnt()),
+                                "target_point": _point_tuple(candidate["point"]),
+                                "distance": candidate["distance"],
+                            }
+                            results.append(
+                                _make_extrem_result(
+                                    source, target, details, label="ray"
                                 )
                             )
                             pair_detected = True
                             break
 
-        self.end_rule_action()
-
-    def _check_distance(self, list_of_source_face, list_of_target_face):
-        dict_to_return = {"is_above": None, "list_of_point_on_target": []}
-        for source_face in list_of_source_face:
-            for target_face in list_of_target_face:
-                dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_face)
-                dist_tool.LoadS2(target_face)
-                dist_tool.Perform()
-                distance = dist_tool.Value()
-
-                # If they touch (distance <= tolerance), it's close enough to check if the face is exactly above.
-                if distance <= self.tolerance:
-                    # We check if the target point is exactly above the source point.
-                    # OCC solutions are indexed from 1 to NbSolution() inclusive.
-                    for i in range(1, dist_tool.NbSolution() + 1):
-                        pt_source = dist_tool.PointOnShape1(i)
-                        pt_target = dist_tool.PointOnShape2(i)
-
-                        if pt_source.Z() > pt_target.Z():
-                            continue
-
-                        if abs(pt_source.X() - pt_target.X()) < 1e-3:
-                            if abs(pt_source.Y() - pt_target.Y()) < 1e-3:
-                                dict_to_return["is_above"] = "Right_Above"
-                                return dict_to_return
-
-                        dict_to_return["list_of_point_on_target"].append(pt_target)
-
-        if dict_to_return["list_of_point_on_target"] == []:
-            dict_to_return["is_above"] = "Too_Far"
-        else:
-            dict_to_return["is_above"] = "Need_More_Check"
-
-        return dict_to_return
+        return results
 
 
 class Below(RuleCheckTwoObjects):
+    """The Below rule: flags the source/target pairs whose target sits
+    below the source, per the bounding method of below_type (see
+    Rapport.md §2 about the directional conventions and the semantics
+    to clarify).
+
+    Migration (SPEC Separation moteur/gestion): compute() is the pure
+    engine — entity lists and named parameters in, raw results out.
+    run() stays the select -> compute -> pipeline adapter for as long
+    as RuleFile drives the rules. The Above/Below primitives are
+    shared through clash_utils and the module helpers.
+    """
+
     def __init__(
         self, source, target, below_type: BELOW_TYPE, tolerance=0.1, state="Final"
     ):
@@ -1464,186 +1524,123 @@ class Below(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
     def run(self):
+        # The migration adapter: the selections feed the compute, the
+        # pipeline closes the run (end_rule_action).
         self.display_items.clear()
-        self.tree = clash_utils.make_clash_tree()
+
         self.select_source.run()
         self.select_target.run()
+        self.select_source.create_list_of_element()
+        self.select_target.create_list_of_element()
 
-        sources_data = []
-        targets_data = []
+        results = self.compute(
+            self.select_source.list_of_elements,
+            self.select_target.list_of_elements,
+            self.type,
+            self.tolerance,
+        )
+        self.result.extend(results)
 
-        if "MinTo" in self.type:
-            source_direction = gp_Dir(0.0, 0.0, -1.0)
-        else:
-            source_direction = gp_Dir(0.0, 0.0, 1.0)
+        if self.state in ("Display_Input", "Display_Result"):
+            # The display consumes the results (SPEC): the items of
+            # the old registry are rebuilt from the info blocks.
+            _register_extrem_display_items(self, results)
 
-        if "ToMin" in self.type:
-            target_direction = gp_Dir(0.0, 0.0, -1.0)
-        else:
-            target_direction = gp_Dir(0.0, 0.0, 1.0)
+        self.end_rule_action()
 
-        # Check the extrem face of the source
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        below_type,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs whose target
+        sits below the source, per the bounding method of below_type.
 
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    clash_obb = obb.detach_bottom_by_extrude(self.tolerance)
+        Pure computation (SPEC Separation moteur/gestion): it loads
+        no file, runs no selection and post-processes no result — no
+        exception, criticity, actor, grouping nor select runs here.
+        The verdicts are returned, self.result is not touched, and
+        nothing is registered for the display: the display data
+        travels in the info blocks of the results.
 
-                    extrem_faces = (
-                        clash_utils.get_faces_visible_from_direction_with_plane(
-                            shape=geom, direction=source_direction
-                        )
-                    )
+        Each verdict carries in its info blocks: the extrem face pair
+        that produced it (faces, triangulated), its point pair
+        (points), the measured distance and the OBBs of the two
+        elements, the source detection zone included (obbs).
+        """
+        source_direction, target_direction = above_below_directions(below_type)
 
-                    # The extreme faces, kept in the display registry.
-                    for face in extrem_faces["visible_faces"]:
-                        self.register_display_item(
-                            "face", face, (0.5,0,1), 0.2, element=entity
-                        )
+        sources_data = clash_utils.elements_extrem_data(
+            liste_objet_source,
+            self.geom_settings,
+            source_direction,
+            zone_height=tolerance,
+            zone_side="bottom",
+        )
+        targets_data = clash_utils.elements_extrem_data(
+            liste_objet_target, self.geom_settings, target_direction
+        )
 
-                    dict = {
-                        "entity": entity,
-                        "extrem_faces": extrem_faces["visible_faces"],
-                        "obb": clash_obb,
-                    }
-                    sources_data.append(dict)
-
-                    if not iterator.next():
-                        break
-
-        # Check the extrem face of the target
-        for ifc_file in self.select_target.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_target.dict_elements[ifc_file],
-            )
-
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.data.id)
-
-                    obb = create_obb_from_TopoDs_Shape(geom)
-                    extrem_faces = (
-                        clash_utils.get_faces_visible_from_direction_with_plane(
-                            shape=geom, direction=target_direction
-                        )
-                    )
-
-                    # The extreme faces, kept in the display registry.
-                    for face in extrem_faces["visible_faces"]:
-                        self.register_display_item(
-                            "face", face, (0.5,0,1), 0.2, element=entity
-                        )
-
-                    dict = {
-                        "entity": entity,
-                        "extrem_faces": extrem_faces["visible_faces"],
-                        "obb": obb,
-                    }
-                    targets_data.append(dict)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-
-        # Check if part of extrem faces are close to each other
+        results = []
         for source in sources_data:
             for target in targets_data:
-                if source["obb"].IsOut(target["obb"]):
+                # Spatial prefilter: the detection zone of the source
+                # against the object OBB of the target.
+                if source["zone_obb"].IsOut(target["object_obb"]):
                     continue
 
-                source_geom = source["extrem_faces"]
-                target_geom = target["extrem_faces"]
+                check = clash_utils.check_extrem_face_distance(
+                    source["extrem_faces"],
+                    target["extrem_faces"],
+                    tolerance,
+                    side="below",
+                )
 
-                result = self._check_distance(source_geom, target_geom)
-
-                if result["is_below"] == "Right_Below":
-                    self.result.append(
-                        ClashResultTwoObjects(
-                            source=source["entity"],
-                            target=target["entity"],
-                            state=True,
+                if check["side"] == "Right_Side":
+                    results.append(
+                        _make_extrem_result(
+                            source, target, check["details"], label="below"
                         )
                     )
                     continue
-                if result["is_below"] == "Too_Far":
+                if check["side"] == "Too_Far":
                     continue
 
+                # Need_More_Check: a ray cast up from each candidate
+                # point must hit a source extrem face above.
                 pair_detected = False
-                for source_face in source_geom:
+                for source_face in source["extrem_faces"]:
                     if pair_detected:
                         break
-                    for point_on_target in result["list_of_point_on_target"]:
-                        bottom_direction = gp_Dir(0.0, 0.0, 1.0)
-                        ray = gp_Lin(point_on_target, bottom_direction)
+                    for candidate in check["candidates"]:
+                        ray = gp_Lin(candidate["point"], gp_Dir(0.0, 0.0, 1.0))
 
-                        # Trouver les intersections avec la shape
+                        # Trouver les intersections avec la face
                         inter = BRepIntCurveSurface_Inter()
                         inter.Init(source_face, ray, 1e-7)
 
                         if inter.More():
-                            self.result.append(
-                                ClashResultTwoObjects(
-                                    source=source["entity"],
-                                    target=target["entity"],
-                                    state=True,
+                            details = {
+                                "source_face": source_face,
+                                "target_face": candidate["target_face"],
+                                "source_point": _point_tuple(inter.Pnt()),
+                                "target_point": _point_tuple(candidate["point"]),
+                                "distance": candidate["distance"],
+                            }
+                            results.append(
+                                _make_extrem_result(
+                                    source, target, details, label="ray"
                                 )
                             )
                             pair_detected = True
                             break
 
-        self.end_rule_action()
-
-    def _check_distance(self, list_of_source_face, list_of_target_face):
-        dict_to_return = {"is_below": None, "list_of_point_on_target": []}
-        for source_face in list_of_source_face:
-            for target_face in list_of_target_face:
-                dist_tool = BRepExtrema_DistShapeShape()
-                dist_tool.LoadS1(source_face)
-                dist_tool.LoadS2(target_face)
-                dist_tool.Perform()
-                distance = dist_tool.Value()
-
-                # If they touch (distance <= tolerance), it's close enough to check if the face is exactly above.
-                if distance <= self.tolerance:
-                    # We check if the target point is exactly above the source point.
-                    for i in range(1, dist_tool.NbSolution()+1):
-                        pt_source = dist_tool.PointOnShape1(i)
-                        pt_target = dist_tool.PointOnShape2(i)
-
-                        if pt_source.Z() < pt_target.Z():
-                            continue
-
-                        if abs(pt_source.X() - pt_target.X()) < 1e-3:
-                            if abs(pt_source.Y() - pt_target.Y()) < 1e-3:
-                                dict_to_return["is_below"] = "Right_Below"
-                                return dict_to_return
-
-                        dict_to_return["list_of_point_on_target"].append(pt_target)
-
-        if dict_to_return["list_of_point_on_target"] == []:
-            dict_to_return["is_below"] = "Too_Far"
-        else:
-            dict_to_return["is_below"] = "Need_More_Check"
-
-        return dict_to_return
+        return results
 
 
 
