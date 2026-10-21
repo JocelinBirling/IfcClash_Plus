@@ -119,6 +119,28 @@ class TestComputeObbHigh(_CubeModelMixin):
         storey = self.file.by_type("IfcBuildingStorey")[0]
         self.assertEqual(rule.compute([storey], -1e9, 1e9), [])
 
+    def test_display_states_emit_all_geometries(self):
+        """Display_Input: the OBB of EVERY source comes out and the
+        result list does not (the engine is not run). Display_Result:
+        every OBB AND the results. Two sources whose verdicts differ:
+        both geometries come out in both display states."""
+        sources = [self._element("CubeA"), self._element("CuboidA")]
+
+        rule = ObbHigh(None, 0.5, 1.5, state="Display_Input")
+        results = rule.compute(sources, 0.5, 1.5)
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "obb")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = ObbHigh(None, 0.5, 1.5, state="Display_Result")
+        results = rule.compute(sources, 0.5, 1.5)
+        # Only CubeA passes the bounds, but BOTH OBBs are drawn.
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), 2)
+
 
 class TestComputeObbLength(_CubeModelMixin):
     """The compute contract of ObbLength: the widest (or narrowest) of
@@ -153,6 +175,26 @@ class TestComputeObbLength(_CubeModelMixin):
         self.assertEqual(len(self._compute("CuboidA", 1.5, 2.5, "Wide")), 1)
         self.assertEqual(self._compute("CuboidA", 2.0, 2.5, "Wide"), [])
         self.assertEqual(self._compute("CuboidA", 1.0, 1.5, "Wide"), [])
+
+    def test_display_states_emit_all_geometries(self):
+        """Display_Input: the OBB of EVERY source comes out and the
+        result list does not. Display_Result: every OBB AND the
+        results."""
+        sources = [self._element("CubeA"), self._element("CuboidA")]
+
+        rule = ObbLength(None, -1e9, 1e9, "Wide", state="Display_Input")
+        results = rule.compute(sources, -1e9, 1e9, "Wide")
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "obb")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = ObbLength(None, -1e9, 1e9, "Wide", state="Display_Result")
+        results = rule.compute(sources, -1e9, 1e9, "Wide")
+        self.assertEqual(len(results), 2)
+        self.assertEqual(len(rule.display_items), 2)
 
 
 class TestComputeLateralSurface(_CubeModelMixin):
@@ -312,6 +354,29 @@ class TestComputeObbFrontAndBack(unittest.TestCase):
         self.assertEqual(rule.result, ["sentinel"])
         self.assertEqual(rule.display_items, ["sentinel"])
         self.assertIsNone(rule.output)
+
+    def test_display_states_emit_all_zone_geometries(self):
+        """Display_Input: the TWO detection bands of the source come
+        out and the result list does not (the engine is not run).
+        Display_Result: the two bands AND the results — the bug of the
+        single drawn OBB, fixed (one item per band, per source)."""
+        model = "CubeB_InFrontOf_CuboidA_50cm.ifc"
+        sources = [self._element(model, "CuboidA")]
+        targets = [self._element(model, "CubeB")]
+
+        rule = OBB_Front_And_Back(None, None, 1.0, "Wide", state="Display_Input")
+        results = rule.compute(sources, targets, 1.0, "Wide")
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "obb")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = OBB_Front_And_Back(None, None, 1.0, "Wide", state="Display_Result")
+        results = rule.compute(sources, targets, 1.0, "Wide")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), 2)
 
 
 class TestComputeLotsABDispatch(unittest.TestCase):

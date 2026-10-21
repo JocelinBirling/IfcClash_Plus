@@ -1294,6 +1294,15 @@ class RuleCheckTwoObjects(RuleCheck):
         self._display_registered_items()
 
 
+class RuleCheckComplex(RuleCheck):
+    def __init__(self):
+        super().__init__()
+        select_target: Select = None
+        select_context_A: Select = None
+        select_context_B: Select = None
+        select_context_C: Select = None
+
+
 ####======= Absolute or Relative Checking
 ABSOLUTEORRELATIVECHECK_TYPE = Literal[
     "Absolute_Number", "Relative_Quantity", "Absolute_Quantity", "Relative_Number"

@@ -28,13 +28,16 @@ méthodologie est rodée : suivre exactement ce qui a été fait pour les
 | Format JSON | Déclaration PLATE actée (SPEC). Séparation uniquement côté code. |
 | Contrat `ResultInfo` | Mesures (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle, volume, area) ; points/faces/obbs appariés ; blocs propres : `axis` (ClearanceAxisToAxis), `raycast` (DirectView), `zone` (ClearanceForDoors), `axes` (Orientation). |
 | **Étape 4 — orchestrateur** | **FAITE.** `orchestrator.py` : `run_rule(rule)` = `_prepare_selections` (source/target/context + `create_list_of_element` ; le select contexte reçoit les fichiers du source) → `compute_rule` (appel nommé catalogue-driven, `engine_params` lus sur l'INSTANCE — au-dessus/Below portent `above_type`/`below_type` en plus de `type`) → `rule.collect_results` → `rule.register_display_items` → `end_rule_action` (pipeline + routage GUI). **Les run() des 26 règles sont COUPÉS** (reste le run() mort de `Template`, étape 5). Tous les pilotes passent par l'orchestrateur : `RuleFile.run`, `RuleFolder.run` (activation BooleanRule → `run_rule(state="Final")`), `SelectRule` (pose `element_to_pass` AVANT l'orchestration — le pipeline Select voit la config — puis consomme `rule.output.selection`), `BooleanLeaf.evaluate_result` (exceptions), l'IPC (`_run_rule`). Un nœud Select peut vivre directement dans `contains` (routé vers `node.run()`). L'IPC exporte les mêmes events (display preview / rule_result) — pas de test IPC automatisé, le flux est le même orchestrateur que RuleFile. |
-| **Étape 5 — nettoyage** | **FAITE (sauf `state`, tranché ci-dessous).** Supprimés : `result_fail_source` (attribut mort), `RuleCheckComplex` (cassée, jamais héritée), `Template` (classe morte + son run()), `produce_select` (la sélection de chaînage vit dans le pipeline : `pipeline.selection_of(rule)` — l'étape Select du pipeline l'appelle, SelectRule consomme `rule.output.selection`), `update_file_info` (toutes les méthodes ; la distribution des fichiers vit dans `RuleClass.distribute_files(node, paths, files)`, un seul walker récursif : dossiers + activation, Select/SelectRule, selects des règles (source/target/criticity/actor), récursif sur les SelectRule imbriqués ; les selects contexte reçoivent les fichiers du source au run, les règles d'exception aucun fichier). IPC basculée sur `distribute_files`. **`state` EST GARDÉ (décision documentée)** : c'est un contrat wire IPC (registry.STATES + clé « state » de la sérialisation, consommée par le client BonsaiViewer) ET le pilote du flux display manuel (Display_Input/Display_Result ouvrent la GUI via end_rule_action) — le supprimer exige de retravailler le contrat client et de concevoir un pilote display explicite : à arbitrer avec le développeur avant une étape « 5-bis ». Hissage des moteurs en fonctions module : NON fait (optionnel « éventuel » de la SPEC ; le dispatch fonctionne sur rule.compute, le hissage serait cosmétique). Les hooks `collect_results`/`register_display_items` RESTENT : ce sont les points d'attache de l'orchestrateur. |
+| **Étape 5 — nettoyage** | **FAITE (sauf `state`, tranché ci-dessous).** Supprimés : `result_fail_source` (attribut mort), `Template` (classe morte + son run()), `produce_select` (la sélection de chaînage vit dans le pipeline : `pipeline.selection_of(rule)` — l'étape Select du pipeline l'appelle, SelectRule consomme `rule.output.selection`), `update_file_info` (toutes les méthodes ; la distribution des fichiers vit dans `RuleClass.distribute_files(node, paths, files)`, un seul walker récursif : dossiers + activation, Select/SelectRule, selects des règles (source/target/criticity/actor), récursif sur les SelectRule imbriqués ; les selects contexte reçoivent les fichiers du source au run, les règles d'exception aucun fichier). IPC basculée sur `distribute_files`. **`RuleCheckComplex` est RESTAURÉE à la demande du développeur** (elle reste marquée BROKEN : non instantiable, les règles complexes réelles héritent RuleCheckOneObject + un select contexte — voir agent.md). **`state` EST GARDÉ (décision documentée)** : c'est un contrat wire IPC (registry.STATES + clé « state » de la sérialisation, consommée par le client BonsaiViewer) ET le pilote du flux display manuel (Display_Input/Display_Result ouvrent la GUI via end_rule_action) — le supprimer exige de retravailler le contrat client et de concevoir un pilote display explicite : à arbitrer avec le développeur avant une étape « 5-bis ». Hissage des moteurs en fonctions module : NON fait (optionnel « éventuel » de la SPEC ; le dispatch fonctionne sur rule.compute, le hissage serait cosmétique). Les hooks `collect_results`/`register_display_items` RESTENT : ce sont les points d'attache de l'orchestrateur. |
 
 ## Conventions des règles migrées (à respecter pour la suite)
 
 - `compute()` est pur : pas d'IFC, pas de sélection, pas de
   post-traitement, ne touche ni `self.result`, ni `self.output`, ni le
-  registre display. Exceptions documentées : ClearanceForDoors,
+  registre display en état Final/Select (les 10 règles à émission
+  état-conditionnée enregistrent dans le compute SEULEMENT en états
+  Display_Input/Display_Result — voir la stratégie display
+  ci-dessous). Exceptions documentées : ClearanceForDoors,
   Alignement, DirectView et FreeSpace POSENT leurs params nommés sur
   l'instance au début du compute (leurs helpers lisent la config sur
   l'instance — le nœud reste porteur de config) ; Alignement et
@@ -43,16 +46,29 @@ méthodologie est rodée : suivre exactement ce qui a été fait pour les
   `_probe_positions`) : les zones d'alignement et les sondes sont des
   données de display de NIVEAU ENSEMBLE, elles ne peuvent pas vivre
   dans les blocs info par-résultat.
-- `register_display_items(results)` (hook appelé par l'orchestrateur)
-  remplit le registre display dans TOUS les états, exactement comme
-  l'ancien `run()` : le display est un consommateur en lecture du
-  registre (`test_structure_DisplayUpdate::
-  test_pilot_rules_fill_the_registry` épingle ce comportement en état
-  Final). NE PAS regrouper l'enregistrement sur les états Display_*.
-  Les helpers `_register_*_display` reconstruisent les items depuis
-  les blocs info ; les données d'entrée non portées par les résultats
-  (éléments de contexte, faces sélectionnées de la famille FaceCheck,
-  solides de zones, éléments ajustés) restent un travail de la règle.
+- Stratégie display (décision développeur, voir la section dédiée
+  ci-dessous) — DEUX motifs :
+  - ÉMISSION ÉTAT-CONDITIONNÉE DANS LE COMPUTE pour les 10 règles qui
+    dessinent une géométrie CONSTRUITE DE LEURS ENTRÉES (ObbHigh,
+    ObbLength, OBB_Above, OBB_Below, OBB_Front_And_Back, OBB_Custom,
+    TopOrBottomSurface, Orientation, AngleBetween,
+    ClearanceAxisToAxis) : Display_Input émet la géométrie de CHAQUE
+    élément d'entrée et retourne [] AVANT les boucles de paires (le
+    moteur ne tourne pas) ; Display_Result émet toutes les géométries
+    ET retourne les résultats ; Final/Select n'enregistre rien. Ces
+    règles n'ont PLUS de hook `register_display_items`.
+  - HOOK `register_display_items(results)` (appelé par
+    l'orchestrateur) pour tout ce qui se reconstruit DES BLOCS INFO
+    des verdicts (Above/Below via `_register_extrem_display_items`,
+    SurfaceRecover via `_register_contact_faces_display`, DirectView
+    via `_register_raycast_display`) et les données d'entrée non
+    portées par les résultats (éléments de contexte de Ray_Check,
+    faces sélectionnées de la famille FaceCheck, solides de zones de
+    ClearanceForDoors, zones ajustées d'Alignement, FreeSpace) : le
+    hook remplit le registre dans TOUS les états, le display reste un
+    consommateur en lecture du registre
+    (`test_structure_DisplayUpdate::test_pilot_rules_fill_the_registry`
+    épingle ce comportement en état Final).
 - Les primitives par liste plate d'entités vivent dans `clash_utils` :
   `element_shapes`, `elements_extrem_data`, `elements_obb_data`,
   `add_elements_to_clash_tree`, `add_elements_to_ray_tree`. Motif
@@ -135,6 +151,70 @@ DisplayRegistry 15.
 Aucune modification non validée en suspens. L'IPC n'a pas de test
 automatisé : distribute_files + run_rule y sont les mêmes que
 RuleFile, revue de code seule.
+
+## Développements post-SPEC
+
+- **Stratégie display — émission état-conditionnée dans le compute**
+  (décision développeur, corrige le bug « OBB Front And Back en
+  Display_Input ne dessinait qu'une seule OBB ») : pendant la
+  migration, les 10 règles à géométrie d'entrée étaient passées à un
+  enregistrement verdict-only (une seule géométrie dessinée au lieu
+  de toutes). Décision : dans chaque compute de ces règles,
+  Display_Input → enregistrer TOUTES les géométries d'entrée dans le
+  registre display et retourner [] AVANT les boucles de paires (le
+  moteur de clash ne tourne pas) ; Display_Result → moteur exécuté +
+  toutes les géométries + résultats ; Final/Select → moteur seul,
+  RIEN au registre (la pureté des tests existants est inchangée).
+  Les hooks `register_display_items` de ces 10 règles et leurs helpers
+  orphelins (`_register_face_triangles_display_items`,
+  `_register_orientation_display_items`,
+  `_register_obb_display_items`, `_register_axes_display_items`,
+  `_register_obb_zone_display_items`) sont SUPPRIMÉS. Items exacts
+  répliqués de l'ancien run() à fd9f465 : OBB/bande/zone (« obb »,
+  violet (0.5,0,1), transp. 0.2, 2 items par source pour
+  OBB_Front_And_Back, 1 par zone pour OBB_Custom), faces extrêmes
+  (« face ») pour TopOrBottomSurface, 2 axes par source pour
+  Orientation (violet + vert (0,1,0)), 1 axe par source ET par cible
+  pour AngleBetween, segments d'appui par source et cible pour
+  ClearanceAxisToAxis (nouvelle méthode
+  `_register_support_segment_display`). Tests display ajoutés dans
+  les 5 fichiers compute (test_display_states_* : deux états par
+  règle).
+
+- **Intersection2** (demande développeur) : alternative
+  expérimentale à Intersection en PythonOCC PUR (pas de BVH tree) —
+  `clash_utils.mesh_to_solid` (nouvelle primitive : couture des faces
+  triangulées en solides, obligatoire car l'itérateur rend des faces
+  libres et le boolean sur faces libres est 2D), préfiltre boîtes
+  englobantes, `BRepAlgoAPI_Common` exact par paire. Verdict = volume
+  d'overlap strictement positif ; tolerance = volume minimum (m3).
+  Calibrée sur les modèles : parité de DÉTECTION avec le tree partout,
+  et corrige ses deux bugs documentés (pénétration 1 mm et
+  superposition parfaite détectées ; contact par face non détecté,
+  comme le tree ; « TouchOutside » détecté, comme le tree).
+  Tests : test_compute_Intersection2.py (12/12 : verdicts calibrés,
+  blocs info, seuil de volume, pureté, sans géométrie, dispatch,
+  adaptateur). Piège : les volumes dépendent de la couture
+  (tolérance 1e-3) — recalibrer si un modèle à maille plus bruitée
+  échoue.
+
+## Dernière validation — stratégie display (correction du bug « OBB unique »)
+
+Un test par commande, après la correction display : les 5 fichiers
+compute étendus (LotsAB 22/22, OBB_Above_Below 13/13, OneObject
+15/15, Angles 10/10, RaysAndCustom 12/12 — dont les nouveaux
+test_display_states_* par règle) ; régressions : DisplayUpdate 6/6,
+DisplayRegistry 15/15, Rule_OneObject 9/9, registry_dispatch 6/6,
+TreeClashes 10/10, serialization 17 + clash_utils 22, IFC_Test_Model
+TestOBB_Above + TestOBB_Below 15/15, TestAbove + TestBelow 15/15.
+Rouges préexistants seuls (inchangés) : TestOBB_Front_And_Back
+test_CubeB_Side_45CuboidA, TestAngleBetween
+test_CuboidA_Orient_45Cuboid_45. test_Rule_TwoObjects 38/38 APRÈS
+correction de deux appels morts `rule.run()` directs
+(test_above_rule_Max_To_Min, test_below_rule) — rouges sur HEAD
+fef5eba depuis l'étape 5 (suppression des adaptateurs run()),
+l'appel direct obsolète a été retiré (RuleFile.run() reste le seul
+pilote). Aucune modification non validée en suspens.
 
 ## Prochaines étapes (arbitrages restants)
 

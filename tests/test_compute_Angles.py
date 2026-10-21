@@ -103,6 +103,29 @@ class TestComputeAngleBetween(unittest.TestCase):
         self.assertEqual(rule.display_items, ["sentinel"])
         self.assertIsNone(rule.output)
 
+    def test_display_states_emit_all_axes(self):
+        """Display_Input: the main axis of EVERY source and EVERY
+        target comes out and the result list does not (the engine is
+        not run). Display_Result: every axis AND the results."""
+        sources = self._elements("CuboidA")
+        targets = self._elements("FallenCuboidA")
+
+        rule = AngleBetween(None, None, "Wide", "Wide", 90, 5,
+                           state="Display_Input")
+        results = rule.compute(sources, targets, "Wide", "Wide", 90, 5)
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "axis")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = AngleBetween(None, None, "Wide", "Wide", 90, 5,
+                            state="Display_Result")
+        results = rule.compute(sources, targets, "Wide", "Wide", 90, 5)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), 2)
+
     def compute_of(self, rule):
         sources = self._elements("CuboidA")
         targets = self._elements("FallenCuboidA")
@@ -190,6 +213,32 @@ class TestComputeClearanceAxisToAxis(unittest.TestCase):
 
         self.assertEqual(info.validate(), [])
         assert_result_shape(SimpleNamespace(result=results))
+
+    def test_display_states_emit_all_support_segments(self):
+        """Display_Input: the support segment of EVERY source and
+        EVERY target comes out and the result list does not (the
+        engine is not run). Display_Result: every segment AND the
+        results."""
+        sources = self._elements("TrayA")
+        targets = self._elements("TrayB")
+
+        rule = ClearanceAxisToAxis(None, None, mode="Perpendicular",
+                                   min_distance=0.7, state="Display_Input")
+        results = rule.compute(sources, targets, mode="Perpendicular",
+                               min_distance=0.7)
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "axis")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = ClearanceAxisToAxis(None, None, mode="Perpendicular",
+                                   min_distance=0.7, state="Display_Result")
+        results = rule.compute(sources, targets, mode="Perpendicular",
+                               min_distance=0.7)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), 2)
 
 
 class TestComputeAnglesDispatch(unittest.TestCase):

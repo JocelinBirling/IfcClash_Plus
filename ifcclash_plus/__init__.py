@@ -3,7 +3,7 @@
 
 # Expose main modules for easy importing
 from .Rules import (
-    Volume, Area,  Intersection, Clearance, Above,
+    Volume, Area,  Intersection, Intersection2, Clearance, Above,
     OBB_Above, Ray_Check, TopOrBottomSurface, Alignement, SurfaceRecover,
     DirectView, OneObjectFace, TwoObjectsFace, ClearanceForDoors, FreeSpace,
     ClearanceAxisToAxis
@@ -32,7 +32,7 @@ from .serialization import (
 
 __all__ = [
     'Volume', 'Area', 'TopOrBottomSurface', 'TopSurface', 'BottomSurface',
-    'Intersection', 'Clearance', 'Above',
+    'Intersection', 'Intersection2', 'Clearance', 'Above',
     'OBB_Above', 'Ray_Check', 'SelectFacet', 'SelectRule', 'RuleFile',
     'Custom_OBB', 'Alignement', 'SurfaceRecover', 'DirectView', 'OneObjectFace', 'TwoObjectsFace', 'ClearanceForDoors', 'FreeSpace', 'ClearanceAxisToAxis',
     # Result data structure

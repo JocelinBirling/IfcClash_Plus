@@ -205,6 +205,16 @@ RULES: list[dict[str, Any]] = [
         ],
     ),
     _rule(
+        "Intersection2",
+        "Intersection 2",
+        "TwoObjectRule",
+        ["source", "target"],
+        "Flags the pairs with a positive overlap volume (pure PythonOCC engine, no BVH tree).",
+        [
+            _p("tolerance", "float", 0.0, "Minimum overlap volume", unit="m3"),
+        ],
+    ),
+    _rule(
         "Clearance",
         "Clearance",
         "TwoObjectRule",

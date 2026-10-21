@@ -721,6 +721,8 @@ def _serialize_rule_specific_data(rule: "RuleCheck") -> dict[str, Any]:
         data["angle_tolerance"] = rule.angle_tolerance
     elif rule_type == "Intersection":
         data["tolerance"] = rule.tolerance
+    elif rule_type == "Intersection2":
+        data["tolerance"] = rule.tolerance
     elif rule_type == "Clearance":
         data["clearance"] = rule.clearance
         data["check_all"] = rule.check_all
@@ -896,6 +898,7 @@ def deserialize_rule_check(data: dict[str, Any], ifc_paths: list[str] = None) ->
         Above,
         Alignement,
         AngleBetween,
+        Intersection2,
         Area,
         Below,
         Clearance,
@@ -982,6 +985,8 @@ def deserialize_rule_check(data: dict[str, Any], ifc_paths: list[str] = None) ->
         )
     elif rule_type == "Intersection":
         rule = Intersection(source, target, data.get("tolerance", 0.1))
+    elif rule_type == "Intersection2":
+        rule = Intersection2(source, target, data.get("tolerance", 0.0))
     elif rule_type == "Clearance":
         rule = Clearance(source, target, data.get("clearance", 0.05))
         rule.check_all = data.get("check_all", False)

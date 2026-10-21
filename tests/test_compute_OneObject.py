@@ -148,6 +148,55 @@ class TestComputeOneObject(unittest.TestCase):
         rule = Volume(None, 0.5, 1.5)
         self.assertEqual(rule.compute(storey, 0.5, 1.5), [])
 
+    def test_display_states_of_top_or_bottom_surface(self):
+        """Display_Input: the extreme faces of EVERY source come out
+        and the result list does not (the engine is not run).
+        Display_Result: the faces AND the results — as many drawn
+        faces as the info blocks of the verdict carry."""
+        reference = TopOrBottomSurface(None, 0.5, 1.5, "Top")
+        expected_faces = len(reference.compute(self._cube(), 0.5, 1.5, "Top")[0]
+                              .info.source_faces)
+        self.assertGreaterEqual(expected_faces, 1)
+
+        rule = TopOrBottomSurface(None, 0.5, 1.5, "Top", state="Display_Input")
+        results = rule.compute(self._cube(), 0.5, 1.5, "Top")
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), expected_faces)
+        for item in rule.display_items:
+            self.assertEqual(item.category, "face")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = TopOrBottomSurface(None, 0.5, 1.5, "Top", state="Display_Result")
+        results = rule.compute(self._cube(), 0.5, 1.5, "Top")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), expected_faces)
+
+    def test_display_states_of_orientation(self):
+        """Display_Input: TWO axes per source come out (the OBB main
+        direction in purple, the expected orientation in green) and
+        the result list does not. Display_Result: both axes AND the
+        results."""
+        rule = Orientation(None, (0, 0, 1), "Perpendicular", "Wide",
+                           0.1, state="Display_Input")
+        results = rule.compute(self._cube(), (0, 0, 1), "Perpendicular", "Wide", 0.1)
+        self.assertEqual(results, [])
+        self.assertEqual(len(rule.display_items), 2)
+        self.assertEqual(
+            [item.category for item in rule.display_items], ["axis", "axis"]
+        )
+        self.assertEqual(
+            [item.color for item in rule.display_items], [(0.5, 0, 1), (0, 1, 0)]
+        )
+        for item in rule.display_items:
+            self.assertAlmostEqual(item.transparency, 0.2)
+
+        rule = Orientation(None, (0, 0, 1), "Perpendicular", "Wide",
+                           0.1, state="Display_Result")
+        results = rule.compute(self._cube(), (0, 0, 1), "Perpendicular", "Wide", 0.1)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(rule.display_items), 2)
+
 
 class TestComputeOneObjectDispatch(unittest.TestCase):
     """The flat JSON declarations drive the computes through the

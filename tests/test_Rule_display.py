@@ -97,7 +97,7 @@ class Test_Input_Display(unittest.TestCase):
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path= [self.ifc_path]
 
-        first_facet = ids.Entity(name="IFCSLAB")
+        first_facet = ids.Entity(name="IFCDOOR")
         first_select = SelectFacet()
         first_select.applicability = [first_facet]
 

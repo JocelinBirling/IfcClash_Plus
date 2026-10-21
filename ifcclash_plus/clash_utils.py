@@ -259,6 +259,54 @@ def get_extreme_faces_OpenCascade(
     return bottom_faces
 
 
+def mesh_to_solid(shape: TopoDS_Shape, tolerance: float = 1e-3) -> TopoDS_Shape:
+    """Sew the triangulated faces of a mesh shape into solids.
+
+    The geometry iterator returns the elements as compounds of loose
+    triangulated faces (no shell, no solid): a boolean operation on
+    loose faces is a 2D operation — the intersection of two solid
+    meshes would carry no volume. Sewing (BRepBuilderAPI_Sewing)
+    stitches the faces into shells, one solid is built per shell, and
+    the solids are returned as a compound (an element may hold
+    several bodies).
+
+    When the sewing produces no shell (an open mesh), the sewn shape
+    is returned as is: the caller gets whatever closed geometry could
+    be recovered.
+    """
+    from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_SHELL
+    from OCC.Core.BRepBuilderAPI import (
+        BRepBuilderAPI_Sewing,
+        BRepBuilderAPI_MakeSolid,
+    )
+    from OCC.Core.BRep import BRep_Builder
+    from OCC.Core.TopoDS import topods, TopoDS_Compound
+
+    sewing = BRepBuilderAPI_Sewing(tolerance)
+    explorer = TopExp_Explorer(shape, TopAbs_FACE)
+    while explorer.More():
+        sewing.Add(explorer.Current())
+        explorer.Next()
+    sewing.Perform()
+    sewn = sewing.SewedShape()
+
+    shells = []
+    shell_explorer = TopExp_Explorer(sewn, TopAbs_SHELL)
+    while shell_explorer.More():
+        shells.append(topods.Shell(shell_explorer.Current()))
+        shell_explorer.Next()
+
+    if not shells:
+        return sewn
+
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    for shell in shells:
+        builder.Add(compound, BRepBuilderAPI_MakeSolid(shell).Solid())
+    return compound
+
+
 def faces_to_compound(faces):
     """Toujours valide, même avec une seule face."""
     if not faces:

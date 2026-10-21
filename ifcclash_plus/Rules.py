@@ -37,40 +37,11 @@ DIRECTION_METHOD = Literal["Wide", "Narrow"]
 
 
 # ===========One Object Rule
-# ---- The display consumers of the migrated one-object rules (SPEC
+# ---- The verdict-info display helpers of the migrated rules (SPEC
 # Separation moteur/gestion): the items of the old registry, rebuilt
-# from the info blocks of the results. The rule itself registers
-# nothing anymore.
-
-
-def _register_face_triangles_display_items(rule, results):
-    """The extreme face triangles of the verdicts (TopOrBottomSurface),
-    same lightweight form as the old registry."""
-    for result in results:
-        for entry in result.info.source_faces:
-            for triangle in entry.face.triangles:
-                rule.register_display_item(
-                    "face",
-                    ("face", triangle),
-                    (0.5, 0, 1),
-                    0.2,
-                    element=result.source,
-                )
-
-
-def _register_orientation_display_items(rule, results):
-    """The axes of the verdicts (Orientation): the OBB main direction
-    in purple, the expected orientation in green."""
-    colors = {"obb": (0.5, 0, 1), "expected": (0, 1, 0)}
-    for result in results:
-        for axis in result.info.axes:
-            rule.register_display_item(
-                "axis",
-                ("axis", axis.center, axis.direction, axis.length),
-                colors.get(axis.label, (0.5, 0, 1)),
-                0.2,
-                element=result.source,
-            )
+# from the info blocks of the results (Above/Below, SurfaceRecover,
+# DirectView). The rules whose display is state-conditioned emit
+# their geometries inside compute() instead.
 
 
 class Volume(RuleCheckOneObject):
@@ -173,13 +144,6 @@ class TopOrBottomSurface(RuleCheckOneObject):
         # placement.
         self.geom_settings.set(self.geom_settings.USE_WORLD_COORDS, True)
 
-    def register_display_items(self, results):
-        """The extreme face triangles of the verdicts, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_face_triangles_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -194,11 +158,14 @@ class TopOrBottomSurface(RuleCheckOneObject):
         (or bottom) extreme face total area is inside the open bounds
         ]surface_min, surface_max[.
 
-        Pure computation (SPEC Separation moteur/gestion): it loads no
-        file, runs no selection and post-processes no result. Each
-        verdict carries the measured area and its extreme faces
+        Each verdict carries the measured area and its extreme faces
         (triangulated) in its info blocks — a one-object rule pairs
         each face with itself.
+
+        The display exits (state-specific): in Display_Input the
+        extreme faces of EVERY source come out and the result list
+        does not; in Display_Result every face AND the result list
+        come out.
         """
         if top_or_bot_method == "Top":
             direction = (0.0, 0.0, 1)
@@ -206,11 +173,21 @@ class TopOrBottomSurface(RuleCheckOneObject):
             direction = (0.0, 0.0, -1)
 
         results = []
+        geometries = []  # (entity, corners list) — the faces of every source
         for entity, geom in clash_utils.element_shapes(
             liste_objet_source, self.geom_settings
         ):
             extreme = clash_utils.get_extreme_faces_with_area(geom, direction=direction)
             area = extreme["total_area"]
+
+            # The extreme faces, as lightweight corner triangles: the
+            # display geometries of the rule (get_extreme_faces_with_area
+            # returns vertex indices, not displayable shapes).
+            vertices = get_vertices(geom)
+            faces_corners = [
+                tuple(vertices[face]) for face in extreme["extrem_faces"]
+            ]
+            geometries.append((entity, faces_corners))
 
             if surface_min < area < surface_max:
                 result = ClashResultOneObject(source=entity, state=True)
@@ -219,7 +196,6 @@ class TopOrBottomSurface(RuleCheckOneObject):
                 # The extreme faces, triangulated from the mesh
                 # vertices: enough to rebuild the display without
                 # rerunning the rule.
-                vertices = get_vertices(geom)
                 for face in extreme["extrem_faces"]:
                     triangle = tuple(
                         tuple(float(coordinate) for coordinate in vertex)
@@ -229,24 +205,20 @@ class TopOrBottomSurface(RuleCheckOneObject):
                     result.info.add_face_pair(face_data, face_data)
 
                 results.append(result)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # Every geometry the rule builds around its input elements
+            # comes out.
+            for entity, faces_corners in geometries:
+                for corners in faces_corners:
+                    self.register_display_item(
+                        "face", ("face", corners), (0.5, 0, 1), 0.2, element=entity
+                    )
+            if self.state == "Display_Input":
+                # All the geometries, NOT the result list.
+                return []
         return results
 
-
-
-def _register_obb_display_items(rule, results):
-    """The object OBBs of the verdicts (ObbHigh, ObbLength), rebuilt
-    from the info blocks of the results. The display becomes a
-    consumer of the results (SPEC).
-    """
-    for result in results:
-        for obb in result.info.source_obbs:
-            rule.register_display_item(
-                "obb",
-                clash_utils.obb_shape_from_data(obb),
-                (0.5, 0, 1),
-                0.2,
-                element=result.source,
-            )
 
 
 class LateralSurface(RuleCheckOneObject):
@@ -361,13 +333,6 @@ class ObbHigh(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The OBBs of the verdicts, in the display states: the items
-        of the old registry, rebuilt from the info blocks (SPEC — the
-        orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -379,12 +344,18 @@ class ObbHigh(RuleCheckOneObject):
         Pure computation (SPEC Separation moteur/gestion). Each verdict
         carries the measured height in its info blocks (measure
         "offset", the OBB itself in the obbs block).
+
+        The display exits (state-specific): in Display_Input the OBB
+        of EVERY source comes out and the result list does not; in
+        Display_Result every OBB AND the result list come out.
         """
         results = []
+        geometries = []  # (entity, obb) — the OBB of every source
         for entity, geom in clash_utils.element_shapes(
             liste_objet_source, self.geom_settings
         ):
             obb = create_obb_from_TopoDs_Shape(geom)
+            geometries.append((entity, obb))
             corners = obb.get_corners()
             min_z = corners[0].Z()
             max_z = corners[0].Z()
@@ -400,6 +371,17 @@ class ObbHigh(RuleCheckOneObject):
                 result.info.offset = float(value_to_check)  # m — the height
                 result.info.add_source_obb(obb.to_data("object"))
                 results.append(result)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # Every geometry the rule builds around its input elements
+            # comes out.
+            for entity, obb in geometries:
+                self.register_display_item(
+                    "obb", obb, (0.5, 0, 1), 0.2, element=entity
+                )
+            if self.state == "Display_Input":
+                # All the geometries, NOT the result list.
+                return []
         return results
 
 
@@ -425,13 +407,6 @@ class ObbLength(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The OBBs of the verdicts, in the display states: the items
-        of the old registry, rebuilt from the info blocks (SPEC — the
-        orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -450,12 +425,18 @@ class ObbLength(RuleCheckOneObject):
         Pure computation (SPEC Separation moteur/gestion). Each verdict
         carries the measured dimension in its info blocks (measure
         "offset", the OBB itself in the obbs block).
+
+        The display exits (state-specific): in Display_Input the OBB
+        of EVERY source comes out and the result list does not; in
+        Display_Result every OBB AND the result list come out.
         """
         results = []
+        geometries = []  # (entity, obb) — the OBB of every source
         for entity, geom in clash_utils.element_shapes(
             liste_objet_source, self.geom_settings
         ):
             obb = create_obb_from_TopoDs_Shape(geom)
+            geometries.append((entity, obb))
 
             # L'axe vertical de la boite est son axe le plus
             # vertical : l'ordre des axes de l'OBB est arbitraire
@@ -485,6 +466,17 @@ class ObbLength(RuleCheckOneObject):
                 result.info.offset = float(value_to_check)  # m — the dimension
                 result.info.add_source_obb(obb.to_data("object"))
                 results.append(result)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # Every geometry the rule builds around its input elements
+            # comes out.
+            for entity, obb in geometries:
+                self.register_display_item(
+                    "obb", obb, (0.5, 0, 1), 0.2, element=entity
+                )
+            if self.state == "Display_Input":
+                # All the geometries, NOT the result list.
+                return []
         return results
 
 
@@ -522,13 +514,6 @@ class Orientation(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The axes of the verdicts, in the display states: the items
-        of the old registry, rebuilt from the info blocks (SPEC — the
-        orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_orientation_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -545,21 +530,27 @@ class Orientation(RuleCheckOneObject):
         expected orientation — or perpendicular, per
         orientation_type — within the angular tolerance.
 
-        Pure computation (SPEC Separation moteur/gestion): it loads no
-        file, runs no selection and post-processes no result. Each
-        verdict carries the measured angle (deg) and the two axes of
-        the check — the OBB main direction and the expected
+        Each verdict carries the measured angle (deg) and the two axes
+        of the check — the OBB main direction and the expected
         orientation, both at the geometry center — in its info
         blocks.
+
+        The display exits (state-specific): in Display_Input the two
+        axes of EVERY source come out and the result list does not;
+        in Display_Result every axis AND the result list come out.
         """
         occ_orientation = gp_Dir(orientation[0], orientation[1], orientation[2])
 
         results = []
+        geometries = []  # (entity, center, main direction) — every source
         for entity, geom in clash_utils.element_shapes(
             liste_objet_source, self.geom_settings
         ):
             obb = create_obb_from_TopoDs_Shape(geom)
             dir1, dir2 = obb.get_two_main_direction_OBB_shape(direction_method)
+
+            center = self._shape_center(geom)
+            geometries.append((entity, center, dir1))
 
             is_parrallel = occ_orientation.IsParallel(dir1, angular_tolerance)
 
@@ -575,7 +566,6 @@ class Orientation(RuleCheckOneObject):
                 # The two axes of the check, at the geometry center:
                 # enough to rebuild the display without rerunning the
                 # rule.
-                center = self._shape_center(geom)
                 result.info.add_axis(
                     (
                         (center.X(), center.Y(), center.Z()),
@@ -593,30 +583,34 @@ class Orientation(RuleCheckOneObject):
                     )
                 )
                 results.append(result)
+
+        if self.state in ("Display_Input", "Display_Result"):
+            # Every geometry the rule builds around its input elements
+            # comes out: the OBB main direction in purple, the
+            # expected orientation in green.
+            for entity, center, direction in geometries:
+                self.register_display_item(
+                    "axis",
+                    ("axis", center, direction, 0.5),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=entity,
+                )
+                self.register_display_item(
+                    "axis",
+                    ("axis", center, occ_orientation, 0.5),
+                    (0, 1, 0),
+                    0.2,
+                    element=entity,
+                )
+            if self.state == "Display_Input":
+                # All the geometries, NOT the result list.
+                return []
         return results
 
 
 
 # ===== Two Objects Rule
-
-
-def _register_axes_display_items(rule, results, color=(0.5, 0, 1)):
-    """The axes of the verdicts (AngleBetween, ClearanceAxisToAxis),
-    rebuilt from the info blocks of the results: one axis segment per
-    AxesData block, at the element of its side (label "source" or
-    "target"). The display becomes a consumer of the results (SPEC):
-    the rule itself registers nothing anymore.
-    """
-    for result in results:
-        for axis in result.info.axes:
-            element = result.target if axis.label == "target" else result.source
-            rule.register_display_item(
-                "axis",
-                ("axis", axis.center, axis.direction, axis.length),
-                color,
-                0.2,
-                element=element,
-            )
 
 
 class AngleBetween(RuleCheckTwoObjects):
@@ -673,13 +667,6 @@ class AngleBetween(RuleCheckTwoObjects):
 
         return angle, angle_diff <= angle_tolerance
 
-    def register_display_items(self, results):
-        """The axes of the verdicts, in the display states: the items
-        of the old registry, rebuilt from the info blocks (SPEC — the
-        orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_axes_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -704,6 +691,11 @@ class AngleBetween(RuleCheckTwoObjects):
         verdict carries the measured angle (deg) and the two main
         directions of the pair (axes block, at the shape centers) in
         its info blocks.
+
+        The display exits (state-specific): in Display_Input the main
+        axis of EVERY source and target comes out and the result list
+        does not — the clash engine is not run; in Display_Result
+        every axis AND the result list come out.
         """
         source_objects = []
         for entity, geom in clash_utils.element_shapes(
@@ -734,6 +726,27 @@ class AngleBetween(RuleCheckTwoObjects):
                     "center": self._shape_center(geom),
                 }
             )
+
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            for one_object in source_objects:
+                self.register_display_item(
+                    "axis",
+                    ("axis", one_object["center"], one_object["direction"], 0.5),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=one_object["entity"],
+                )
+            for one_object in target_objects:
+                self.register_display_item(
+                    "axis",
+                    ("axis", one_object["center"], one_object["direction"], 0.5),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=one_object["entity"],
+                )
+            return []
 
         results = []
         for source_obj in source_objects:
@@ -776,6 +789,25 @@ class AngleBetween(RuleCheckTwoObjects):
                         )
                     )
                     results.append(result)
+
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            for one_object in source_objects:
+                self.register_display_item(
+                    "axis",
+                    ("axis", one_object["center"], one_object["direction"], 0.5),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=one_object["entity"],
+                )
+            for one_object in target_objects:
+                self.register_display_item(
+                    "axis",
+                    ("axis", one_object["center"], one_object["direction"], 0.5),
+                    (0.5, 0, 1),
+                    0.2,
+                    element=one_object["entity"],
+                )
 
         return results
 
@@ -877,6 +909,140 @@ class Intersection(RuleCheckTwoObjects):
             check_all=True,
         )
         return _tree_clash_results(tree_result, liste_objet_source, liste_objet_target)
+
+
+class Intersection2(RuleCheckTwoObjects):
+    """The Intersection2 rule: flags the source/target pairs whose
+    shapes share a POSITIVE OVERLAP VOLUME — an experimental
+    alternative engine to Intersection, in PURE PythonOCC (no
+    ifcopenshell BVH tree): an OCCT boolean common per pair, guarded
+    by a bounding-box prefilter.
+
+    Method (all PythonOCC):
+    1. one TopoDS shape per element, in world coordinates, SEWN INTO
+       SOLIDS (clash_utils.element_shapes then clash_utils.mesh_to_solid:
+       the iterator returns loose triangulated faces, and a boolean on
+       loose faces is a 2D operation with no volume);
+    2. bounding-box prefilter (Bnd_Box): the pairs with disjoint
+       boxes are skipped before any boolean operation;
+    3. exact test (BRepAlgoAPI_Common): the pair is flagged when the
+       common carries a strictly positive volume
+       (brepgprop.VolumeProperties). The tolerance is the MINIMUM
+       OVERLAP VOLUME (m3) below which a pair is considered
+       negligible — 0.0 flags any positive overlap.
+
+    Semantics vs the Intersection tree (calibrated on the test
+    models): tangential contacts (face/edge/point) carry no volume —
+    not flagged, like the tree; the 1mm penetration IS flagged (the
+    tree misses it, see Rapport.md); the perfect-coincidence pair IS
+    flagged (the tree misses it); the outer face contact (an object
+    resting on a face) is NOT flagged (the tree flags it).
+
+    The node is driven by the explicit orchestrator
+    (orchestrator.run_rule, SPEC step 4).
+    """
+
+    def __init__(self, source, target, tolerance=0.0, state="Final"):
+        super().__init__(state, source, target)
+        self.type = "Intersection2"
+        self.tolerance: float = tolerance
+        self.geom_settings = ifcopenshell.geom.settings()
+        self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
+
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
+
+    def compute(
+        self,
+        liste_objet_source,
+        liste_objet_target,
+        tolerance,
+        liste_objet_contexte=None,
+    ):
+        """The clash engine of the rule: flags the pairs with a
+        strictly positive overlap volume (the OCCT boolean common of
+        the pair shapes).
+
+        Pure computation (SPEC Separation moteur/gestion): it loads no
+        file, runs no selection and post-processes no result. No
+        clash tree: the engine is pure PythonOCC — one world TopoDS
+        shape per element, a bounding-box prefilter, then the exact
+        boolean per candidate pair. Each verdict carries the overlap
+        volume (m3, nominal), the same volume in the volumes block,
+        the zero distance of the overlap and the center of the common
+        (labeled point pair) in its info blocks.
+        """
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+        from OCC.Core import BRepGProp
+        from OCC.Core.GProp import GProp_GProps
+        from OCC.Core.BRepBndLib import brepbndlib
+
+        def volume_and_center(shape):
+            """The volume (m3) of a solid shape and its center of
+            mass."""
+            properties = GProp_GProps()
+            BRepGProp.brepgprop.VolumeProperties(shape, properties)
+            center = properties.CentreOfMass()
+            return (
+                float(properties.Mass()),
+                (center.X(), center.Y(), center.Z()),
+            )
+
+        sources = [
+            (entity, clash_utils.mesh_to_solid(shape))
+            for entity, shape in clash_utils.element_shapes(
+                liste_objet_source, self.geom_settings
+            )
+        ]
+        targets = [
+            (entity, clash_utils.mesh_to_solid(shape))
+            for entity, shape in clash_utils.element_shapes(
+                liste_objet_target, self.geom_settings
+            )
+        ]
+
+        # One bounding box per shape, cached: the prefilter skips the
+        # pairs with disjoint boxes before any boolean operation.
+        boxes = {}
+        for entity, shape in sources + targets:
+            box = Bnd_Box()
+            brepbndlib.Add(shape, box)
+            boxes[entity] = box
+
+        results = []
+        for source_entity, source_shape in sources:
+            for target_entity, target_shape in targets:
+                if source_entity == target_entity:
+                    # An element is not checked against itself.
+                    continue
+                if boxes[source_entity].IsOut(boxes[target_entity]):
+                    # Disjoint bounding boxes: no possible overlap.
+                    continue
+
+                common = BRepAlgoAPI_Common(source_shape, target_shape)
+                common.Build()
+                if not common.IsDone():
+                    continue
+                common_shape = common.Shape()
+                if common_shape is None or common_shape.IsNull():
+                    continue
+
+                volume, center = volume_and_center(common_shape)
+                if volume <= tolerance:
+                    # No overlap volume (tangential contact), or a
+                    # negligible one.
+                    continue
+
+                result = ClashResultTwoObjects(
+                    source=source_entity, target=target_entity, state=True
+                )
+                result.info.volume = volume  # m3 — nominale : le volume d'overlap
+                result.info.volume_intersection = volume  # bloc volumes
+                result.info.distance = 0.0  # m — the shapes overlap
+                result.info.add_point_pair(center, center, label="overlap_center")
+                results.append(result)
+
+        return results
 
 
 class Clearance(RuleCheckTwoObjects):
@@ -1180,13 +1346,6 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             )
         return float(distance_tool.Value()), None, None
 
-    def register_display_items(self, results):
-        """The support segments of the verdicts, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_axes_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -1208,15 +1367,25 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         docstring for the modes (Perpendicular / MinDistance) and the
         non-linear policy (Skip / Fallback).
 
-        Pure computation (SPEC Separation moteur/gestion): it loads no
-        file, runs no selection and post-processes no result. Each
-        verdict carries the measured distance (nominale), the axis
+        Each verdict carries the measured distance (nominale), the axis
         angle, the closest point pair, the mode used with its degraded
         flag and the two support segments of the pair (axes block) in
         its info blocks.
+
+        The display exits (state-specific): in Display_Input the
+        support segment of EVERY source and target comes out and the
+        result list does not — the clash engine is not run; in
+        Display_Result every segment AND the result list come out.
         """
         source_objects = self._collect_axes(liste_objet_source)
         target_objects = self._collect_axes(liste_objet_target)
+
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            self._register_support_segment_display(source_objects)
+            self._register_support_segment_display(target_objects)
+            return []
 
         results = []
         for source_obj in source_objects:
@@ -1294,7 +1463,29 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                     result.info.add_axis(_support_axis_data(target_obj, "target"))
                     results.append(result)
 
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            self._register_support_segment_display(source_objects)
+            self._register_support_segment_display(target_objects)
+
         return results
+
+    def _register_support_segment_display(self, objects):
+        """The support segment (center +/- direction * half length) of
+        every given object, kept in the display registry."""
+        for one_object in objects:
+            direction = one_object["direction"]
+            self.register_display_item(
+                "axis",
+                (
+                    "edge",
+                    one_object["center"] - direction * one_object["half_length"],
+                    one_object["center"] + direction * one_object["half_length"],
+                ),
+                (0.5, 0, 1),
+                0.2,
+                element=one_object["entity"],
+            )
 
 
 
@@ -1842,7 +2033,7 @@ class Below(RuleCheckTwoObjects):
 
 
 def _compute_obb_zone_penetration(
-    liste_objet_source,
+    sources_data,
     liste_objet_target,
     geom_settings,
     zone_height,
@@ -1853,15 +2044,15 @@ def _compute_obb_zone_penetration(
     zone_height on the zone_side ("top" or "bottom") of the source
     OBB.
 
-    Pure computation (SPEC Separation moteur/gestion): no selection,
-    no post-processing, nothing registered for the display. The
-    verdicts carry in their info blocks the measured distance and the
-    OBBs of the pair: the source detection zone and object, the
-    target object.
+    The source detection zones come PRE-BUILT (clash_utils.
+    elements_obb_data with the zone parameters): the compute of the
+    two rules builds them first — they are also the display
+    geometries of the rule.
+
+    No selection, no post-processing. The verdicts carry in their
+    info blocks the measured distance and the OBBs of the pair: the
+    source detection zone and object, the target object.
     """
-    sources_data = clash_utils.elements_obb_data(
-        liste_objet_source, geom_settings, zone_height=zone_height, zone_side=zone_side
-    )
     targets_data = clash_utils.elements_obb_data(liste_objet_target, geom_settings)
 
     results = []
@@ -1894,24 +2085,6 @@ def _compute_obb_zone_penetration(
     return results
 
 
-def _register_obb_zone_display_items(rule, results):
-    """The display items of the old registry, rebuilt from the info
-    blocks of the results: the detection zone of the source. The
-    display becomes a consumer of the results (SPEC): the rule itself
-    registers nothing anymore.
-    """
-    for result in results:
-        for obb in result.info.source_obbs:
-            if obb.label == "zone":
-                rule.register_display_item(
-                    "obb",
-                    clash_utils.obb_shape_from_data(obb),
-                    (0.5, 0, 1),
-                    0.2,
-                    element=result.source,
-                )
-
-
 class OBB_Above(RuleCheckTwoObjects):
     """The OBB_Above rule: flags a target penetrating the detection
     band extruded ABOVE the source OBB (an object LESS than tolerance
@@ -1930,13 +2103,6 @@ class OBB_Above(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The touched detection zone of each verdict, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_zone_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -1950,18 +2116,52 @@ class OBB_Above(RuleCheckTwoObjects):
         touches or penetrates the detection band extruded by tolerance
         (the band height) above the source OBB.
 
-        Pure computation (SPEC Separation moteur/gestion): it loads
-        no file, runs no selection and post-processes no result. The
-        verdicts are returned, self.result is not touched, and
-        nothing is registered for the display.
+        The display exits (state-specific): in Display_Input the
+        detection band of EVERY source comes out and the result list
+        does not — the clash engine is not run; in Display_Result
+        every band AND the result list come out.
         """
-        return _compute_obb_zone_penetration(
+        # The source detection zones — needed on every path, they are
+        # also the display geometries of the rule.
+        sources_data = clash_utils.elements_obb_data(
             liste_objet_source,
+            self.geom_settings,
+            zone_height=tolerance,
+            zone_side="top",
+        )
+
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            for source in sources_data:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+            return []
+
+        results = _compute_obb_zone_penetration(
+            sources_data,
             liste_objet_target,
             self.geom_settings,
             zone_height=tolerance,
             zone_side="top",
         )
+
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            for source in sources_data:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+        return results
 
 
 class OBB_Below(RuleCheckTwoObjects):
@@ -1980,13 +2180,6 @@ class OBB_Below(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The touched detection zone of each verdict, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_zone_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -2000,18 +2193,52 @@ class OBB_Below(RuleCheckTwoObjects):
         touches or penetrates the detection band extruded by tolerance
         (the band height) below the source OBB.
 
-        Pure computation (SPEC Separation moteur/gestion): it loads
-        no file, runs no selection and post-processes no result. The
-        verdicts are returned, self.result is not touched, and
-        nothing is registered for the display.
+        The display exits (state-specific): in Display_Input the
+        detection band of EVERY source comes out and the result list
+        does not — the clash engine is not run; in Display_Result
+        every band AND the result list come out.
         """
-        return _compute_obb_zone_penetration(
+        # The source detection zones — needed on every path, they are
+        # also the display geometries of the rule.
+        sources_data = clash_utils.elements_obb_data(
             liste_objet_source,
+            self.geom_settings,
+            zone_height=tolerance,
+            zone_side="bottom",
+        )
+
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            for source in sources_data:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+            return []
+
+        results = _compute_obb_zone_penetration(
+            sources_data,
             liste_objet_target,
             self.geom_settings,
             zone_height=tolerance,
             zone_side="bottom",
         )
+
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            for source in sources_data:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+        return results
 
 
 
@@ -2039,13 +2266,6 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.direction_method = method
 
-    def register_display_items(self, results):
-        """The touched detection bands of the verdicts, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_zone_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -2061,11 +2281,13 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         detached along the main directions of the source OBB (per
         direction_method).
 
-        Pure computation (SPEC Separation moteur/gestion): it loads no
-        file, runs no selection and post-processes no result. Each
-        verdict carries the measured distance and the OBBs of the
-        pair (the touched band, the source object, the target object)
-        in its info blocks.
+        The display exits (state-specific): in Display_Input the TWO
+        detection bands of EVERY source come out and the result list
+        does not — the clash engine is not run; in Display_Result
+        every band AND the result list come out. Each verdict carries
+        the measured distance and the OBBs of the pair (the touched
+        band, the source object, the target object) in its info
+        blocks.
         """
         source_zones = []
         for entity, geom in clash_utils.element_shapes(
@@ -2088,6 +2310,19 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                         "base_obb": obb,
                     }
                 )
+
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            for source in source_zones:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+            return []
 
         targets_data = clash_utils.elements_obb_data(
             liste_objet_target, self.geom_settings
@@ -2119,6 +2354,17 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
                     result.info.add_source_obb(source["base_obb"].to_data("object"))
                     result.info.add_target_obb(target["object_obb"].to_data("object"))
                     results.append(result)
+
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            for source in source_zones:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
 
         return results
 
@@ -2158,13 +2404,6 @@ class OBB_Custom(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def register_display_items(self, results):
-        """The touched custom zones of the verdicts, in the display
-        states: the items of the old registry, rebuilt from the info
-        blocks (SPEC — the orchestrator calls this hook)."""
-        if self.state in ("Display_Input", "Display_Result"):
-            _register_obb_zone_display_items(self, results)
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -2178,11 +2417,13 @@ class OBB_Custom(RuleCheckTwoObjects):
         geometry touches or penetrates one of the detection zones
         built from the source OBB by the list of modifications.
 
-        Pure computation (SPEC Separation moteur/gestion): it loads no
-        file, runs no selection and post-processes no result. Each
-        verdict carries the measured distance and the OBBs of the
-        pair (the touched zone, the source object, the target object)
-        in its info blocks.
+        The display exits (state-specific): in Display_Input the
+        detection zones of EVERY source come out and the result list
+        does not — the clash engine is not run; in Display_Result
+        every zone AND the result list come out. Each verdict carries
+        the measured distance and the OBBs of the pair (the touched
+        zone, the source object, the target object) in its info
+        blocks.
         """
 
         def create_list_of_obb(geom, base_obb):
@@ -2245,6 +2486,19 @@ class OBB_Custom(RuleCheckTwoObjects):
                     }
                 )
 
+        if self.state == "Display_Input":
+            # All the geometries, NOT the result list: the clash
+            # engine is not run.
+            for source in source_zones:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
+            return []
+
         targets_data = clash_utils.elements_obb_data(
             liste_objet_target, self.geom_settings
         )
@@ -2275,6 +2529,17 @@ class OBB_Custom(RuleCheckTwoObjects):
                     result.info.add_source_obb(source["base_obb"].to_data("object"))
                     result.info.add_target_obb(target["object_obb"].to_data("object"))
                     results.append(result)
+
+        if self.state == "Display_Result":
+            # Every geometry AND the result list come out.
+            for source in source_zones:
+                self.register_display_item(
+                    "obb",
+                    source["zone_obb"],
+                    (0.5, 0, 1),
+                    0.2,
+                    element=source["entity"],
+                )
 
         return results
 

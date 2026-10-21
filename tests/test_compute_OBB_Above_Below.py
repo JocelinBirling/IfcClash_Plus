@@ -135,6 +135,33 @@ class TestComputeOBBZone(unittest.TestCase):
         targets = [self._element("CubeA_Above_CubeB_1m.ifc", "CubeA")]
         self.assertEqual(rule.compute(sources, targets, 1.0), [])
 
+    def test_display_states_emit_all_zone_geometries(self):
+        """Display_Input: the detection zone of EVERY source comes out
+        and the result list does not (the engine is not run).
+        Display_Result: every zone AND the results. One item per
+        source, on both rules (the side only flips the extrusion)."""
+        for rule_class, model in (
+            (OBB_Above, "CubeA_Above_CubeB_1m.ifc"),
+            (OBB_Below, "CubeA_Below_CubeB_1m.ifc"),
+        ):
+            sources = [self._element(model, "CubeB")]
+            targets = [self._element(model, "CubeA")]
+
+            rule = rule_class(None, None, 1.0, state="Display_Input")
+            results = rule.compute(sources, targets, 1.0)
+            self.assertEqual(results, [])
+            self.assertEqual(len(rule.display_items), 1)
+            item = rule.display_items[0]
+            self.assertEqual(item.category, "obb")
+            self.assertEqual(item.color, (0.5, 0, 1))
+            self.assertAlmostEqual(item.transparency, 0.2)
+            self.assertEqual(item.element.Name, "CubeB")
+
+            rule = rule_class(None, None, 1.0, state="Display_Result")
+            results = rule.compute(sources, targets, 1.0)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(len(rule.display_items), 1)
+
 
 class TestComputeOBBZoneDispatch(unittest.TestCase):
     """The flat JSON declarations drive the computes through the

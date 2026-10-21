@@ -75,10 +75,11 @@ Select            # Base selection class
 
 RuleCheck         # Abstract base for all rules
 ├── RuleCheckOneObject    # Single element validation
-└── RuleCheckTwoObjects   # Pairwise element validation
-                          # (real complex rules — FreeSpace — inherit
-                          # RuleCheckOneObject plus a context Select;
-                          # RuleCheckComplex was removed at step 5)
+├── RuleCheckTwoObjects   # Pairwise element validation
+└── RuleCheckComplex      # Multi-set validation — currently BROKEN, do not
+                          # inherit from it (see Rapport.md §3); real complex
+                          # rules (FreeSpace) inherit RuleCheckOneObject
+                          # plus a context Select
 ```
 
 #### 2. Rule Categories
@@ -104,6 +105,8 @@ RuleFile.run()                      # the orchestrator
         │                        #   (engine_params == instance attributes)
         ├─ rule.collect_results  # extend (or replace: Intersection/Clearance/Collision)
         ├─ rule.register_display_items(results)  # the display hook
+        │                        #   (verdict-info rebuilders only — the
+        │                        #   state-conditioned rules emit in compute)
         └─ rule.end_rule_action()  # ResultPipeline -> rule.output
                                    #   + Display_* state GUI routing
 ```
@@ -146,24 +149,40 @@ format) stays FLAT and gathers everything under ONE rule: the selects
 
 - The `compute()` is pure: no IFC loading, no selection, no
   post-processing, it never touches `self.result`, `self.output` or
-  the display registry. Two documented exceptions: a few engines whose
-  helpers read their config off the instance (ClearanceForDoors,
-  Alignement, DirectView, FreeSpace) POSE the named parameters on the
-  instance at the start of the compute — the node remains the config
-  carrier.
+  the display registry in the Final/Select states. Two documented
+  exceptions: a few engines whose helpers read their config off the
+  instance (ClearanceForDoors, Alignement, DirectView, FreeSpace)
+  POSE the named parameters on the instance at the start of the
+  compute — the node remains the config carrier; and the
+  state-conditioned display rules register their geometries inside
+  the compute in the display states (see the display strategy below).
 - The rules have NO run(): the explicit orchestrator
   (`orchestrator.run_rule`) prepares the selections, calls the
   compute (catalogue-driven named call), collects the results
   (`collect_results`: extend, or replace for Intersection/Clearance/
-  Collision), fills the DISPLAY REGISTRY through the rule's
-  `register_display_items` hook — in every state, exactly as the old
-  run() did, the display is a read-only consumer of the registry
-  (`tests/test_structure_DisplayUpdate.py` pins this behavior) — then
-  runs the pipeline. The data rebuilt from the info blocks travels
-  through the `_register_*_display_items` helpers; input data not
-  carried by the results (context elements, selected faces of the
-  FaceCheck family, zone solids, fitted elements) stays a rule-side
-  display concern.
+  Collision), fills the display registry, then runs the pipeline.
+
+  Two display patterns (developer decision, see
+  SPEC_Separation_Moteur_Gestion_STATUT.md — display strategy):
+  - STATE-CONDITIONED EMISSION IN COMPUTE — the rules that draw a
+    geometry BUILT FROM THEIR INPUTS (ObbHigh, ObbLength, OBB_Above,
+    OBB_Below, OBB_Front_And_Back, OBB_Custom, TopOrBottomSurface,
+    Orientation, AngleBetween, ClearanceAxisToAxis): Display_Input
+    emits the geometry of EVERY input element (one item per OBB / band
+    / zone / face / axis, whatever the verdicts) and returns [] BEFORE
+    the pair loops — the engine is not run; Display_Result emits
+    every geometry AND returns the results; Final/Select registers
+    nothing. These rules have no `register_display_items` hook.
+  - THE `register_display_items` HOOK — everything rebuilt FROM the
+    info blocks of the verdicts (Above/Below via
+    `_register_extrem_display_items`, SurfaceRecover via
+    `_register_contact_faces_display`, DirectView via
+    `_register_raycast_display`) plus the input data the results do
+    not carry (Ray_Check context elements, the selected faces of the
+    FaceCheck family, the zone solids of ClearanceForDoors, the
+    fitted zones of Alignement, FreeSpace): the hook runs in every
+    state, the display stays a read-only consumer of the registry
+    (`tests/test_structure_DisplayUpdate.py` pins this behavior).
 - `Select.create_list_of_element()` rebuilds `list_of_elements` fresh
   on every call: the same select instance feeds several rules, an
   accumulated list would duplicate the elements (a select shared by
@@ -650,6 +669,7 @@ point2 = dist_tool.PointOnShape2()
 | ObbLength | 1-Object | ⚠️ → ✅ (Z exclusion assumption, see Rapport.md) — engine migrated to `compute()` (axe vertical = axe le plus vertical de l'OBB) ; tests compute : `tests/test_compute_LotsAB.py` | ❌ | ✅ |
 | Orientation | 1-Object | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_OneObject.py) | ❌ | ✅ |
 | Intersection | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
+| Intersection2 | 2-Objects | ✅ — experimental PURE PythonOCC alternative to Intersection (no BVH tree): meshes sewn into solids (`clash_utils.mesh_to_solid`), bounding-box prefilter, OCCT boolean common; flags the pairs with a strictly positive overlap VOLUME (tolerance = minimum volume in m3); fixes the tree's 1mm-penetration and perfect-coincidence blindness (tests/test_compute_Intersection2.py) | ❌ | ✅ |
 | Clearance | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
 | ClearanceAxisToAxis | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_Angles.py) | ✅ | ✅ |
 | Collision | 2-Objects | ✅ — engine migrated to `compute()` (SPEC moteur/gestion, tests/test_compute_TreeClashes.py) | ❌ | ✅ |
@@ -676,6 +696,8 @@ blocking bugs, doubtful logic and the spatial-prefilter inventory (§1.1).
 
 1. **Fix blocking bugs** (HIGH — from Rapport.md §5)
    - `RuleCheckOneObject.run_actor`: crashes as soon as an actor is set
+   - `RuleCheckComplex`: not instantiable (complex rules must inherit
+     RuleCheckOneObject for now)
    - `run_exception`: Same_Building/Same_Storey/Same_Space raise TypeError
    - `Select.create_list_of_element` with an empty SelectFacet
 

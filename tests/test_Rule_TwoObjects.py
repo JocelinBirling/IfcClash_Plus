@@ -169,7 +169,6 @@ class TestRules(unittest.TestCase):
             tolerance=0.85,
             above_type="Above_MaxToMin",
         )  # 0.81 should work.
-        above_rule.run()
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()
@@ -321,7 +320,6 @@ class TestRulesOBB(unittest.TestCase):
             tolerance=0.81,
             below_type="Below_MinToMax",
         )
-        above_rule.run()
 
         OneRuleFile.contains = [above_rule]
         OneRuleFile.run()

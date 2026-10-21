@@ -181,6 +181,32 @@ class TestComputeOBB_Custom(unittest.TestCase):
         self.assertEqual(rule.display_items, ["sentinel"])
         self.assertIsNone(rule.output)
 
+    def test_display_states_emit_all_zone_geometries(self):
+        """Display_Input: EVERY detection zone of the source comes out
+        and the result list does not (the engine is not run).
+        Display_Result: every zone AND the results — NEW_OBB closes a
+        zone, the base OBB becomes the second one: both are drawn."""
+        sources = [self._element("CubeB")]
+        targets = [self._element("CubeA")]
+
+        for modifications, expected_zones in (
+            (["detach_top_by_extrude:1.0"], 1),
+            (["detach_top_by_extrude:1.0", "NEW_OBB"], 2),
+        ):
+            rule = OBB_Custom(None, None, modifications, state="Display_Input")
+            results = rule.compute(sources, targets, modifications)
+            self.assertEqual(results, [])
+            self.assertEqual(len(rule.display_items), expected_zones)
+            for item in rule.display_items:
+                self.assertEqual(item.category, "obb")
+                self.assertEqual(item.color, (0.5, 0, 1))
+                self.assertAlmostEqual(item.transparency, 0.2)
+
+            rule = OBB_Custom(None, None, modifications, state="Display_Result")
+            results = rule.compute(sources, targets, modifications)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(len(rule.display_items), expected_zones)
+
 
 class TestComputeRaysAndCustomDispatch(unittest.TestCase):
     """The flat JSON declarations drive the computes through the
