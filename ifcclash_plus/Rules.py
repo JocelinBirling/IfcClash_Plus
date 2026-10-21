@@ -83,20 +83,6 @@ class Volume(RuleCheckOneObject):
         self.volume_min: float = volume_min
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.volume_min,
-            self.volume_max,
-        )
-        self.result.extend(results)
-        self.end_rule_action()
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -133,20 +119,6 @@ class Area(RuleCheckOneObject):
         self.volume_min: float = volume_min
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.volume_min,
-            self.volume_max,
-        )
-        self.result.extend(results)
-        self.end_rule_action()
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -182,8 +154,8 @@ class TopOrBottomSurface(RuleCheckOneObject):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity list and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(
@@ -201,27 +173,12 @@ class TopOrBottomSurface(RuleCheckOneObject):
         # placement.
         self.geom_settings.set(self.geom_settings.USE_WORLD_COORDS, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.surface_min,
-            self.surface_max,
-            self.top_or_bot_method,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The extreme face triangles of the verdicts, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_face_triangles_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -314,21 +271,6 @@ class LateralSurface(RuleCheckOneObject):
         # world coordinates (the bug fixed by the migration).
         self.geom_settings.set("USE_WORLD_COORDS", True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.surface_min,
-            self.surface_max,
-            self.direction,
-        )
-        self.result.extend(results)
-        self.end_rule_action()
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -376,21 +318,6 @@ class ProjectedSurface(RuleCheckOneObject):
         # world coordinates (the bug fixed by the migration).
         self.geom_settings.set("USE_WORLD_COORDS", True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.surface_min,
-            self.surface_max,
-            self.direction,
-        )
-        self.result.extend(results)
-        self.end_rule_action()
-
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -434,24 +361,12 @@ class ObbHigh(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.length_min,
-            self.length_max,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The OBBs of the verdicts, in the display states: the items
+        of the old registry, rebuilt from the info blocks (SPEC — the
+        orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
             _register_obb_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -510,25 +425,12 @@ class ObbLength(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.length_min,
-            self.length_max,
-            self.direction_method,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The OBBs of the verdicts, in the display states: the items
+        of the old registry, rebuilt from the info blocks (SPEC — the
+        orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
             _register_obb_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -597,8 +499,8 @@ class Orientation(RuleCheckOneObject):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity list and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(
@@ -620,28 +522,12 @@ class Orientation(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.orientation,
-            self.orientation_type,
-            self.direction_method,
-            self.angular_tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The axes of the verdicts, in the display states: the items
+        of the old registry, rebuilt from the info blocks (SPEC — the
+        orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_orientation_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -745,8 +631,8 @@ class AngleBetween(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(
@@ -787,31 +673,12 @@ class AngleBetween(RuleCheckTwoObjects):
 
         return angle, angle_diff <= angle_tolerance
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.direction_method_for_source,
-            self.direction_method_for_target,
-            self.angle_difference,
-            self.angle_tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The axes of the verdicts, in the display states: the items
+        of the old registry, rebuilt from the info blocks (SPEC — the
+        orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_axes_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -967,8 +834,8 @@ class Intersection(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(self, source, target, tolerance=0.1, state="Final"):
@@ -977,22 +844,10 @@ class Intersection(RuleCheckTwoObjects):
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.tolerance,
-        )
-        # The former run() replaced the result list on re-run.
+    def collect_results(self, results):
+        """The former run() replaced the result list on re-run: the
+        orchestrator keeps that semantics (SPEC step 4)."""
         self.result = results
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1031,8 +886,8 @@ class Clearance(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(self, source, target, clearance=0.05, state="Final"):
@@ -1043,23 +898,10 @@ class Clearance(RuleCheckTwoObjects):
         self.clearance: float = clearance
         self.check_all: bool = False
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.clearance,
-            self.check_all,
-        )
-        # The former run() replaced the result list on re-run.
+    def collect_results(self, results):
+        """The former run() replaced the result list on re-run: the
+        orchestrator keeps that semantics (SPEC step 4)."""
         self.result = results
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1101,8 +943,8 @@ class Collision(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(self, source, target, allow_touching=False, state="Final"):
@@ -1111,22 +953,10 @@ class Collision(RuleCheckTwoObjects):
         self.allow_touching = allow_touching
         self.geom_settings = ifcopenshell.geom.settings()
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.allow_touching,
-        )
-        # The former run() replaced the result list on re-run.
+    def collect_results(self, results):
+        """The former run() replaced the result list on re-run: the
+        orchestrator keeps that semantics (SPEC step 4)."""
         self.result = results
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1211,8 +1041,8 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(
@@ -1350,35 +1180,12 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             )
         return float(distance_tool.Value()), None, None
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.mode,
-            self.min_distance,
-            self.max_distance,
-            self.tolerance,
-            self.linearity_ratio,
-            self.on_non_linear,
-            self.parallel_tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The support segments of the verdicts, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the support
-            # segments of the old registry are rebuilt from the info
-            # blocks.
             _register_axes_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1560,40 +1367,16 @@ class Ray_Check(RuleCheckTwoObjects):
                 return True
         return False
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action). The context is a
-        # third input list, fed like the two others.
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-
-        self.select_context.list_ifc_path = self.select_source.list_ifc_path
-        self.select_context.list_ifc_file = self.select_source.list_ifc_file
-        self.select_context.run()
-
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-        self.select_context.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.max_ray_length,
-            liste_objet_contexte=self.select_context.list_of_elements,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The context elements, in the display states: input data
+        not carried by the results, kept as the old registry items
+        (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The context elements are not carried by the results:
-            # the adapter keeps the old registry items for them.
             for elements in self.select_context.dict_elements.values():
                 for element in elements or []:
                     self.register_display_item(
                         "context", ("entity", element), (0.5, 0.5, 0.5), 0.9
                     )
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1798,8 +1581,8 @@ class Above(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(
@@ -1807,34 +1590,21 @@ class Above(RuleCheckTwoObjects):
     ):
         super().__init__(state, source, target)
         self.type = above_type
+        # The catalogue name of the parameter: the orchestrator reads
+        # the engine parameters off the instance by their registry
+        # names (SPEC step 4).
+        self.above_type: ABOVE_TYPE = above_type
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.type,
-            self.tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The extrem faces and detection zones of the verdicts, in
+        the display states: the items of the old registry, rebuilt
+        from the info blocks (SPEC — the orchestrator calls this
+        hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_extrem_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -1944,8 +1714,8 @@ class Below(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules. The Above/Below primitives are
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4). The Above/Below primitives are
     shared through clash_utils and the module helpers.
     """
 
@@ -1954,34 +1724,21 @@ class Below(RuleCheckTwoObjects):
     ):
         super().__init__(state, source, target)
         self.type = below_type
+        # The catalogue name of the parameter: the orchestrator reads
+        # the engine parameters off the instance by their registry
+        # names (SPEC step 4).
+        self.below_type: BELOW_TYPE = below_type
         self.tolerance: float = tolerance
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.type,
-            self.tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The extrem faces and detection zones of the verdicts, in
+        the display states: the items of the old registry, rebuilt
+        from the info blocks (SPEC — the orchestrator calls this
+        hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_extrem_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -2173,8 +1930,8 @@ class OBB_Above(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules. The engine is shared with OBB_Below.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4). The engine is shared with OBB_Below.
     """
 
     def __init__(self, source, target, tolerance, state="Final"):
@@ -2183,29 +1940,12 @@ class OBB_Above(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The touched detection zone of each verdict, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_obb_zone_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -2240,8 +1980,8 @@ class OBB_Below(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules. The engine is shared with OBB_Above.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4). The engine is shared with OBB_Above.
     """
 
     def __init__(self, source, target, tolerance, state="Final"):
@@ -2250,29 +1990,12 @@ class OBB_Below(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.tolerance,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The touched detection zone of each verdict, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the items of
-            # the old registry are rebuilt from the info blocks.
             _register_obb_zone_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -2326,29 +2049,12 @@ class OBB_Front_And_Back(RuleCheckTwoObjects):
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
         self.direction_method = method
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.tolerance,
-            self.direction_method,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The touched detection bands of the verdicts, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the bands of
-            # the old registry are rebuilt from the info blocks.
             _register_obb_zone_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -2452,8 +2158,8 @@ class OBB_Custom(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     def __init__(self, source, target, tolerance, state="Final"):
@@ -2462,28 +2168,12 @@ class OBB_Custom(RuleCheckTwoObjects):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.list_of_modifications,
-        )
-        self.result.extend(results)
-
+    def register_display_items(self, results):
+        """The touched custom zones of the verdicts, in the display
+        states: the items of the old registry, rebuilt from the info
+        blocks (SPEC — the orchestrator calls this hook)."""
         if self.state in ("Display_Input", "Display_Result"):
-            # The display consumes the results (SPEC): the zones of
-            # the old registry are rebuilt from the info blocks.
             _register_obb_zone_display_items(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -2678,33 +2368,16 @@ class Alignement(RuleCheckOneObject):
         self.geom_settings = ifcopenshell.geom.settings()
         self.geom_settings.set(self.geom_settings.USE_PYTHON_OPENCASCADE, True)
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.axis,
-            self.alignment_type,
-            self.tolerance,
-            self.min_group,
-        )
-        self.result.extend(results)
-
-        # The fitted zones are GROUP-level display data: they cannot
-        # live in the per-result info blocks, the adapter rebuilds
-        # them from the engine state left by the compute. The display
-        # is a consumer of the registry: the adapter fills it in
-        # every state (as the old run() did).
+    def register_display_items(self, results):
+        """The fitted zones are GROUP-level display data: they cannot
+        live in the per-result info blocks, the rule rebuilds them
+        from the engine state left by the compute. The display is a
+        consumer of the registry: the hook fills it in every state
+        (SPEC — the orchestrator calls this hook)."""
         for shape, transparency in self._fitted_zone_shapes(
             self._engine_objects, self._engine_groups
         ):
             self.register_display_item("zone", shape, (0.5,0,1), transparency)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -3349,8 +3022,8 @@ class SurfaceRecover(RuleCheckTwoObjects):
 
     Migration (SPEC Separation moteur/gestion): compute() is the pure
     engine — entity lists and named parameters in, raw results out.
-    run() stays the select -> compute -> pipeline adapter for as long
-    as RuleFile drives the rules.
+    The node is driven by the explicit orchestrator (orchestrator.run_rule,
+    SPEC step 4).
     """
 
     # Two facing triangles are paired when their normals are opposite
@@ -3503,32 +3176,11 @@ class SurfaceRecover(RuleCheckTwoObjects):
 
         return collected
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.direction,
-            self.reference,
-            self.tolerance,
-            min_covering=self.min_covering,
-            max_covering=self.max_covering,
-        )
-        self.result.extend(results)
-
-        # The display is a consumer of the registry: the adapter fills
-        # it in every state (as the old run() did), the compute
-        # registers nothing (SPEC).
+    def register_display_items(self, results):
+        """The contact faces of the verdicts, in every state: the
+        items of the old registry, rebuilt from the info blocks (SPEC
+        — the orchestrator calls this hook)."""
         _register_contact_faces_display(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -3977,46 +3629,17 @@ class DirectView(RuleCheckTwoObjects):
         )
         return len(hits) == 0
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-
-        # The context needs the same files as the source to be able to run.
-        self.select_context.list_ifc_path = self.select_source.list_ifc_path
-        self.select_context.list_ifc_file = self.select_source.list_ifc_file
-        self.select_context.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-        self.select_context.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.ray_source,
-            self.ray_count,
-            self.threshold,
-            self.max_distance,
-            liste_objet_contexte=self.select_context.list_of_elements,
-        )
-        self.result.extend(results)
-
-        # The context elements are not carried by the results: the
-        # adapter keeps the old registry items for them (as for the
-        # context of Ray_Check). The rays actually cast are carried by
-        # the info blocks (raycast). The display is a consumer of the
-        # registry: the adapter fills it in every state (as the old
-        # run() did).
+    def register_display_items(self, results):
+        """The context elements (input data not carried by the
+        results, kept as the old registry items) and the rays actually
+        cast (carried by the info blocks, raycast), in every state
+        (SPEC — the orchestrator calls this hook)."""
         for elements in self.select_context.dict_elements.values():
             for element in elements or []:
                 self.register_display_item(
                     "context", ("entity", element), (0.5, 0.5, 0.5), 0.85
                 )
         _register_raycast_display(self, results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -4311,39 +3934,15 @@ class OneObjectFace(RuleCheckOneObject):
 
         return failures
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_source.create_list_of_element()
-
-        # The faces of the two groups are input data, not results:
-        # they are not carried by the verdicts, the adapter keeps the
-        # old registry items for them (as for the context elements of
-        # Ray_Check). The display is a consumer of the registry: the
-        # adapter fills it in every state (as the old run() did).
+    def register_display_items(self, results):
+        """The faces of the two groups are input data, not results:
+        they are not carried by the verdicts, the rule keeps the old
+        registry items for them (as for the context elements of
+        Ray_Check), in every state (SPEC — the orchestrator calls this
+        hook)."""
         self._register_face_groups_display(
             self.select_source.list_of_elements
         )
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.face_a_selection,
-            self.face_b_selection,
-            self.distance,
-            self.min_distance,
-            self.max_distance,
-            self.skip_adjacent,
-            self.intersection,
-            self.intersection_tolerance,
-            self.orientation,
-            self.angle,
-            self.angle_tolerance,
-        )
-        self.result.extend(results)
-
-        self.end_rule_action()
 
     def _register_face_groups_display(self, elements):
         """The faces of the two groups, kept in the display registry:
@@ -4714,20 +4313,11 @@ class TwoObjectsFace(RuleCheckTwoObjects):
 
         return element_faces
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        # The selected faces are input data, not results: they are not
-        # carried by the verdicts, the adapter keeps the old registry
-        # items for them (as for the context elements of Ray_Check).
-        # The display is a consumer of the registry: the adapter
-        # fills it in every state (as the old run() did).
+    def register_display_items(self, results):
+        """The selected faces are input data, not results: they are
+        not carried by the verdicts, the rule keeps the old registry
+        items for them (as for the context elements of Ray_Check), in
+        every state (SPEC — the orchestrator calls this hook)."""
         self._collect_faces(
             self.select_source.list_of_elements,
             self.source_face_selection,
@@ -4738,24 +4328,6 @@ class TwoObjectsFace(RuleCheckTwoObjects):
             self.target_face_selection,
             (1, 0.45, 0),
         )
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.source_face_selection,
-            self.target_face_selection,
-            self.distance,
-            self.min_distance,
-            self.max_distance,
-            self.intersection,
-            self.intersection_tolerance,
-            self.orientation,
-            self.angle,
-            self.angle_tolerance,
-        )
-        self.result.extend(results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -5144,40 +4716,16 @@ class ClearanceForDoors(RuleCheckTwoObjects):
         add_rectangle(-1.0, "Back", 1)
         return zones
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-        self.select_target.run()
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        # The zone solids are display data, not results: the adapter
-        # rebuilds them (the ZoneData of the info blocks is enough for
-        # the export, not for the OCC solid). The display is a
-        # consumer of the registry: the adapter fills it in every
-        # state (as the old run() did).
+    def register_display_items(self, results):
+        """The zone solids are display data, not results: the rule
+        rebuilds them (the ZoneData of the info blocks is enough for
+        the export, not for the OCC solid), in every state (SPEC —
+        the orchestrator calls this hook)."""
         for door in self.select_source.list_of_elements:
             for zone in self._build_zones(door):
                 self.register_display_item(
                     "zone", zone["solid"], (0.5,0,1), 0.6, element=door
                 )
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            self.zone_shape,
-            self.sides,
-            self.leaves,
-            self.width,
-            self.depth,
-            self.height,
-            self.tolerance,
-        )
-        self.result.extend(results)
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
@@ -5490,33 +5038,13 @@ class FreeSpace(RuleCheckOneObject):
         margin = self._placement_margin(cylinder, disk, footprint, obstacles)
         return (point.x, point.y), margin
 
-    def run(self):
-        # The migration adapter: the selections feed the compute, the
-        # pipeline closes the run (end_rule_action).
-        self.display_items.clear()
-        self.select_source.run()
-
-        # The context needs the same files as the source to be able to run.
-        self.select_context.list_ifc_path = self.select_source.list_ifc_path
-        self.select_context.list_ifc_file = self.select_source.list_ifc_file
-        self.select_context.run()
-        self.select_source.create_list_of_element()
-        self.select_context.create_list_of_element()
-
-        results = self.compute(
-            self.select_source.list_of_elements,
-            self.diameter,
-            self.height,
-            liste_objet_contexte=self.select_context.list_of_elements,
-        )
-        self.result.extend(results)
-
-        # The obstacles (context) are input data, not results: the
-        # adapter keeps the old registry items for them. The probe
-        # cylinders (the clash detection zones) are set-level display
-        # data: the adapter rebuilds them from the engine state left
-        # by the compute. The display is a consumer of the registry:
-        # the adapter fills it in every state (as the old run() did).
+    def register_display_items(self, results):
+        """The obstacles (context) are input data, not results: the
+        rule keeps the old registry items for them. The probe
+        cylinders (the clash detection zones) are set-level display
+        data: the rule rebuilds them from the engine state left by
+        the compute, in every state (SPEC — the orchestrator calls
+        this hook)."""
         for obstacle in self._collect_context(
             self.select_context.list_of_elements
         ):
@@ -5537,8 +5065,6 @@ class FreeSpace(RuleCheckOneObject):
                 0.6,
                 element=source,
             )
-
-        self.end_rule_action()
 
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 

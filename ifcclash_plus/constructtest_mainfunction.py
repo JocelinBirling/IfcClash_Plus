@@ -2,6 +2,7 @@ import RuleClass
 from RuleClass import SelectFacet,SelectRule,RuleFile
 from Rules import Volume, Area, TopOrBottomSurface,Intersection,Above,OBB_Above,Ray_Check,OBB_Below
 from ifctester import ids
+from orchestrator import run_rule as run_rule_node
 from ifcopenshell import file
 import ifcopenshell
 
@@ -50,7 +51,7 @@ def Volume_Check():
     OneSelect_Facet.list_ifc_path = [Chemin]
 
     rulevolume = Volume(OneSelect_Facet, 1, 2)
-    rulevolume.run()
+    run_rule_node(rulevolume)
 
     print("Sucess", rulevolume.sucess)
     print("Fail", rulevolume.fail)
@@ -67,7 +68,7 @@ def Exception_Check():
     ruleArea = Volume(OneSelect_Facet, 0, 2)
 
     rulevolume.select_exception = [ruleArea]
-    rulevolume.run()
+    run_rule_node(rulevolume)
 
 
 def Grouping_Test():
@@ -80,7 +81,7 @@ def Grouping_Test():
     rulevolume = Volume(OneSelect_Facet, 1, 2)
     rulevolume.grouping = "ENTITY"
 
-    rulevolume.run()
+    run_rule_node(rulevolume)
     for x in rulevolume.result:
         print(x.source_group, x.source)
 
@@ -107,7 +108,7 @@ def Actor_And_Criticity_Test():
     rulevolume.select_actor = select_actor
     rulevolume.select_criticity = select_criticity
 
-    rulevolume.run()
+    run_rule_node(rulevolume)
     for x in rulevolume.result:
         print(x.source_group, x.status, x.actor, x.criticity, x.source)
 
@@ -123,7 +124,7 @@ def Top_Surface():
 
     rulevolume = TopSurface(OneSelect_Facet, 1, 2)
 
-    rulevolume.run()
+    run_rule_node(rulevolume)
 
 def IntersectionCheck():
     Chemin = "Ifc_Model/Ifc2x3_Duplex_Architecture.ifc"
@@ -145,7 +146,7 @@ def IntersectionCheck():
 
 
     rulevolume.select_exception=[select_rule]
-    rulevolume.run()
+    run_rule_node(rulevolume)
 
 def ExceptionMakinProcess():
     from RuleClass import Select
@@ -166,7 +167,7 @@ def ExceptionMakinProcess():
     exception_rule.select_target.dict_elements={ifc_window.file:[ifc_window]}
     exception_rule.select_target.list_ifc_file=[ifc_window.file]
 
-    Resultat=exception_rule.run()
+    Resultat=run_rule_node(exception_rule)
 
     for key,value in exception_rule.__dict__.items():
         print(key,value)

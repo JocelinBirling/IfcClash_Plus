@@ -107,9 +107,12 @@ class BooleanLeaf(BooleanRule):
             target_select.list_ifc_file = [result.target.file]
             self.rule.select_target = target_select
 
-        # The rule is run on this pair only, its previous results are dropped
+        # The rule is run on this pair only, its previous results are
+        # dropped — through the explicit orchestration (SPEC step 4).
+        from orchestrator import run_rule
+
         self.rule.result = []
-        self.rule.run()
+        run_rule(self.rule)
 
         return self._evaluate_number_of_results(len(self.rule.result))
 

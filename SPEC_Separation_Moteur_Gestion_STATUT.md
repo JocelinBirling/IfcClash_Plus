@@ -21,12 +21,12 @@ fait pour les 26 règles.
 | Brique | État |
 |---|---|
 | `pipeline.py` | `ResultPipeline` (Exception → Criticity → Actor → Grouping\|Must → Select) + `RuleOutput`. **Fait.** |
-| `compute()` à côté de `run()` | **Fait pour les 26 règles.** `run()` = adaptateur selects → compute → pipeline (l'adaptateur remplit le registre d'affichage dans TOUS les états, comme l'ancien `run()` — voir conventions ci-dessous). |
+| `compute()` pur (l'orchestrateur a coupé les run()) | **Fait pour les 26 règles.** Un nœud règle = moteur `compute` + hook `register_display_items` (rempli le registre dans TOUS les états, comme l'ancien `run()` — voir conventions) + sémantique `collect_results` (extend, ou replace pour Intersection/Clearance/Collision). |
 | Dispatch registre | `registry.engine_params(type)` + `compute_from_config(config, sources, targets, context)` : déclaration JSON plate → appel nommé du compute, piloté par `inspect.signature`. Les 26 règles sont migrées ; la garde `NotImplementedError` reste (robustesse), le test dispatch simule une classe non migrée en retirant `compute` temporairement. |
 | Format JSON | Déclaration PLATE actée (SPEC). Séparation uniquement côté code. |
 | Contrat `ResultInfo` | Mesures (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle, volume, area) ; points/faces/obbs appariés ; blocs propres : `axis` (ClearanceAxisToAxis), `raycast` (DirectView), `zone` (ClearanceForDoors), `axes` (Orientation). |
-| Étape 4 | **PAS COMMENCÉE** : bascule `RuleFile.run()`/IPC sur l'orchestrateur explicite (l'étape Select du pipeline reçoit les listes d'entrée). |
-| Étape 5 | **PAS COMMENCÉE** : nettoyage (supprimer `state`, `update_file_info`, `produce_select`, `RuleCheckComplex`, les adaptateurs `run()`, l'attribut mort `result_fail_source`, la classe `Template` morte, hissage des moteurs en fonctions module — le hissage se fait à l'étape 5). |
+| **Étape 4 — orchestrateur** | **FAITE.** `orchestrator.py` : `run_rule(rule)` = `_prepare_selections` (source/target/context + `create_list_of_element` ; le select contexte reçoit les fichiers du source) → `compute_rule` (appel nommé catalogue-driven, `engine_params` lus sur l'INSTANCE — au-dessus/Below portent `above_type`/`below_type` en plus de `type`) → `rule.collect_results` → `rule.register_display_items` → `end_rule_action` (pipeline + routage GUI). **Les run() des 26 règles sont COUPÉS** (reste le run() mort de `Template`, étape 5). Tous les pilotes passent par l'orchestrateur : `RuleFile.run`, `RuleFolder.run` (activation BooleanRule → `run_rule(state="Final")`), `SelectRule` (pose `element_to_pass` AVANT l'orchestration — le pipeline Select voit la config — puis consomme `rule.output.selection`), `BooleanLeaf.evaluate_result` (exceptions), l'IPC (`_run_rule`). Un nœud Select peut vivre directement dans `contains` (routé vers `node.run()`). L'IPC exporte les mêmes events (display preview / rule_result) — pas de test IPC automatisé, le flux est le même orchestrateur que RuleFile. |
+| Étape 5 | **PAS COMMENCÉE** : nettoyage (supprimer `state`, `update_file_info`, `produce_select`, `RuleCheckComplex`, l'attribut mort `result_fail_source`, la classe `Template` morte, hissage des moteurs en fonctions module). Les hooks `collect_results`/`register_display_items` RESTENT : ce sont les points d'attache de l'orchestrateur. |
 
 ## Conventions des règles migrées (à respecter pour la suite)
 
@@ -41,15 +41,16 @@ fait pour les 26 règles.
   `_probe_positions`) : les zones d'alignement et les sondes sont des
   données de display de NIVEAU ENSEMBLE, elles ne peuvent pas vivre
   dans les blocs info par-résultat.
-- `run()` (adaptateur) remplit le registre display dans TOUS les
-  états, exactement comme l'ancien `run()` : le display est un
-  consommateur en lecture du registre (`test_structure_DisplayUpdate::
+- `register_display_items(results)` (hook appelé par l'orchestrateur)
+  remplit le registre display dans TOUS les états, exactement comme
+  l'ancien `run()` : le display est un consommateur en lecture du
+  registre (`test_structure_DisplayUpdate::
   test_pilot_rules_fill_the_registry` épingle ce comportement en état
   Final). NE PAS regrouper l'enregistrement sur les états Display_*.
   Les helpers `_register_*_display` reconstruisent les items depuis
   les blocs info ; les données d'entrée non portées par les résultats
   (éléments de contexte, faces sélectionnées de la famille FaceCheck,
-  solides de zones, éléments ajustés) restent un travail d'adaptateur.
+  solides de zones, éléments ajustés) restent un travail de la règle.
 - Les primitives par liste plate d'entités vivent dans `clash_utils` :
   `element_shapes`, `elements_extrem_data`, `elements_obb_data`,
   `add_elements_to_clash_tree`, `add_elements_to_ray_tree`. Motif
@@ -115,44 +116,56 @@ fait pour les 26 règles.
 
 ## Dernière validation connue (toutes vertes à l'arrêt, sauf rouges préexistants ci-dessus)
 
-Compute : SurfaceRecover 14/14, OneObjectFace 11/11, TwoObjectsFace
-12/12, ClearanceForDoors 11/11, Alignement 11/11, DirectView 11/11,
-FreeSpace 12/12, LotsAB 19/19, RaysAndCustom 11/11.
-Adapter/unitaires : test_UnitRule_SurfaceRecover 26/26, Alignement
-24/24, DirectView 21/21, FreeSpace 12/12, ClearanceForDoors 14/14,
-FaceCheck 19/19 ; test_Rule_OneObject 9/9 (recalibré) ;
-test_Rule_TwoObjects_TwoElements 11/11 ; test_Rule_TwoObjects : les
-4 tests à selects partagés repassés verts un par un (le fichier
-entier n'a pas été rejoué d'une traite — un test par commande).
-test_Rule_IFC_Test_Model : toutes les classes passées une par une,
-seuls les 2 rouges préexistants restent. Structure : Select 16,
-ProduceSelect 6, RuleFile 13, RuleFolder 13, ResultPipeline 4,
-ResultShape 15, serialization 17, clash_utils 22, registry_dispatch
-6, exception 3, AbsRel 8, save_results 6, BooleanRule 24,
-DisplayRegistry 15, DisplayUpdate 6 (6/6 après le retour à
-l'enregistrement inconditionnel).
-Aucune modification non validée en suspens.
+Validation APRES l'étape 4 (orchestrateur, run() coupés) — un test par
+commande. Compute (contract + dispatch + adaptateur ThroughAdapter) :
+Above 10/10, Below 10/10, OBB_Above_Below 12/12, OneObject 13/13,
+Angles 8/8, TreeClashes 10/10, RaysAndCustom 11/11, SurfaceRecover
+14/14, OneObjectFace 11/11, TwoObjectsFace 12/12, ClearanceForDoors
+11/11, Alignement 11/11, DirectView 11/11, FreeSpace 12/12, LotsAB
+19/19. Unitaires : SurfaceRecover 26/26, Alignement 24/24,
+ClearanceForDoors 14/14, DirectView 21/21, FreeSpace 12/12,
+OneObjectFace 21+1 rouge préexistant, TwoObjectsFace 19+3 rouges
+préexistants, FaceCheck 19/19. RuleFile : test_Rule_OneObject 9/9,
+test_Rule_TwoObjects_TwoElements 11/11, test_Rule_TwoObjects :
+ray_check / intersection / free_space / direct_view /
+surface_recover / clearance_for_doors / alignement /
+clearance_axis_to_axis_non_linear (selects partagés) repassés un par
+un — verts. test_Rule_IFC_Test_Model : toutes les classes une par
+une, verts sauf les 2 rouges préexistants (TestOBB_Front_And_Back
+side, TestAngleBetween 45). Structure : Select 16, ProduceSelect 6,
+RuleFile 13, RuleFolder 13, ResultPipeline 4, ResultShape 15,
+serialization 17, clash_utils 22, registry_dispatch 6, exception 3,
+AbsRel 8, save_results 6 (parité export JSON), BooleanRule 24,
+DisplayRegistry 15, DisplayUpdate 6, custom_obb 10.
+Aucune modification non validée en suspens. L'IPC n'a pas de test
+automatisé : le même `run_rule` que RuleFile, revue de code seule.
 
 ## Prochaines étapes (dans l'ordre de la SPEC)
 
-1. **Étape 4** : `RuleFile.run()` devient l'orchestrateur explicite
-   (préparer les sélections → `compute` → pipeline → collecter les
-   `RuleOutput`) ; basculer l'IPC ; l'étape Select du pipeline reçoit
-   les listes d'entrée. Couper l'ancien `run()` juste après (branche
-   dédiée, pas de compatibilité longue). Parité stricte de l'export
-   JSON (`save_results_to_json`), clé pour clé (critère d'acceptation
-   2). Points d'attention connus : parité extend vs replace par règle ;
-   « sources non clashées » (`element_state_to_pass=False`) = éléments
-   SANS AUCUN résultat ; le registre display reste rempli par les
-   adaptateurs tant que le display n'est pas migré en consommateur des
-   blocs info (à trancher à l'étape 4 : le display devient
-   consommateur des résultats, voir SPEC « Display »).
-2. **Étape 5** : nettoyage — `state`, `update_file_info`,
-   `produce_select`, `RuleCheckComplex`, adaptateurs `run()`,
-   `result_fail_source`, classe `Template`, hissage des moteurs en
-   fonctions module.
+1. **Étape 5** : nettoyage — `state` (le routage Display_* migre vers
+   un consommateur explicite), `update_file_info`, `produce_select`
+   (SelectRule consomme déjà `rule.output.selection`), `RuleCheckComplex`,
+   `result_fail_source`, classe `Template` (+ son run() mort), hissage
+   des moteurs en fonctions module. Les hooks
+   `collect_results`/`register_display_items` restent (points
+   d'attache de l'orchestrateur). Parité de l'export JSON à
+   revalider après chaque suppression (critère d'acceptation 2).
+   Décision à prendre à l'étape 5 : le display consomme les blocs
+   info + le registre (statu quo) ou devient un pur consommateur
+   des blocs info (les données d'entrée — contexte, faces
+   sélectionnées — devraient alors vivre dans les résultats ou un
+   export dédié).
 
 ## Pièges rencontrés (ne pas reproduire)
+
+- **Orchestrateur (étape 4)** : un nœud `Select` peut vivre
+  directement dans `RuleFile.contains` (routé vers `node.run()`, pas
+  vers `run_rule`) ; `SelectRule` POSE `element_to_pass`/
+  `element_state_to_pass` sur la règle AVANT l'orchestration (le
+  pipeline Select voit la config — l'ancien flux les posait après le
+  run) ; Above/Below portent `above_type`/`below_type` en plus de
+  `type` (l'orchestrateur lit les params par nom de registre sur
+  l'instance).
 
 - **ifcopenshell 0.9** : une entité ne garde PAS son fichier en vie
   (cache `self.files[model]` à côté des entités). Un itérateur avec

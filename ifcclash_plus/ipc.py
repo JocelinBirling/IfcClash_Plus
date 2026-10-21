@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ifcopenshell  # noqa: E402
 
 from display_export import display_items_to_json  # noqa: E402
+from orchestrator import run_rule  # noqa: E402
 from registry import catalogue  # noqa: E402
 from result_export import (  # noqa: E402
     _rule_type,  # noqa: E402
@@ -181,7 +182,9 @@ def _run_rule(job_id, rule, model_of_file, preview):
     rule.state = "Final"
 
     try:
-        rule.run()
+        # The explicit orchestration (SPEC step 4): selections ->
+        # compute -> display -> pipeline -> RuleOutput.
+        run_rule(rule)
         run_error = None
     except Exception as exception:  # noqa: BLE001 - the run continues rule by rule
         run_error = f"{type(exception).__name__}: {exception}"

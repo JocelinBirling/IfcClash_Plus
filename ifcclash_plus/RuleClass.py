@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from booleanrule import BooleanRule, BooleanLeaf
 from pipeline import ResultPipeline, RuleOutput
+import orchestrator
 
 from ifctester.facet import Entity, Attribute
 import ifcopenshell.geom
@@ -113,11 +114,23 @@ class RuleFile:
         self.path_to_save: str = None
 
     def run(self):
+        """The explicit orchestrator (SPEC step 4): load the files,
+        distribute them, then drive every node — the rules through the
+        orchestration (selections -> compute -> display -> pipeline ->
+        RuleOutput), the folders through their activation."""
         self.load_file()
         self.update_file_info()
 
         for rulecheck_or_folder in self.contains:
-            rulecheck_or_folder.run()
+            if isinstance(rulecheck_or_folder, RuleFolder) or isinstance(
+                rulecheck_or_folder, Select
+            ):
+                # The folders keep their activation flow; a Select
+                # node (a SelectRule drives its own rule through the
+                # orchestration, a SelectFacet run is a no-op here).
+                rulecheck_or_folder.run()
+            else:
+                orchestrator.run_rule(rulecheck_or_folder)
 
     def update_file_info(self):
         for rule_or_file in self.contains:
@@ -149,11 +162,11 @@ class RuleFolder:
             return number_of_elements > 0
 
         if isinstance(self.activation_rule, BooleanRule):
-            # The rules referenced by the boolean tree are run first,
-            # then the tree is evaluated.
+            # The rules referenced by the boolean tree are run first
+            # (through the explicit orchestration, SPEC step 4), then
+            # the tree is evaluated.
             for one_rule in self.activation_rule.rules():
-                one_rule.state = "Final"
-                one_rule.run()
+                orchestrator.run_rule(one_rule, state="Final")
             return self.activation_rule.evaluate()
 
         raise TypeError(
@@ -164,7 +177,12 @@ class RuleFolder:
     def run(self):
         if self.check_Activation_Rule():
             for rulecheck_or_folder in self.contains:
-                rulecheck_or_folder.run()
+                if isinstance(rulecheck_or_folder, RuleFolder) or isinstance(
+                    rulecheck_or_folder, Select
+                ):
+                    rulecheck_or_folder.run()
+                else:
+                    orchestrator.run_rule(rulecheck_or_folder)
         else:
             return False
 
@@ -276,15 +294,15 @@ class SelectRule(Select):
         # element_state_to_pass: True to pick elements of the results with
         #     status True, False to pick elements of the input selection
         #     that went through the rule but produced no result.
-        # The SelectRule holds the data of the selection and gives it to
-        # the rule before calling produce_select, which takes no parameter.
-        # The run() of the rules takes no argument, the state is set on the rule.
-        self.rule.state = state
-        self.rule.run()
-
+        # The SelectRule is a downstream consumer of the RuleOutput: the
+        # chaining selection is produced by the Select step of the
+        # pipeline (produce_select), carried by rule.output.selection
+        # (SPEC step 4). The configuration is posed on the rule before
+        # the orchestration, so that the pipeline's Select step sees it.
         self.rule.element_to_pass = self.element_to_pass
         self.rule.element_state_to_pass = self.element_state_to_pass
-        self.dict_elements = self.rule.produce_select()
+        output = orchestrator.run_rule(self.rule, state=state)
+        self.dict_elements = output.selection
 
     def update_file_info(self, files_path, files):
         self.list_ifc_path = files_path
@@ -361,6 +379,22 @@ class RuleCheck:
                 # The registry is a temporary by-product: free the
                 # memory on the big models when it is not kept.
                 self.display_items.clear()
+
+    def collect_results(self, results):
+        """How the orchestrator stores the raw results of the compute
+        (SPEC step 4): extended by default, replaced by the rules
+        whose former run() replaced the list (Intersection, Clearance,
+        Collision)."""
+        self.result.extend(results)
+
+    def register_display_items(self, results):
+        """The display hook of the rule, called by the orchestrator
+        after the compute: the display is a consumer of the registry,
+        the rule rebuilds its items from the info blocks of the
+        results (and from its input data, for what the results do not
+        carry). No-op by default: the rules with auxiliary display
+        geometry override it."""
+        pass
 
     def run_exception(self):
         def exception_same_ifcsystem(result) -> bool:

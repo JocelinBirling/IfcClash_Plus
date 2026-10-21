@@ -26,6 +26,7 @@ You will never commit in git.
 ifcclash_plus/
 ├── __init__.py          # Package exports
 ├── RuleClass.py         # Base classes (RuleCheck, Select, Grouping, etc.)
+├── orchestrator.py      # run_rule: the explicit node orchestration (SPEC step 4)
 ├── pipeline.py          # ResultPipeline + RuleOutput (SPEC moteur/gestion)
 ├── Rules.py             # Rule implementations (Volume, Clearance, OBB_Above, etc.)
 ├── CustomOBB.py          # Custom OBB generation and manipulation
@@ -89,33 +90,35 @@ RuleCheck         # Abstract base for all rules
 | **Two Objects** | Validate element pairs | Spatial relationships | Clearance, Intersection, Collision, Above, Below, OBB_Above |
 | **Complex** | Multi-set validation | Complex scenarios | FreeSpace (FindPath and EvacuationDistance are NOT implemented) |
 
-#### 3. Rule Execution Flow
+#### 3. Rule Execution Flow (SPEC step 4 — the explicit orchestrator)
 ```
-RuleFile.run()
+RuleFile.run()                      # the orchestrator
   ├─ Load IFC files
   ├─ Update file info to all contains
-  └─ Execute each rule/folder
-
-rule.state = "Final" | "Select" | "Display_Input" | "Display_Result"  # an
-                                                                    # attribute,
-                                                                    # not a parameter
-rule.run()                         # run() takes NO argument
-  ├─ select_source.run()     # Get source elements
-  ├─ select_target.run()     # Get target elements (if 2-objects)
-  ├─ Run rule-specific logic # Generate self.result
-  └─ end_rule_action()        # Routes according to self.state:
-     ├─ run_exception()       # Filter out exceptions
-     ├─ "Final": manage_result()
-     │   ├─ run_criticity()   # Auto-classify criticity
-     │   ├─ run_actor()       # Auto-classify actor
-     │   └─ run_grouping() or run_abs_or_rel()
-     ├─ "Select": produce_select()
-     └─ "Display_Input" / "Display_Result": display
+  └─ For each node:
+     ├─ RuleFolder  -> activation, then recurse
+     ├─ Select node -> node.run() (a SelectRule drives its own rule)
+     └─ Rule       -> orchestrator.run_rule(rule):
+        ├─ _prepare_selections   # select_source/target/context.run()
+        │                        #   + create_list_of_element -> 3 input lists
+        ├─ compute_rule          # named compute call, catalogue-driven
+        │                        #   (engine_params == instance attributes)
+        ├─ rule.collect_results  # extend (or replace: Intersection/Clearance/Collision)
+        ├─ rule.register_display_items(results)  # the display hook
+        └─ rule.end_rule_action()  # ResultPipeline -> rule.output
+                                   #   + Display_* state GUI routing
 ```
 
-Important: the state is an attribute set on the rule (`rule.state`), never an
-argument of `run()`. `SelectRule` sets `rule.state = "Select"` before calling
-`rule.run()`.
+The rules have NO run() anymore: a rule node keeps its engine
+(`compute`), its display hook (`register_display_items`) and its
+result collection semantics (`collect_results`). Every driver goes
+through `orchestrator.run_rule`: `RuleFile.run`, the folder
+activations, `SelectRule` (state="Select"), the exception leaves
+(`BooleanLeaf.evaluate_result`) and the IPC.
+
+`rule.state` is still an attribute ("Final" | "Select" |
+"Display_Input" | "Display_Result"), routed by `end_rule_action` —
+it disappears at step 5 of the SPEC.
 
 ### Rule Declaration (JSON) — SPEC moteur/gestion
 
@@ -149,15 +152,19 @@ format) stays FLAT and gathers everything under ONE rule: the selects
   Alignement, DirectView, FreeSpace) POSE the named parameters on the
   instance at the start of the compute — the node remains the config
   carrier.
-- `run()` stays the select → compute → pipeline adapter for as long
-  as RuleFile drives the rules (step 4 of the SPEC is pending): it
-  fills the DISPLAY REGISTRY in every state, exactly as the old
-  `run()` did — the display is a read-only consumer of the registry
-  (`tests/test_structure_DisplayUpdate.py` pins this behavior). The
-  data rebuilt from the info blocks travels through the
-  `_register_*_display_items` helpers; input data not carried by the
-  results (context elements, selected faces of the FaceCheck family,
-  zone solids, fitted elements) stays an adapter concern.
+- The rules have NO run(): the explicit orchestrator
+  (`orchestrator.run_rule`) prepares the selections, calls the
+  compute (catalogue-driven named call), collects the results
+  (`collect_results`: extend, or replace for Intersection/Clearance/
+  Collision), fills the DISPLAY REGISTRY through the rule's
+  `register_display_items` hook — in every state, exactly as the old
+  run() did, the display is a read-only consumer of the registry
+  (`tests/test_structure_DisplayUpdate.py` pins this behavior) — then
+  runs the pipeline. The data rebuilt from the info blocks travels
+  through the `_register_*_display_items` helpers; input data not
+  carried by the results (context elements, selected faces of the
+  FaceCheck family, zone solids, fitted elements) stays a rule-side
+  display concern.
 - `Select.create_list_of_element()` rebuilds `list_of_elements` fresh
   on every call: the same select instance feeds several rules, an
   accumulated list would duplicate the elements (a select shared by
@@ -242,15 +249,19 @@ This creates a waterfall: IFC → Walls → Walls with bad volume → Walls with
 **Template for One-Object Rule**:
 
 ```python
-# In Rules.py
+# In Rules.py — a rule node keeps its engine, its display hook and
+# (only when needed) its result collection semantics. No run().
 from RuleClass import RuleCheckOneObject, ClashResultOneObject
+import clash_utils
 import ifcopenshell
-import multiprocessing
 
 class NewRule(RuleCheckOneObject):
     def __init__(self, source, param1, param2, state="Final"):
         super().__init__(state, source)   # state FIRST, then source
         self.type = "NewRule"
+        # The engine parameters carry their registry names
+        # (engine_params) as instance attributes: the orchestrator
+        # reads them by name (compute_from_config parity).
         self.param1 = param1
         self.param2 = param2
         self.geom_settings = ifcopenshell.geom.settings()
@@ -258,96 +269,41 @@ class NewRule(RuleCheckOneObject):
         # shapes are in LOCAL coordinates. Setting USE_PYTHON_OPENCASCADE
         # also forces world coordinates (see Common Operations).
 
-    def run(self):                        # run() takes NO argument
-        self.tree = ifcopenshell.geom.tree()
-        self.select_source.run()
+    # Optional: only to REPLACE the result list on re-run
+    # (Intersection/Clearance/Collision do); default extends.
+    # def collect_results(self, results):
+    #     self.result = results
 
-        for ifc_file in self.select_source.dict_elements.keys():
-            iterator = ifcopenshell.geom.iterator(
-                self.geom_settings,
-                ifc_file,
-                multiprocessing.cpu_count(),
-                include=self.select_source.dict_elements[ifc_file],
-            )
+    # Optional: only for auxiliary display geometry.
+    # def register_display_items(self, results):
+    #     if self.state in ("Display_Input", "Display_Result"):
+    #         _register_my_display_items(self, results)
 
-            if iterator.initialize():
-                while True:
-                    shape = iterator.get()
-                    geom = shape.geometry
-                    entity = ifc_file.by_id(shape.id)
+    # ---- The engine (SPEC: pure computation, testable without any IFC)
 
-                    # Your rule logic here
-                    if condition_met:
-                        result = ClashResultOneObject(source=entity, state=True)
-                        self.result.append(result)
-
-                    if not iterator.next():
-                        break
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()            # routes on self.state, do NOT call
-                                          # manage_result()/produce_select()
-                                          # directly
+    def compute(
+        self, liste_objet_source, param1, param2, liste_objet_contexte=None
+    ):
+        """Pure: no IFC loading, no selection, no post-processing, it
+        never touches self.result / self.output / the display registry.
+        Each verdict carries its display data in its info blocks."""
+        results = []
+        for entity, geom in clash_utils.element_shapes(
+            liste_objet_source, self.geom_settings
+        ):
+            # Your rule logic here
+            if condition_met:
+                result = ClashResultOneObject(source=entity, state=True)
+                result.info.distance = measured  # the nominal measure
+                results.append(result)
+        return results
 ```
 
-**Template for Two-Objects Rule**:
-
-```python
-from RuleClass import RuleCheckTwoObjects, ClashResultTwoObjects
-
-class NewTwoObjectRule(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance=0.1, state="Final"):
-        super().__init__(state, source, target)
-        self.type = "NewTwoObjectRule"
-        self.tolerance = tolerance
-        self.geom_settings = ifcopenshell.geom.settings()
-
-    def run(self):
-        self.tree = ifcopenshell.geom.tree()
-        self.select_source.run()
-        self.select_target.run()
-
-        self.select_source.create_list_of_element()
-        self.select_target.create_list_of_element()
-
-        self.add_to_tree(self.select_source, "BVH")
-        self.add_to_tree(self.select_target, "BVH")
-
-        # Your clash logic here
-        # Use self.tree.clash_intersection_many(), clash_clearance_many(), etc.
-
-        temp_result = self.tree.clash_intersection_many(
-            self.select_source.list_of_elements,
-            self.select_target.list_of_elements,
-            tolerance=self.tolerance,
-        )
-
-        self.result = []
-        for result in temp_result:
-            a_file = ifcopenshell.file.from_pointer(result.a.file_pointer())
-            a_object = a_file.by_id(result.a.id_)
-            b_file = ifcopenshell.file.from_pointer(result.b.file_pointer())
-            b_object = b_file.by_id(result.b.id_)
-
-            # a/b are not ordered: restore source/target.
-            # NOTE: membership tests belong on a SET, not a list (see
-            # Rapport.md T5 about the overlap ambiguity).
-            if a_object in set(self.select_source.list_of_elements):
-                source_object, target_object = a_object, b_object
-            else:
-                source_object, target_object = b_object, a_object
-
-            self.result.append(
-                ClashResultTwoObjects(
-                    source=source_object, target=target_object, state=True
-                )
-            )
-
-        if self.state == "Display_Input":
-            return self.end_rule_action()
-        self.end_rule_action()
-```
+Add the rule to the registry catalogue (`registry.RULES`, the params in
+the `compute` signature order) and to the serialization; the
+orchestrator and the dispatch then drive it with no further wiring.
+See an existing rule (e.g. Volume) and its compute test
+(tests/test_compute_OneObject.py) for the full pattern.
 
 ### Key Patterns
 
@@ -355,11 +311,15 @@ class NewTwoObjectRule(RuleCheckTwoObjects):
 2. **Call `super().__init__(state, source[, target])` first** (state first, then the selections)
 3. **Set self.type to a unique string identifier**
 4. **Set self.geom_settings with appropriate settings** (see the coordinate-system note in Common Operations)
-5. **Implement `run(self)` with NO argument** — the state lives in `self.state`
-6. **Populate self.result with ClashResult objects** (append to it; do not assume it is empty on re-run, see Rapport.md T2)
-7. **Exit through `self.end_rule_action()`** — it routes on `self.state` to manage_result / produce_select / display; never call `manage_result()` or `produce_select()` yourself
-8. **Prefer a spatial prefilter** (OBB `IsOut` or the BVH tree) before any per-pair `BRepExtrema` call — five rules still lack one (see Rapport.md §1.1)
-9. **Add to __init__.py exports**
+5. **Implement `compute(...)`** — the pure engine: entity lists and
+   named parameters in, raw results out; the named parameters carry
+   the registry (`engine_params`) names as instance attributes
+6. **Implement `register_display_items(results)`** when the rule has
+   auxiliary display geometry (rebuilt from the info blocks); override
+   `collect_results` only to REPLACE the result list (Intersection,
+   Clearance, Collision) — the orchestrator does the rest
+7. **Prefer a spatial prefilter** (OBB `IsOut` or the BVH tree) before any per-pair `BRepExtrema` call — five rules still lack one (see Rapport.md §1.1)
+8. **Add to __init__.py exports**
 
 ### Reusing Exceptions
 
