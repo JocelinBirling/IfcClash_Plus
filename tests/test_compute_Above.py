@@ -26,7 +26,8 @@ import ifcopenshell
 from ifctester import ids
 
 from Rules import Above
-from RuleClass import ClashResultTwoObjects, RuleFile, SelectFacet
+from RuleClass import ClashResultTwoObjects, RuleFile, SelectFacet, distribute_files
+from pipeline import selection_of
 from tests.test_structure_ResultShape import assert_result_shape
 
 MODEL_DIR = "IFC_Test_Model/IFC_Model"
@@ -220,13 +221,13 @@ class TestNonClashedSourceExtraction(unittest.TestCase):
 
         # The chaining consumer: a SelectRule drives the rule in
         # "Select" state and reads its selection product. Its files
-        # are set as RuleFile.update_file_info would do (it also
+        # are set as the distribute_files walker would do (it also
         # propagates them to the rule and its selects).
         select_clashed = SelectRule()
         select_clashed.rule = rule
         select_clashed.element_to_pass = "source"
         select_clashed.element_state_to_pass = True
-        select_clashed.update_file_info([path], [file])
+        distribute_files(select_clashed, [path], [file])
         select_clashed.run()
         select_clashed.create_list_of_element()
 
@@ -245,10 +246,11 @@ class TestNonClashedSourceExtraction(unittest.TestCase):
 
         # The complement: the initial sources minus the sources of
         # the results. Same configuration path as a SelectRule
-        # (the config is set on the rule, then produce_select).
+        # (the config is set on the rule, then the pipeline Select
+        # step computes the selection).
         rule.element_to_pass = "source"
         rule.element_state_to_pass = False
-        complement = rule.produce_select()
+        complement = selection_of(rule)
         complement_names = sorted(
             e.Name for elements in complement.values() for e in elements
         )

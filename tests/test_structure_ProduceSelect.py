@@ -1,7 +1,8 @@
 """
-Test suite for the produce_select method of the rules.
+Test suite for the Select step of the pipeline (pipeline.selection_of, the
+former produce_select of the rules — SPEC step 5).
 
-produce_select returns a dict {ifc_file: [elements]}:
+selection_of returns a dict {ifc_file: [elements]}:
 - passed=True: the elements of the results with status True;
 - passed=False: the elements of the input selection that went through
   the rule but produced no result.
@@ -27,12 +28,13 @@ import sys
 sys.path.insert(0, './ifcclash_plus')
 
 from Rules import Clearance, Volume
+from pipeline import selection_of
 from RuleClass import SelectFacet, RuleFile
 from ifctester import ids
 
 
 class TestProduceSelectTwoObjects(unittest.TestCase):
-    """Test produce_select on a two objects rule: source and target,
+    """Test the Select step on a two objects rule: source and target,
     with True and False."""
 
     def setUp(self):
@@ -57,11 +59,11 @@ class TestProduceSelectTwoObjects(unittest.TestCase):
         rule_file.run()
 
     def _produce_select(self, element="source", passed=True):
-        """produce_select takes no parameter: the configuration is set
-        on the rule (as a SelectRule does), then the method is called."""
+        """selection_of takes the rule: the configuration is set
+        on the rule (as a SelectRule does), then the step is run."""
         self.rule.element_to_pass = element
         self.rule.element_state_to_pass = passed
-        return self.rule.produce_select()
+        return selection_of(self.rule)
 
     def _count(self, select_dict):
         return sum(len(elements) for elements in select_dict.values())
@@ -138,7 +140,7 @@ class TestProduceSelectTwoObjects(unittest.TestCase):
 
 
 class TestProduceSelectOneObject(unittest.TestCase):
-    """Test produce_select on a one object rule: source only."""
+    """Test the Select step on a one object rule: source only."""
 
     def setUp(self):
         """Set up test fixtures."""
@@ -160,11 +162,11 @@ class TestProduceSelectOneObject(unittest.TestCase):
         rule_file.run()
 
     def _produce_select(self, passed=True):
-        """produce_select takes no parameter: the configuration is set
-        on the rule (as a SelectRule does), then the method is called.
+        """selection_of takes the rule: the configuration is set
+        on the rule (as a SelectRule does), then the step is run.
         A one object rule only has source elements."""
         self.rule.element_state_to_pass = passed
-        return self.rule.produce_select()
+        return selection_of(self.rule)
 
     def _count(self, select_dict):
         return sum(len(elements) for elements in select_dict.values())

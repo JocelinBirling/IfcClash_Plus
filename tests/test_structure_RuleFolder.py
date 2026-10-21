@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, './ifcclash_plus')
 
 from Rules import Collision, Volume
-from RuleClass import SelectFacet, RuleFile, RuleFolder, SelectRule
+from RuleClass import SelectFacet, RuleFile, RuleFolder, SelectRule, distribute_files
 from booleanrule import AndRule, BooleanLeaf
 from ifctester import ids
 
@@ -222,7 +222,7 @@ class TestRuleFolderStructure(unittest.TestCase):
         self.assertEqual(len(outer_rule.result), 14)
         self.assertEqual(len(inner_rule.result), 0)
 
-    def test_update_file_info_reaches_everything(self):
+    def test_distribute_files_reaches_everything(self):
         """The files reach the rules of the folder and the activation
         facet, even when it is not shared with a contained rule."""
         rule = Collision(
@@ -240,14 +240,15 @@ class TestRuleFolderStructure(unittest.TestCase):
         rule_file.list_ifc_path = [self.ifc_path]
         rule_file.contains = [folder]
         rule_file.load_file()
-        rule_file.update_file_info()
+        for item in rule_file.contains:
+            distribute_files(item, rule_file.list_ifc_path, rule_file.list_ifc_file)
 
         self.assertEqual(len(rule_file.list_ifc_file), 1)
         self.assertEqual(len(rule.select_source.list_ifc_file), 1)
         self.assertEqual(len(rule.select_target.list_ifc_file), 1)
         self.assertEqual(len(activation_facet.list_ifc_file), 1)
 
-    def test_update_file_info_reaches_boolean_activation_rules(self):
+    def test_distribute_files_reaches_boolean_activation_rules(self):
         """The files reach the rules referenced by a boolean activation."""
         activation_rule = Volume(
             self._select_facet("IFCDOOR"), volume_min=0.0, volume_max=1e12
@@ -259,7 +260,8 @@ class TestRuleFolderStructure(unittest.TestCase):
         rule_file.list_ifc_path = [self.ifc_path]
         rule_file.contains = [folder]
         rule_file.load_file()
-        rule_file.update_file_info()
+        for item in rule_file.contains:
+            distribute_files(item, rule_file.list_ifc_path, rule_file.list_ifc_file)
 
         self.assertEqual(len(activation_rule.select_source.list_ifc_file), 1)
 

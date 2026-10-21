@@ -48,7 +48,7 @@ from result_export import (  # noqa: E402
     element_ref,
     results_to_dicts,
 )
-from RuleClass import RuleFolder  # noqa: E402
+from RuleClass import RuleFolder, distribute_files  # noqa: E402
 from serialization import (  # noqa: E402
     deserialize_rule_file,
     deserialize_select,
@@ -319,7 +319,10 @@ def handle_run(job_id, payload):
 
     rule_file.list_ifc_path = list(paths)
     rule_file.list_ifc_file = files
-    rule_file.update_file_info()
+    # The file distribution plumbing (SPEC step 5 — the former
+    # update_file_info): every select of the tree gets the files.
+    for item in rule_file.contains:
+        distribute_files(item, list(paths), files)
     model_of_file = _model_index(files, paths)
 
     global _CANCELLED
@@ -355,7 +358,9 @@ def handle_select(request_id, payload):
         return
 
     try:
-        select.update_file_info(list(paths), files)
+        # The select may be a SelectRule: the walker distributes to
+        # its rule too (SPEC step 5 — the former update_file_info).
+        distribute_files(select, list(paths), files)
         select.run()
         select.create_list_of_element()
     except Exception as exception:  # noqa: BLE001

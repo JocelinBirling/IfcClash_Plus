@@ -391,7 +391,6 @@ def create_display():
 
     OneRuleFile.contains=[rule]
     OneRuleFile.load_file()
-    OneRuleFile.update_file_info()
 
 
     rule.display()

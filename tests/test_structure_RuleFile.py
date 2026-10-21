@@ -10,7 +10,8 @@ import ifcopenshell
 import sys
 sys.path.insert(0, './ifcclash_plus')
 from Rules import  Intersection, Above,Below ,OBB_Above,Clearance,Collision,OBB_Below, AngleBetween,Volume,Ray_Check
-from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects,RuleFolder,SelectRule
+from RuleClass import SelectFacet,RuleFile,ClashResultOneObject,ClashResultTwoObjects,RuleFolder,SelectRule,distribute_files
+from pipeline import selection_of
 from booleanrule import BooleanLeaf
 from ifctester import ids
 import os
@@ -57,8 +58,10 @@ class TestRuleFileBasic(unittest.TestCase):
         self.assertEqual(len(rule_file.list_ifc_file), 1)
         self.assertIsNotNone(rule_file.list_ifc_file[0])
 
-    def test_RuleFile_update_file_info(self):
-        """Test RuleFile can update file info in contained rules."""
+    def test_RuleFile_distribute_files(self):
+        """Test RuleFile distributes the files to the contained rules
+        (the former update_file_info, now the distribute_files
+        walker)."""
         rule_file = RuleFile()
         possible_paths = [
             "/home/jocelin/Documents/05 - Programmation/IfcClash_Plus/Ifc_Model/Ifc2x3_Duplex_Architecture.ifc",
@@ -68,10 +71,10 @@ class TestRuleFileBasic(unittest.TestCase):
 
 
         rule_file.load_file()
-        
+
         # Create a SelectFacet
         from ifctester.facet import Facet, Entity
-        
+
         # Create a simple select
         from ifcclash_plus.Rules import Collision
 
@@ -84,9 +87,12 @@ class TestRuleFileBasic(unittest.TestCase):
         second_select.applicability = [second_facet]
 
         rule_collision=Collision(first_select,second_select)
-                
+
         rule_file.contains = [rule_collision]
-        rule_file.update_file_info()
+        for rule_or_file in rule_file.contains:
+            distribute_files(
+                rule_or_file, rule_file.list_ifc_path, rule_file.list_ifc_file
+            )
 
 
         for rule in rule_file.contains:
@@ -277,11 +283,12 @@ class TestRuleFileWithSelectRule(unittest.TestCase):
         return sum(len(elements) for elements in select.dict_elements.values())
 
     def _produce_select(self, rule, element, passed):
-        """produce_select takes no parameter: the configuration is set
-        on the rule (as a SelectRule does), then the method is called."""
+        """selection_of takes the rule: the configuration is set on
+        the rule (as a SelectRule does), then the pipeline Select step
+        is run."""
         rule.element_to_pass = element
         rule.element_state_to_pass = passed
-        return rule.produce_select()
+        return selection_of(rule)
 
     def _assert_produce_select_quantities(
         self, rule, source_true, source_false, target_true, target_false

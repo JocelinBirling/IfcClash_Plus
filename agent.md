@@ -75,11 +75,10 @@ Select            # Base selection class
 
 RuleCheck         # Abstract base for all rules
 ├── RuleCheckOneObject    # Single element validation
-├── RuleCheckTwoObjects   # Pairwise element validation
-└── RuleCheckComplex      # Multi-set validation — currently BROKEN, do not
-                          # inherit from it (see Rapport.md §3); real complex
-                          # rules (FreeSpace) inherit RuleCheckOneObject
-                          # plus a context Select
+└── RuleCheckTwoObjects   # Pairwise element validation
+                          # (real complex rules — FreeSpace — inherit
+                          # RuleCheckOneObject plus a context Select;
+                          # RuleCheckComplex was removed at step 5)
 ```
 
 #### 2. Rule Categories
@@ -94,7 +93,7 @@ RuleCheck         # Abstract base for all rules
 ```
 RuleFile.run()                      # the orchestrator
   ├─ Load IFC files
-  ├─ Update file info to all contains
+  ├─ distribute_files: give the opened files to every select of the tree
   └─ For each node:
      ├─ RuleFolder  -> activation, then recurse
      ├─ Select node -> node.run() (a SelectRule drives its own rule)
@@ -677,8 +676,6 @@ blocking bugs, doubtful logic and the spatial-prefilter inventory (§1.1).
 
 1. **Fix blocking bugs** (HIGH — from Rapport.md §5)
    - `RuleCheckOneObject.run_actor`: crashes as soon as an actor is set
-   - `RuleCheckComplex`: not instantiable (complex rules must inherit
-     RuleCheckOneObject for now)
    - `run_exception`: Same_Building/Same_Storey/Same_Space raise TypeError
    - `Select.create_list_of_element` with an empty SelectFacet
 

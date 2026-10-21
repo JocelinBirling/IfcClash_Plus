@@ -21,7 +21,7 @@ from ifcopenshell.api import run
 
 sys.path.insert(0, './ifcclash_plus')
 
-from RuleClass import SelectFacet, SelectRule, RuleFile
+from RuleClass import SelectFacet, SelectRule, RuleFile, distribute_files
 from Rules import Volume, Area, Collision
 from ifctester import ids
 from ifctester.facet import (
@@ -155,12 +155,12 @@ class TestSelectFacetBasic(unittest.TestCase):
 
         self.assertEqual(self._count_elements(select_facet), 1)
 
-    def test_SelectFacet_update_file_info(self):
-        """Test SelectFacet can update file info."""
+    def test_SelectFacet_distribute_files(self):
+        """Test the file walker gives the files to a SelectFacet."""
         select_facet = SelectFacet()
 
         files = [ifcopenshell.open(self.test_ifc_path)]
-        select_facet.update_file_info([self.test_ifc_path], files)
+        distribute_files(select_facet, [self.test_ifc_path], files)
 
         self.assertEqual(select_facet.list_ifc_path, [self.test_ifc_path])
         self.assertEqual(select_facet.list_ifc_file, files)
@@ -253,9 +253,9 @@ class TestSelectRuleBasic(unittest.TestCase):
         # Same quantity as a Collision directly on doors and slabs
         self.assertEqual(len(collision_rule.result), 24)
 
-    def test_SelectRule_update_file_info(self):
-        """Test SelectRule update_file_info reaches its own attributes
-        and the select of its rule."""
+    def test_SelectRule_distribute_files(self):
+        """Test the file walker reaches the SelectRule and the select
+        of its rule."""
         volume_rule = Volume(
             source=SelectFacet(), volume_min=0.0, volume_max=100.0
         )
@@ -265,7 +265,7 @@ class TestSelectRuleBasic(unittest.TestCase):
         files_path = [self.ifc_path]
         files = []
 
-        select_rule.update_file_info(files_path, files)
+        distribute_files(select_rule, files_path, files)
 
         self.assertEqual(select_rule.list_ifc_path, files_path)
         self.assertEqual(select_rule.list_ifc_file, files)
@@ -315,7 +315,8 @@ class TestSelectFacetAndSelectRuleIntegration(unittest.TestCase):
         rule_file.contains = [select_facet]
 
         rule_file.load_file()
-        rule_file.update_file_info()
+        for item in rule_file.contains:
+            distribute_files(item, rule_file.list_ifc_path, rule_file.list_ifc_file)
 
         self.assertEqual(len(rule_file.contains), 1)
         self.assertEqual(len(rule_file.list_ifc_file), 1)
@@ -333,7 +334,8 @@ class TestSelectFacetAndSelectRuleIntegration(unittest.TestCase):
         rule_file.contains = [select_rule]
 
         rule_file.load_file()
-        rule_file.update_file_info()
+        for item in rule_file.contains:
+            distribute_files(item, rule_file.list_ifc_path, rule_file.list_ifc_file)
 
         self.assertEqual(len(rule_file.contains), 1)
         self.assertEqual(len(select_rule.list_ifc_file), 1)

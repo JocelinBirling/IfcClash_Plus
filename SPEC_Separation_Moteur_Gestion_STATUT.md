@@ -1,10 +1,12 @@
 # STATUT — Déploiement de SPEC_Separation_Moteur_Gestion.md
 
-Note de reprise rédigée en fin de session. À lire AVANT de continuer le
-déploiement. La SPEC de référence est `SPEC_Separation_Moteur_Gestion.md`
-(voir son tableau « Décisions d'architecture », arbitrage « déclaration
-JSON plate »). La méthodologie est rodée : suivre exactement ce qui a été
-fait pour les 26 règles.
+Note de reprise rédigée en fin de session. À lire AVANT de continuer.
+Le déploiement de la SPEC est TERMINÉ (étapes 1 à 5 ; `state` gardé
+par décision documentée). La SPEC de référence est
+`SPEC_Separation_Moteur_Gestion.md` (voir son tableau « Décisions
+d'architecture », arbitrage « déclaration JSON plate »). La
+méthodologie est rodée : suivre exactement ce qui a été fait pour les
+26 règles.
 
 ## Rappel des règles de travail (agent.md)
 
@@ -16,7 +18,7 @@ fait pour les 26 règles.
 - Jamais de commit git.
 - Code en anglais ; specs/doc en français.
 
-## État de l'infrastructure (étapes 1, 2 et 3 de la SPEC : TERMINÉES)
+## État de l'infrastructure (étapes 1 à 5 de la SPEC : TERMINÉES)
 
 | Brique | État |
 |---|---|
@@ -26,7 +28,7 @@ fait pour les 26 règles.
 | Format JSON | Déclaration PLATE actée (SPEC). Séparation uniquement côté code. |
 | Contrat `ResultInfo` | Mesures (distance, penetration_depth, contact_area, ratio, offset, hit_ratio, angle, volume, area) ; points/faces/obbs appariés ; blocs propres : `axis` (ClearanceAxisToAxis), `raycast` (DirectView), `zone` (ClearanceForDoors), `axes` (Orientation). |
 | **Étape 4 — orchestrateur** | **FAITE.** `orchestrator.py` : `run_rule(rule)` = `_prepare_selections` (source/target/context + `create_list_of_element` ; le select contexte reçoit les fichiers du source) → `compute_rule` (appel nommé catalogue-driven, `engine_params` lus sur l'INSTANCE — au-dessus/Below portent `above_type`/`below_type` en plus de `type`) → `rule.collect_results` → `rule.register_display_items` → `end_rule_action` (pipeline + routage GUI). **Les run() des 26 règles sont COUPÉS** (reste le run() mort de `Template`, étape 5). Tous les pilotes passent par l'orchestrateur : `RuleFile.run`, `RuleFolder.run` (activation BooleanRule → `run_rule(state="Final")`), `SelectRule` (pose `element_to_pass` AVANT l'orchestration — le pipeline Select voit la config — puis consomme `rule.output.selection`), `BooleanLeaf.evaluate_result` (exceptions), l'IPC (`_run_rule`). Un nœud Select peut vivre directement dans `contains` (routé vers `node.run()`). L'IPC exporte les mêmes events (display preview / rule_result) — pas de test IPC automatisé, le flux est le même orchestrateur que RuleFile. |
-| Étape 5 | **PAS COMMENCÉE** : nettoyage (supprimer `state`, `update_file_info`, `produce_select`, `RuleCheckComplex`, l'attribut mort `result_fail_source`, la classe `Template` morte, hissage des moteurs en fonctions module). Les hooks `collect_results`/`register_display_items` RESTENT : ce sont les points d'attache de l'orchestrateur. |
+| **Étape 5 — nettoyage** | **FAITE (sauf `state`, tranché ci-dessous).** Supprimés : `result_fail_source` (attribut mort), `RuleCheckComplex` (cassée, jamais héritée), `Template` (classe morte + son run()), `produce_select` (la sélection de chaînage vit dans le pipeline : `pipeline.selection_of(rule)` — l'étape Select du pipeline l'appelle, SelectRule consomme `rule.output.selection`), `update_file_info` (toutes les méthodes ; la distribution des fichiers vit dans `RuleClass.distribute_files(node, paths, files)`, un seul walker récursif : dossiers + activation, Select/SelectRule, selects des règles (source/target/criticity/actor), récursif sur les SelectRule imbriqués ; les selects contexte reçoivent les fichiers du source au run, les règles d'exception aucun fichier). IPC basculée sur `distribute_files`. **`state` EST GARDÉ (décision documentée)** : c'est un contrat wire IPC (registry.STATES + clé « state » de la sérialisation, consommée par le client BonsaiViewer) ET le pilote du flux display manuel (Display_Input/Display_Result ouvrent la GUI via end_rule_action) — le supprimer exige de retravailler le contrat client et de concevoir un pilote display explicite : à arbitrer avec le développeur avant une étape « 5-bis ». Hissage des moteurs en fonctions module : NON fait (optionnel « éventuel » de la SPEC ; le dispatch fonctionne sur rule.compute, le hissage serait cosmétique). Les hooks `collect_results`/`register_display_items` RESTENT : ce sont les points d'attache de l'orchestrateur. |
 
 ## Conventions des règles migrées (à respecter pour la suite)
 
@@ -116,45 +118,41 @@ fait pour les 26 règles.
 
 ## Dernière validation connue (toutes vertes à l'arrêt, sauf rouges préexistants ci-dessus)
 
-Validation APRES l'étape 4 (orchestrateur, run() coupés) — un test par
-commande. Compute (contract + dispatch + adaptateur ThroughAdapter) :
-Above 10/10, Below 10/10, OBB_Above_Below 12/12, OneObject 13/13,
-Angles 8/8, TreeClashes 10/10, RaysAndCustom 11/11, SurfaceRecover
-14/14, OneObjectFace 11/11, TwoObjectsFace 12/12, ClearanceForDoors
-11/11, Alignement 11/11, DirectView 11/11, FreeSpace 12/12, LotsAB
-19/19. Unitaires : SurfaceRecover 26/26, Alignement 24/24,
-ClearanceForDoors 14/14, DirectView 21/21, FreeSpace 12/12,
-OneObjectFace 21+1 rouge préexistant, TwoObjectsFace 19+3 rouges
-préexistants, FaceCheck 19/19. RuleFile : test_Rule_OneObject 9/9,
-test_Rule_TwoObjects_TwoElements 11/11, test_Rule_TwoObjects :
-ray_check / intersection / free_space / direct_view /
-surface_recover / clearance_for_doors / alignement /
-clearance_axis_to_axis_non_linear (selects partagés) repassés un par
-un — verts. test_Rule_IFC_Test_Model : toutes les classes une par
-une, verts sauf les 2 rouges préexistants (TestOBB_Front_And_Back
-side, TestAngleBetween 45). Structure : Select 16, ProduceSelect 6,
-RuleFile 13, RuleFolder 13, ResultPipeline 4, ResultShape 15,
-serialization 17, clash_utils 22, registry_dispatch 6, exception 3,
-AbsRel 8, save_results 6 (parité export JSON), BooleanRule 24,
-DisplayRegistry 15, DisplayUpdate 6, custom_obb 10.
+Validation APRES l'étape 5 (nettoyage : produce_select →
+pipeline.selection_of, update_file_info → distribute_files, morts
+supprimés) — un test par commande. Select step : ProduceSelect 6/6
+(réécrit sur pipeline.selection_of), ResultPipeline 4/4 (FakeRule
+réécrit), RuleFile 13/13 (dont les 4 tests SelectRule-inside-*
+réécrits sur selection_of), Above non-clashed-complement (chaining)
+1/1. Distribution : Select 16/16, RuleFolder 13/13 (les 2 tests de
+portée réécrits sur distribute_files). Intégration : AbsRel 8/8,
+Rule_OneObject 9/9, TwoElements 11/11, ray_check_rule 1/1,
+TreeClashes adapter 1/1, SurfaceRecover 14/14, UnitRule_FreeSpace
+12/12, IFC_Test_Model::TestBelow 4/4. Structure inchangée mais
+repassée : serialization 17, dispatch 6, save_results 6 (parité
+export), BooleanRule 24, exception 3, DisplayUpdate 6,
+DisplayRegistry 15.
 Aucune modification non validée en suspens. L'IPC n'a pas de test
-automatisé : le même `run_rule` que RuleFile, revue de code seule.
+automatisé : distribute_files + run_rule y sont les mêmes que
+RuleFile, revue de code seule.
 
-## Prochaines étapes (dans l'ordre de la SPEC)
+## Prochaines étapes (arbitrages restants)
 
-1. **Étape 5** : nettoyage — `state` (le routage Display_* migre vers
-   un consommateur explicite), `update_file_info`, `produce_select`
-   (SelectRule consomme déjà `rule.output.selection`), `RuleCheckComplex`,
-   `result_fail_source`, classe `Template` (+ son run() mort), hissage
-   des moteurs en fonctions module. Les hooks
-   `collect_results`/`register_display_items` restent (points
-   d'attache de l'orchestrateur). Parité de l'export JSON à
-   revalider après chaque suppression (critère d'acceptation 2).
-   Décision à prendre à l'étape 5 : le display consomme les blocs
-   info + le registre (statu quo) ou devient un pur consommateur
-   des blocs info (les données d'entrée — contexte, faces
-   sélectionnées — devraient alors vivre dans les résultats ou un
-   export dédié).
+Le déploiement des étapes 1 à 5 est TERMINÉ. Restent des décisions
+de développement, plus des étapes de migration :
+
+1. **`state` (5-bis)** : à arbitrer avec le développeur — suppression
+   = casser le contrat wire du client BonsaiViewer (registry.STATES +
+   clé « state ») et concevoir un pilote display explicite (le flux
+   display manuel ouvre aujourd'hui la GUI via end_rule_action sur
+   Display_Input/Display_Result).
+2. **Tests rouges préexistants** : arbitrer la sémantique de
+   `max_distance` seul (famille FaceCheck : 4 tests) — clash au-dessus
+   du max, ou recalibrer les tests sur la sémantique « rayon de
+   recherche » ; les 2 rouges de test_Rule_IFC_Test_Model
+   (OBB_Front_And_Back side, AngleBetween 45) sont des défauts de
+   règle documentés (Rapport.md), à corriger hors migration.
+3. **Hissage des moteurs en fonctions module** : optionnel, non fait.
 
 ## Pièges rencontrés (ne pas reproduire)
 

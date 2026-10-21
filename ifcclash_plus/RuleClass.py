@@ -104,6 +104,54 @@ class DisplayItem:
     element: object = None
 
 
+def distribute_files(node, files_path, files):
+    """Give the opened IFC files to every select of the node tree.
+
+    The file distribution plumbing of the orchestrator (SPEC step 5 —
+    the former update_file_info, one method per class, is now ONE
+    walker): the selects are the input preparation layer, they need
+    the opened files to run their facets.
+
+    The context selects of the complex rules receive the files of the
+    source at run time (the orchestrator wires them), they are not
+    distributed here. The rules of the exception leaves receive the
+    elements of the pairs at the evaluation, they need no file.
+    """
+    if isinstance(node, RuleFolder):
+        # The activation rule also needs the files to be able to run,
+        # even when it is not shared with a rule of the folder.
+        if isinstance(node.activation_rule, BooleanRule):
+            for one_rule in node.activation_rule.rules():
+                distribute_files(one_rule, files_path, files)
+        elif node.activation_rule is not None:
+            node.activation_rule.list_ifc_path = files_path
+            node.activation_rule.list_ifc_file = files
+        for one_node in node.contains:
+            distribute_files(one_node, files_path, files)
+        return
+
+    if isinstance(node, Select):
+        node.list_ifc_path = files_path
+        node.list_ifc_file = files
+        # A SelectRule node drives its own rule: the rule needs the
+        # files too (recursively — its selects may be SelectRules).
+        if isinstance(node, SelectRule):
+            distribute_files(node.rule, files_path, files)
+        return
+
+    # A rule: every select that runs on the files. The selects may be
+    # SelectRules (chaining), the recursion handles them.
+    selects = [getattr(node, "select_source", None)]
+    if getattr(node, "select_target", None) is not None:
+        selects.append(node.select_target)
+    selects.extend(node.select_criticity or [])
+    selects.extend(node.select_actor or [])
+    for one_select in selects:
+        if one_select is None:
+            continue
+        distribute_files(one_select, files_path, files)
+
+
 class RuleFile:
     def __init__(self):
         self.id: str = ""
@@ -115,11 +163,14 @@ class RuleFile:
 
     def run(self):
         """The explicit orchestrator (SPEC step 4): load the files,
-        distribute them, then drive every node — the rules through the
-        orchestration (selections -> compute -> display -> pipeline ->
-        RuleOutput), the folders through their activation."""
+        distribute them (distribute_files), then drive every node —
+        the rules through the orchestration (selections -> compute ->
+        display -> pipeline -> RuleOutput), the folders through their
+        activation."""
         self.load_file()
-        self.update_file_info()
+
+        for rulecheck_or_folder in self.contains:
+            distribute_files(rulecheck_or_folder, self.list_ifc_path, self.list_ifc_file)
 
         for rulecheck_or_folder in self.contains:
             if isinstance(rulecheck_or_folder, RuleFolder) or isinstance(
@@ -131,10 +182,6 @@ class RuleFile:
                 rulecheck_or_folder.run()
             else:
                 orchestrator.run_rule(rulecheck_or_folder)
-
-    def update_file_info(self):
-        for rule_or_file in self.contains:
-            rule_or_file.update_file_info(self.list_ifc_path, self.list_ifc_file)
 
     def load_file(self):
         # @todo improve the load_file()
@@ -185,20 +232,6 @@ class RuleFolder:
                     orchestrator.run_rule(rulecheck_or_folder)
         else:
             return False
-
-    def update_file_info(self, files_path, files):
-        # The activation rule also needs the files to be able to run,
-        # even when it is not shared with a rule of the folder.
-        # An activation_rule of another type is rejected at run,
-        # in check_Activation_Rule.
-        if isinstance(self.activation_rule, BooleanRule):
-            for one_rule in self.activation_rule.rules():
-                one_rule.update_file_info(files_path, files)
-        elif type(self.activation_rule) is SelectFacet:
-            self.activation_rule.update_file_info(files_path, files)
-
-        for rule_or_file in self.contains:
-            rule_or_file.update_file_info(files_path, files)
 
 
 class Select:
@@ -274,10 +307,6 @@ class SelectFacet(Select):
                         onefile, self.dict_elements[onefile]
                     )
 
-    def update_file_info(self, files_path, files):
-        self.list_ifc_path = files_path
-        self.list_ifc_file = files
-
 
 class SelectRule(Select):
     def __init__(self):
@@ -296,18 +325,14 @@ class SelectRule(Select):
         #     that went through the rule but produced no result.
         # The SelectRule is a downstream consumer of the RuleOutput: the
         # chaining selection is produced by the Select step of the
-        # pipeline (produce_select), carried by rule.output.selection
-        # (SPEC step 4). The configuration is posed on the rule before
-        # the orchestration, so that the pipeline's Select step sees it.
+        # pipeline (pipeline.selection_of), carried by
+        # rule.output.selection (SPEC steps 4 and 5). The configuration
+        # is posed on the rule before the orchestration, so that the
+        # pipeline's Select step sees it.
         self.rule.element_to_pass = self.element_to_pass
         self.rule.element_state_to_pass = self.element_state_to_pass
         output = orchestrator.run_rule(self.rule, state=state)
         self.dict_elements = output.selection
-
-    def update_file_info(self, files_path, files):
-        self.list_ifc_path = files_path
-        self.list_ifc_file = files
-        self.rule.update_file_info(files_path, files)
 
 
 @abstractmethod
@@ -324,8 +349,6 @@ class RuleCheck:
 
         self.result: list[ClashResult] = []
 
-        self.result_fail_source: list[ifcopenshell.entity_instance] = []
-
         self.select_exception: BooleanLeaf | str | None = None
 
         self.select_source: Select = source
@@ -334,8 +357,9 @@ class RuleCheck:
         self.select_actor: list[SelectFacet] = []
         self.abs_or_rel_check: AbsoluteOrRelativeChecking = None
 
-        # Configuration of produce_select, given by a SelectRule before
-        # the call. element_to_pass is only used by a two objects rule.
+        # Configuration of the pipeline Select step (pipeline.selection_of),
+        # given by a SelectRule before the orchestration. element_to_pass
+        # is only used by a two objects rule.
         self.element_to_pass: str = "source"
         self.element_state_to_pass: bool = True
 
@@ -363,8 +387,10 @@ class RuleCheck:
         # The management steps (exception, criticity, actor,
         # grouping/must, select) live in the ResultPipeline, outside
         # of the rule computation (SPEC Separation moteur/gestion).
-        # The state routing below stays on the rule until the
-        # orchestrator migration.
+        # The state routing below is the only piece of state left: the
+        # display states drive the manual GUI, the wire format keeps
+        # the state key (registry.STATES, serialization) — see the
+        # SPEC "Attribut state" for the long-term decision.
         self.output = ResultPipeline(self).apply()
 
         if self.state == "Display_Input":
@@ -672,50 +698,6 @@ class RuleCheckOneObject(RuleCheck):
         super().__init__(state, source)
         # To remember exception has no need in One Object because you can chains the rule to get the same result.
 
-    def produce_select(self):
-        # element_state_to_pass: True to pick elements of the results
-        #     with status True, False to pick elements of the input
-        #     selection that went through the rule but produced no result.
-        # A one object rule only has source elements.
-        # An element appearing in several results is returned only once.
-        dict_return = {}
-
-        if self.element_state_to_pass:
-            elements_already_added = set()
-            for oneresult in self.result:
-                if oneresult.status:
-                    the_element = oneresult.source
-                    if the_element in elements_already_added:
-                        continue
-                    elements_already_added.add(the_element)
-                    if the_element.file in dict_return:
-                        dict_return[the_element.file].append(the_element)
-                    else:
-                        dict_return[the_element.file] = [the_element]
-
-            return dict_return
-
-        # Elements of the input selection absent from the results
-        # The entity_instance equality is value based, so a set of elements
-        # works even if the file wrappers of the results are different
-        # from the ones of the selection.
-        elements_in_results = set()
-        for oneresult in self.result:
-            elements_in_results.add(oneresult.source)
-
-        for ifc_file, elements in self.select_source.dict_elements.items():
-            if not elements:
-                continue
-            absent = [
-                one_element
-                for one_element in elements
-                if one_element not in elements_in_results
-            ]
-            if absent:
-                dict_return[ifc_file] = absent
-
-        return dict_return
-
     def run_grouping(self):
 
         def grouping_by_entity(self):
@@ -859,15 +841,6 @@ class RuleCheckOneObject(RuleCheck):
         if self.run_abs_or_rel() is None:
             self.run_grouping()
 
-    def update_file_info(self, files_path, files):
-        self.select_source.update_file_info(files_path, files)
-
-        for one_select_criticity in self.select_criticity:
-            one_select_criticity.update_file_info(files_path, files)
-
-        for one_select_actor in self.select_actor:
-            one_select_actor.update_file_info(files_path, files)
-
     def _display_input_generic(self):
         def add_to_display(entity, geom_settings, color):
             shape = ifcopenshell.geom.create_shape(geom_settings, entity)
@@ -952,64 +925,6 @@ class RuleCheckTwoObjects(RuleCheck):
         super().__init__(state, source)
         self.select_target: Select = target
         self.result_fail_target: list[ifcopenshell.entity_instance] = []
-
-    def produce_select(self):
-        # element_to_pass: "source" or "target"
-        # element_state_to_pass: True to pick elements of the results
-        #     with status True, False to pick elements of the input
-        #     selection that went through the rule but produced no result.
-        # An element appearing in several results is returned only once.
-        if self.element_to_pass not in ("source", "target"):
-            raise ValueError(
-                f"element_to_pass must be 'source' or 'target', got '{self.element_to_pass}'"
-            )
-
-        dict_return = {}
-
-        if self.element_state_to_pass:
-            elements_already_added = set()
-            for oneresult in self.result:
-                if oneresult.status:
-                    the_element = getattr(oneresult, self.element_to_pass)
-                    if the_element is None:
-                        continue
-                    if the_element in elements_already_added:
-                        continue
-                    elements_already_added.add(the_element)
-                    if the_element.file in dict_return:
-                        dict_return[the_element.file].append(the_element)
-                    else:
-                        dict_return[the_element.file] = [the_element]
-
-            return dict_return
-
-        # Elements of the input selection absent from the results
-        selection = (
-            self.select_source
-            if self.element_to_pass == "source"
-            else self.select_target
-        )
-        # The entity_instance equality is value based, so a set of elements
-        # works even if the file wrappers of the results are different
-        # from the ones of the selection.
-        elements_in_results = set()
-        for oneresult in self.result:
-            the_element = getattr(oneresult, self.element_to_pass)
-            if the_element is not None:
-                elements_in_results.add(the_element)
-
-        for ifc_file, elements in selection.dict_elements.items():
-            if not elements:
-                continue
-            absent = [
-                one_element
-                for one_element in elements
-                if one_element not in elements_in_results
-            ]
-            if absent:
-                dict_return[ifc_file] = absent
-
-        return dict_return
 
     def run_grouping(self):
         def grouping_by_entity(self):
@@ -1204,19 +1119,6 @@ class RuleCheckTwoObjects(RuleCheck):
 
         return True
 
-    def update_file_info(self, files_path, files):
-        self.select_source.update_file_info(files_path, files)
-        self.select_target.update_file_info(files_path, files)
-
-        for one_select_criticity in self.select_criticity:
-            one_select_criticity.update_file_info(files_path, files)
-
-        for one_select_actor in self.select_actor:
-            one_select_actor.update_file_info(files_path, files)
-
-        # select_exception is a BooleanLeaf: its rule receives the
-        # elements of the pairs at the evaluation, it needs no file.
-
     def manage_result(self):
         self.run_criticity()
         self.run_actor()
@@ -1390,15 +1292,6 @@ class RuleCheckTwoObjects(RuleCheck):
 
         # The geometries registered during run(), by category.
         self._display_registered_items()
-
-
-class RuleCheckComplex(RuleCheck):
-    def __init__(self):
-        super().__init__()
-        select_target: Select = None
-        select_context_A: Select = None
-        select_context_B: Select = None
-        select_context_C: Select = None
 
 
 ####======= Absolute or Relative Checking

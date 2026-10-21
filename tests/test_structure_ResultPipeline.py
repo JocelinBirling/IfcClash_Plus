@@ -18,6 +18,29 @@ sys.path.insert(0, "./ifcclash_plus")
 from pipeline import ResultPipeline, RuleOutput
 
 
+class FakeResult:
+    """A result surface for the Select step (pipeline.selection_of)."""
+
+    def __init__(self, source, status=True):
+        self.source = source
+        self.status = status
+
+
+class FakeFile:
+    """The file of a fake element."""
+
+    def __init__(self, name):
+        self.name = name
+
+
+class FakeElement:
+    """A fake entity instance."""
+
+    def __init__(self, file, name):
+        self.file = file
+        self.name = name
+
+
 class FakeRule:
     """The management surface of a rule, recording every call."""
 
@@ -26,16 +49,17 @@ class FakeRule:
         self.result = results if results is not None else []
         self.grouped_result = grouped or []
         self.calls = []
+        # The Select step configuration (pipeline.selection_of reads
+        # it off the rule, as a SelectRule poses it).
+        self.element_to_pass = "source"
+        self.element_state_to_pass = True
+        self.select_source = None
 
     def run_exception(self):
         self.calls.append("exception")
 
     def manage_result(self):
         self.calls.append("manage_result")
-
-    def produce_select(self):
-        self.calls.append("produce_select")
-        return {"IfcFile": ["element"]}
 
 
 class TestResultPipeline(unittest.TestCase):
@@ -50,12 +74,16 @@ class TestResultPipeline(unittest.TestCase):
         self.assertEqual(output.groups, [3])
         self.assertIsNone(output.selection)
 
-    def test_select_runs_exception_then_produce_select(self):
-        rule = FakeRule("Select")
+    def test_select_runs_exception_then_selection_of(self):
+        """The Select step (pipeline.selection_of, the former
+        produce_select) reads the results of the rule."""
+        ifc_file = FakeFile("IfcFile")
+        element = FakeElement(ifc_file, "element")
+        rule = FakeRule("Select", results=[FakeResult(element)])
         output = ResultPipeline(rule).apply()
 
-        self.assertEqual(rule.calls, ["exception", "produce_select"])
-        self.assertEqual(output.selection, {"IfcFile": ["element"]})
+        self.assertEqual(rule.calls, ["exception"])
+        self.assertEqual(output.selection, {ifc_file: [element]})
         self.assertIsNone(output.groups)
 
     def test_display_runs_exception_only(self):

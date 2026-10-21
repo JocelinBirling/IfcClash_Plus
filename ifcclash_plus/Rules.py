@@ -1836,16 +1836,6 @@ class Below(RuleCheckTwoObjects):
 
 
 
-class Template(RuleCheckTwoObjects):
-    def __init__(self, source, target, tolerance=0.1, state="Final"):
-        super().__init__(state, source, target)
-        self.tolerance: float = tolerance
-        self.geom_settings = ifcopenshell.geom.settings(USE_WORLD_COORDS=False)
-
-    def run(self):
-        self.end_rule_action()
-
-
 # ---- The OBB_Above/OBB_Below shared engine (SPEC Separation
 # moteur/gestion): the two rules differ only by the side of the
 # extrusion of the detection zone.
