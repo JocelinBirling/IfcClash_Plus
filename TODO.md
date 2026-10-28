@@ -61,3 +61,42 @@ On aurait aussi un UniqueID, qui serait générer alétoirement.
 Faut-il laisser cette fonction au viewer, une visualisation ? Au final, dans l'interface on peut choisir facilement la manière de mettre en forme et on pourra produire un sujet BCF. Cette juste nécéssaire si on veut vraiment industrialiser le procéder et déjà se préfiltrer les éléments.
 
 Si on continue d'utilisation le grouping, il devrait produire un complex_Result. 
+
+
+
+27. Comparer Intersection et Intersection2
+Il faudrait lancer des tests sur les deux fonctions et vérifier les écarts. Il ne devrait pas y en avoir.
+
+Quel est l'impact de créer un tree sur les fonctions ? et sur les vitesses d'execution ?
+Je dois donner des gros modèles et vérifier l'implémentation.
+
+28. Uniformiser la méthode de sélection
+
+Pour volume par exemple, qu'on l'on déclare (min=10,max=50), quel est la logique de sélection des clashs. 
+
+Entre 10 et 50, cela va clasher ?
+Hors de 10 et 50, cela va clasher ?
+
+Faut-il inclure 10 et 50 ? ou bien les exclure ? => C'est beaucoup plus logique de les inclures dans le clash [10,50]
+
+
+Pour le clearance, la zone est bien une zone de clash. On cherche les objets après les min et avant le max. 
+
+[10,50] => Zone de Clash entre 10 et 50. C'est bien ce qu'il faut faire. 
+
+29. Pour les fonctions OBB, il faut ajouter le type de clash. Aujourd'hui, il n'y a pas de clash pour ces types. 
+
+
+30. Lire et déploiyer Rapport_PostEngine
+
+31. Passer toutes les règles avec if state="Display_Input" pour retourner des valeurs d'affichages.
+
+
+## Rapport PostEngine.md
+
+32. 2.1 Docstrings du catalogue inversées (MAJEUR)
+Je veux que les règles détecte ce que l'on a mis dans les bornes, inclus la borne. Règle[10,20] doit détecter les éléments qui sont entre 10 et 20, et remonte alors ceux-ci en un clash.
+
+
+33. Optimiser les lourdeurs dans les boucles sans préfiltres.
+2.5 Lourdeur : boucles paires sans préfiltre spatial (MAJEUR)

@@ -4,7 +4,7 @@
 
 **Purpose**: IfcClash_Plus extends IfcClash with a modular, composable rule system for BIM/IFC model clash detection. It enables creating complex validation workflows by chaining simple rules together like "lego blocks."
 
-The code writtent will always be in english. The specification are allowed in french.
+The code written will always be in english. The specification are allowed in french.
 
 You will never commit in git.
 
