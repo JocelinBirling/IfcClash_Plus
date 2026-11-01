@@ -6,7 +6,6 @@ BonsaiViewer, pour lancer la géométrie vient créer des fichiers .ifcview.
 CGAL sait bien utiliser .ifcview.
 Opencascade sait bien utiliser .ifc (pour reconstruire la géométrie).
 
-Si mon code ne doit s'appliquer que à 
 
 
 

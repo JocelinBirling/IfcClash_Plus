@@ -100,3 +100,17 @@ Je veux que les règles détecte ce que l'on a mis dans les bornes, inclus la bo
 
 33. Optimiser les lourdeurs dans les boucles sans préfiltres.
 2.5 Lourdeur : boucles paires sans préfiltre spatial (MAJEUR)
+
+
+34. Recréer des tests, sur d'autres maquettes. Plus on aura de test, plus on assure que le portage se passera bien.
+
+Je peux facilement recréer des tests entre des maquettes avec des IfcWall avec des IfcBuildingElementproxy.
+J'arrive à trouver des couples pour faire des clearances ou biend des intersections.
+
+Slab vs Proxy
+Space Vs Proxy
+
+
+
+35. Faut-il continuer sur les règles sur les faces d'un objet ?
+Typiquement, c'est un problème d'ensolleillement. 

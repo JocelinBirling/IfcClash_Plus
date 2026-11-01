@@ -307,6 +307,76 @@ def mesh_to_solid(shape: TopoDS_Shape, tolerance: float = 1e-3) -> TopoDS_Shape:
     return compound
 
 
+def common_volume(shape_a, shape_b):
+    """The overlap of two solid shapes: (volume m3, center of mass)
+    of their OCCT boolean common, or None when the boolean fails or
+    gives no shape.
+
+    Plain boolean, no SetRunParallel nor SetUseOBB: on an invalid
+    sewn solid (open mesh) both options turn a failing boolean into an
+    artefact volume (SuzanneA_NotCollide_SuzanneB, Duplex floor vs
+    Suzanne).
+    """
+    from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCC.Core import BRepGProp
+    from OCC.Core.GProp import GProp_GProps
+
+    common = BRepAlgoAPI_Common(shape_a, shape_b)
+    common.Build()
+    if not common.IsDone():
+        return None
+    common_shape = common.Shape()
+    if common_shape is None or common_shape.IsNull():
+        return None
+
+    properties = GProp_GProps()
+    BRepGProp.brepgprop.VolumeProperties(common_shape, properties)
+    center = properties.CentreOfMass()
+    return float(properties.Mass()), (center.X(), center.Y(), center.Z())
+
+
+# The solids of the running common_volumes call, inherited by the
+# forked workers: no shape is pickled to the pool.
+_POOL_SHAPES = []
+
+
+def _pool_common_volume(pair):
+    index_a, index_b = pair
+    return pair, common_volume(_POOL_SHAPES[index_a], _POOL_SHAPES[index_b])
+
+
+def common_volumes(shapes, pairs, min_pairs_for_pool: int = 16):
+    """The common_volume of each (index_a, index_b) pair of shapes, as
+    a {pair: (volume, center) or None} dict.
+
+    The booleans are independent: above min_pairs_for_pool pairs they
+    are spread over a process pool (one process per core, the GIL is
+    not released by every OCCT call). The pool is forked so the
+    workers inherit the shapes; where fork is not available (Windows,
+    macOS default), or for a few pairs, the booleans run one after the
+    other.
+    """
+    global _POOL_SHAPES
+
+    use_pool = (
+        len(pairs) >= min_pairs_for_pool
+        and multiprocessing.cpu_count() > 1
+        and "fork" in multiprocessing.get_all_start_methods()
+    )
+    if not use_pool:
+        return {
+            pair: common_volume(shapes[pair[0]], shapes[pair[1]]) for pair in pairs
+        }
+
+    _POOL_SHAPES = shapes
+    try:
+        context = multiprocessing.get_context("fork")
+        with context.Pool(multiprocessing.cpu_count()) as pool:
+            return dict(pool.imap_unordered(_pool_common_volume, pairs, chunksize=4))
+    finally:
+        _POOL_SHAPES = []
+
+
 def faces_to_compound(faces):
     """Toujours valide, même avec une seule face."""
     if not faces:

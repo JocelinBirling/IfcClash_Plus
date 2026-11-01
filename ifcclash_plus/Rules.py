@@ -923,10 +923,11 @@ class Intersection2(RuleCheckTwoObjects):
        SOLIDS (clash_utils.element_shapes then clash_utils.mesh_to_solid:
        the iterator returns loose triangulated faces, and a boolean on
        loose faces is a 2D operation with no volume);
-    2. bounding-box prefilter (Bnd_Box): the pairs with disjoint
-       boxes are skipped before any boolean operation;
-    3. exact test (BRepAlgoAPI_Common): the pair is flagged when the
-       common carries a strictly positive volume
+    2. bounding-box prefilter (Bnd_Box, then Bnd_OBB): the pairs with
+       disjoint boxes are skipped before any boolean operation;
+    3. exact test (BRepAlgoAPI_Common, one per unordered pair, spread
+       over a process pool — clash_utils.common_volumes): the pair is
+       flagged when the common carries a strictly positive volume
        (brepgprop.VolumeProperties). The tolerance is the MINIMUM
        OVERLAP VOLUME (m3) below which a pair is considered
        negligible — 0.0 flags any positive overlap.
@@ -966,68 +967,78 @@ class Intersection2(RuleCheckTwoObjects):
         file, runs no selection and post-processes no result. No
         clash tree: the engine is pure PythonOCC — one world TopoDS
         shape per element, a bounding-box prefilter, then the exact
-        boolean per candidate pair. Each verdict carries the overlap
+        boolean per candidate pair, run in parallel. Each verdict carries the overlap
         volume (m3, nominal), the same volume in the volumes block,
         the zero distance of the overlap and the center of the common
         (labeled point pair) in its info blocks.
         """
-        from OCC.Core.Bnd import Bnd_Box
-        from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
-        from OCC.Core import BRepGProp
-        from OCC.Core.GProp import GProp_GProps
+        from OCC.Core.Bnd import Bnd_Box, Bnd_OBB
         from OCC.Core.BRepBndLib import brepbndlib
 
-        def volume_and_center(shape):
-            """The volume (m3) of a solid shape and its center of
-            mass."""
-            properties = GProp_GProps()
-            BRepGProp.brepgprop.VolumeProperties(shape, properties)
-            center = properties.CentreOfMass()
-            return (
-                float(properties.Mass()),
-                (center.X(), center.Y(), center.Z()),
-            )
+        # One solid per element, built once even when the element is
+        # both in the source and in the target list.
+        solid_index = {}
+        solids = []
+        for entity, shape in clash_utils.element_shapes(
+            list(dict.fromkeys([*liste_objet_source, *liste_objet_target])),
+            self.geom_settings,
+        ):
+            solid_index[entity] = len(solids)
+            solids.append(clash_utils.mesh_to_solid(shape))
 
-        sources = [
-            (entity, clash_utils.mesh_to_solid(shape))
-            for entity, shape in clash_utils.element_shapes(
-                liste_objet_source, self.geom_settings
-            )
-        ]
-        targets = [
-            (entity, clash_utils.mesh_to_solid(shape))
-            for entity, shape in clash_utils.element_shapes(
-                liste_objet_target, self.geom_settings
-            )
-        ]
-
-        # One bounding box per shape, cached: the prefilter skips the
-        # pairs with disjoint boxes before any boolean operation.
-        boxes = {}
-        for entity, shape in sources + targets:
+        # One axis-aligned box and one oriented box per solid, cached:
+        # the prefilter skips the pairs with disjoint boxes before any
+        # boolean operation (the oriented box catches the rotated
+        # elements whose axis-aligned boxes overlap).
+        boxes = []
+        oriented_boxes = []
+        for shape in solids:
             box = Bnd_Box()
             brepbndlib.Add(shape, box)
-            boxes[entity] = box
+            boxes.append(box)
+            oriented_box = Bnd_OBB()
+            brepbndlib.AddOBB(shape, oriented_box, False, False, False)
+            oriented_boxes.append(oriented_box)
 
-        results = []
-        for source_entity, source_shape in sources:
-            for target_entity, target_shape in targets:
+        sources = [e for e in liste_objet_source if e in solid_index]
+        targets = [e for e in liste_objet_target if e in solid_index]
+
+        # The candidate pairs, unordered: a pair met as (A, B) and as
+        # (B, A) runs a single boolean (the common is symmetric).
+        candidates = set()
+        for source_entity in sources:
+            for target_entity in targets:
                 if source_entity == target_entity:
                     # An element is not checked against itself.
                     continue
-                if boxes[source_entity].IsOut(boxes[target_entity]):
+                pair = tuple(
+                    sorted((solid_index[source_entity], solid_index[target_entity]))
+                )
+                if pair in candidates:
+                    continue
+                if boxes[pair[0]].IsOut(boxes[pair[1]]):
                     # Disjoint bounding boxes: no possible overlap.
                     continue
-
-                common = BRepAlgoAPI_Common(source_shape, target_shape)
-                common.Build()
-                if not common.IsDone():
+                if oriented_boxes[pair[0]].IsOut(oriented_boxes[pair[1]]):
                     continue
-                common_shape = common.Shape()
-                if common_shape is None or common_shape.IsNull():
+                candidates.add(pair)
+
+        overlaps = clash_utils.common_volumes(solids, sorted(candidates))
+
+        results = []
+        for source_entity in sources:
+            for target_entity in targets:
+                if source_entity == target_entity:
+                    continue
+                pair = tuple(
+                    sorted((solid_index[source_entity], solid_index[target_entity]))
+                )
+                overlap = overlaps.get(pair)
+                if overlap is None:
+                    # Prefiltered out, or a failed boolean.
                     continue
 
-                volume, center = volume_and_center(common_shape)
+                volume, center = overlap
                 if volume <= tolerance:
                     # No overlap volume (tangential contact), or a
                     # negligible one.
