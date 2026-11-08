@@ -15,10 +15,11 @@ Valeurs [calibrated] : observées sur les modèles générés.
 Exécution (racine du dépôt, environnement conda de agent.md) :
     python -m pytest tests/test_unit_new_geometries.py -v
 """
+import os
 import sys
 import unittest
 
-sys.path.insert(0, "./ifcclash_plus")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ifcclash_plus"))
 
 import ifcopenshell  # noqa: E402
 import ifcopenshell.geom  # noqa: E402

@@ -30,4 +30,7 @@ Les tests associés (valeurs calibrées) sont dans :
   (ClearanceAxisToAxis, ClearanceForDoors, TwoObjectsFace, OBB_Custom,
   Alignement), positions manquantes (RecoverBottom, TouchInside, Below U) ;
 - `tests/test_unit_new_geometries.py` — tests unitaires de get_extreme_faces
-  et de l'OBB (PCA) sur les nouvelles géométries.
+  et de l'OBB (PCA) sur les nouvelles géométries ;
+- `tests/test_Rule_IFC_Test_Model_OneObject.py` — règles 1-objet (Volume, Area,
+  TopOrBottomSurface, LateralSurface, ProjectedSurface, ObbHigh, ObbLength,
+  Orientation, OneObjectFace) testées sur CubeA et SuzanneA.

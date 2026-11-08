@@ -12,10 +12,11 @@ modèles générés (session de génération, environnement conda de agent.md).
 Exécution (racine du dépôt) :
     python -m pytest tests/test_Rule_IFC_Test_Model_New.py -v
 """
+import os
 import sys
 import unittest
 
-sys.path.insert(0, "./ifcclash_plus")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ifcclash_plus"))
 
 from Rules import (  # noqa: E402
     Above,
