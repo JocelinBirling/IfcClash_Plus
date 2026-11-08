@@ -252,6 +252,27 @@ def cone_mesh(r=1.0, h=2.0, n=24):
     return verts, faces
 
 
+def create_door(f, name, width, height):
+    """Crée un IfcDoor (boîte width x 0.05 x height, centrée en XY, base z=0).
+
+    Retourne (entity, centre_local).
+    """
+    storey = _storey(f)
+    verts, faces = box_mesh(width, 0.05, height)
+    # recentrer : la box_mesh centre en (0,0,0) -> ramener la base en z=0
+    verts = [(x, y, z + height / 2.0) for (x, y, z) in verts]
+    pts = f.create_entity("IfcCartesianPointList3D", [[float(c) for c in v] for v in verts])
+    face_ents = [f.create_entity("IfcIndexedPolygonalFace", [int(i) + 1 for i in fc]) for fc in faces]
+    fset = f.create_entity("IfcPolygonalFaceSet", pts, None, face_ents, None)
+    rep = f.create_entity("IfcShapeRepresentation", _ctx(f), "Body", "Tessellation", [fset])
+    pds = f.create_entity("IfcProductDefinitionShape", None, None, [rep])
+    lp = _new_placement(f, storey, (0.0, 0.0, 0.0))
+    el = f.create_entity("IfcDoor", ifcopenshell.guid.new(), None, name, None, None,
+                         lp, pds, None, float(height), float(width), None, None)
+    _add_to_storey(f, storey, el)
+    return el, np.array([0.0, 0.0, height / 2.0])
+
+
 def make_new_object(f, spec):
     """spec = (kind, name, params...). Retourne le centre local de l'objet créé."""
     kind, name = spec[0], spec[1]
@@ -269,6 +290,8 @@ def make_new_object(f, spec):
         _, c = create_mesh_object(f, name, verts, faces)
     elif kind == "cylinder":
         _, c = create_cylinder_true(f, name, spec[2], spec[3])
+    elif kind == "door":
+        _, c = create_door(f, name, spec[2], spec[3])
     else:
         raise ValueError(kind)
     return c
@@ -450,6 +473,90 @@ SPECS = [
     #   Attendu (calibre) : Collision = 1, Intersection = 0 (meme bug connu que
     #   CubeA_Intersect_CubeB_1mm : Intersection manque les faibles penetrations/
     #   containments fins, Collision les voit).
+
+    # ------------------------------------------------------------------
+    # P4 — Modèles pour les règles sans couverture IFC dédiée
+    # ------------------------------------------------------------------
+    ("CubeA_DirectView_CubeB",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (3.0, 0.0, 0.0)}, []),
+    #   deux cubes face a face, rien entre -> DirectView/Ray_Check voient.
+
+    ("CubeA_BlockedView_WallA_CubeB",
+     {"CubeA": (0.0, 0.0, 1.5), "WallA": (2.0, 0.0, 1.5), "CubeB": (4.0, 0.0, 1.5)}, []),
+    #   WallA (mur 3x0.1x3 vertical) entre les deux cubes -> vue bloquee.
+
+    ("CubeA_FreeSpace_Clear",
+     {"CubeA": (0.0, 0.0, 0.0)}, []),
+    #   CubeA seul au centre, tout le reste loin -> FreeSpace libre.
+
+    ("CubeA_FreeSpace_Blocked_CubeB_50cm",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (1.5, 0.0, 0.0)}, []),
+    #   CubeB a 50cm de CubeA -> FreeSpace bloque.
+
+    ("BeamLongA_AxisParallel_BeamLongB_50cm",
+     {"BeamLongA": (0.0, 0.0, 0.0), "BeamLongB": (0.0, 0.52, 0.0)},
+     [("box", "BeamLongA", 10.0, 0.02, 0.02), ("box", "BeamLongB", 10.0, 0.02, 0.02)]),
+    #   deux poutres parallèles selon X, distance axe-a-axe 50cm (Y).
+
+    ("BeamLongA_AxisPerp_CuboidB",
+     {"BeamLongA": (0.0, 0.0, 0.0), "CuboidB": (0.0, 0.0, 0.0)},
+     [("box", "BeamLongA", 10.0, 0.02, 0.02)]),
+    #   poutre selon X croisant CuboidB vertical (axe Z) -> axes perpendiculaires.
+
+    ("DoorA_ClearanceFree_CubeB_2m",
+     {"DoorA": (0.0, 0.0, 0.0), "CubeB": (0.0, 2.5, 0.0)},
+     [("door", "DoorA", 0.9, 2.1)]),
+    #   porte 0.9x2.1, cube a 2m devant (+Y) -> zone de degagement libre.
+
+    ("DoorA_ClearanceBlocked_CubeB_50cm",
+     {"DoorA": (0.0, 0.0, 0.0), "CubeB": (0.0, 1.0, 0.0)},
+     [("door", "DoorA", 0.9, 2.1)]),
+    #   cube a ~50cm devant la porte -> zone bloquee.
+
+    ("CubeA_FaceParallel_CubeB_1m",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (2.0, 0.0, 0.0)}, []),
+    #   faces +X de CubeA et -X de CubeB paralleles, distance 1m.
+
+    ("CubeA_FacePerp_FallenCuboidA",
+     {"CubeA": (0.0, 0.0, 0.0), "FallenCuboidA": (2.0, 0.0, 0.0)}, []),
+    #   FallenCuboidA couche (90deg) a cote de CubeA -> faces perpendiculaires.
+
+    ("CubeA_CustomZoneAbove_CubeB_2m",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (0.0, 0.0, 2.0)}, []),
+    #   CubeB au-dessus : teste OBB_Custom avec detach_top_by_extrude.
+
+    ("CubeA_CustomZoneBelow_CubeB_2m",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (0.0, 0.0, -2.0)}, []),
+    #   CubeB en dessous : teste OBB_Custom avec detach_bottom_by_extrude.
+
+    ("CubeA_CubeB_CuboidB_AlignedX",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (3.0, 0.0, 0.0), "CuboidB": (6.0, 0.0, 0.0)}, []),
+    #   3 objets alignes selon X (meme Y, Z) -> Alignement detecte.
+
+    ("CubeA_CubeB_CuboidB_NotAligned",
+     {"CubeA": (0.0, 0.0, 0.0), "CubeB": (3.0, 1.0, 0.0), "CuboidB": (6.0, 0.0, 2.0)}, []),
+    #   3 objets non alignes -> Alignement ne detecte pas.
+
+    # ------------------------------------------------------------------
+    # P5 — Positions manquantes
+    # ------------------------------------------------------------------
+    ("SlabA_RecoverBottom_SlabB_50%",
+     {"SlabA": (1.5, -0.8, 0.05), "SlabB": (3.0, -0.8, -0.05)}, []),
+    #   SlabA z[0,0.1], SlabB z[-0.1,0] en dessous, decalee en X de moitie :
+    #   recouvrement 50% (4.5 m2 / 9 m2) de la face bottom de SlabA.
+
+    ("SlabA_RecoverSide_CuboidB",
+     {"SlabA": (1.5, -0.8, 0.05), "CuboidB": (4.0, -0.8, 0.05)}, []),
+    #   CuboidB contre le cote +X de SlabA (contact en x=3).
+
+    ("CylinderSmallA_TouchInside_HollowCylinderA",
+     {"HollowCylinderA": (0.0, 0.0, 0.0), "CylinderSmallA": (0.011, 0.0, 0.0)},
+     [("cylinder", "CylinderSmallA", 0.79, 4.0)]),
+    #   cylindre r=0.79 decale de 11mm -> touche la paroi interieure (r=0.8).
+
+    ("CubeB_Below_UshapeA_50cm",
+     {"UshapeA": (-0.5, 0.0, 1.0), "CubeB": (0.0, 0.0, -2.6)}, []),
+    #   CubeB z[-3.1,-2.1] sous le fond du U (z min -2) -> Below, gap 0.1m.
 ]
 
 
