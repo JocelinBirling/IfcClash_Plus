@@ -16,6 +16,14 @@ Pour optimiser le script, je prévois d'utiliser le plus possible des parties de
 | Sélection | ifctester / les facettes IDS restent en Python. Python transmet au moteur C++ les listes de GlobalId sélectionnés (source / target / context) pour chaque fichier. |
 | Parallélisme | Séquentiel d'abord, pour valider la correction. Le parallélisme viendra ensuite (candidats : OCCT Parallel / répartition des paires). |
 | Validation | Parité stricte avec le Python actuel : sur les modèles de Ifc_Model, le C++ doit produire exactement les mêmes paires source/target, règle par règle. Tout écart est un bug. La parité doit tenir avec et sans `.ifcview`. |
+| Session | Le moteur garde son état dans un objet `Session` qui vit le temps d'un RuleFile : fichiers parsés, `GeometryProvider` et cache. Python l'ouvre une fois puis lance les règles une à une (voir Interface Python / C++). |
+| Familles de règles | Quatre pipelines partagent le provider et les statistiques : élément, paire, paire ou élément avec contexte, ensemble (voir Familles de règles). |
+| Paramètres | Chaque règle déclare ses paramètres dans une struct typée décrite par une `RuleSpec`. Le registre C++ est la source unique du catalogue (voir Registre des règles). |
+| Résultats | Le moteur rend des `ResultRecord` triés, qui reprennent exactement `ResultInfo.to_dict()`, plus la géométrie d'affichage tessellée et des diagnostics (voir Contrat de résultat). |
+| Mode d'exécution | Le moteur ne connaît pas `state`. Il reçoit un `RunMode` (`Verdicts`, `InputsOnly`, `VerdictsAndDisplay`). `Final` et `Select` restent des modes de gestion côté Python. |
+| Clé d'élément | En interne : `(file_index, entity_id)`. Le GlobalId sert de clé d'échange. Les GlobalId dupliqués sont signalés, jamais fusionnés. |
+| Unités | Mètres en interne. La conversion se fait à la lecture de l'IFC. Les paramètres de longueur des règles sont exprimés en mètres. |
+| OCCT | Une seule version d'OCCT dans le processus, partagée par `pythonocc-core`, `ifcopenshell` et `libifcclash_engine`. Elle est fixée dans `environment.yml` et `conda/meta.yaml`. |
 
 ## Pipeline
 
@@ -26,7 +34,8 @@ Les règles 1-objet et non spatiales (Volume, Area, TopOrBottomSurface,
 ObbHigh, ObbLength, Orientation, AngleBetween, Ray_Check...) ont leur
 propre chemin d'exécution : pas de paires, donc pas de phase large ni
 intermédiaire ; elles reçoivent en revanche le même cache de shapes et
-de boîtes (voir Règles 1-objet).
+de boîtes (voir Règles 1-objet). La répartition complète des 28 règles
+entre les quatre pipelines est donnée dans Familles de règles.
 
 Le pipeline suit le vocabulaire standard de la détection de collision :
 **phase large** (broad phase), **phase intermédiaire** (mid phase),
@@ -43,9 +52,17 @@ restitution.
 
 ### Configuration
 
-La règle lit et valide ses paramètres (`setup`) et déclare le niveau de
-géométrie dont sa phase fine a besoin (`narrow_level` : `BRep` par
-défaut, `Mesh` si la règle travaille sur des triangles).
+Le moteur remplit la struct de paramètres typée de la règle à partir de
+la déclaration JSON, et la valide d'après sa `RuleSpec` (types, bornes,
+valeurs d'enum) **avant** tout calcul (voir Registre des règles). La
+règle n'analyse donc aucun paramètre elle-même. `setup` sert seulement à
+préparer un état dérivé de ces paramètres (par exemple un angle converti
+en cosinus). La règle déclare aussi le niveau de géométrie dont sa phase
+fine a besoin (`narrow_level` : `BRep` par défaut, `Mesh` si elle
+travaille sur des triangles) et le mode de sa phase large
+(`broad_mode` : `Spatial` par défaut, `AllPairs` pour une règle sans
+localité spatiale comme AngleBetween, qui teste alors les N×M paires
+sans BVH).
 
 ### Phase large
 
@@ -85,8 +102,9 @@ phases de préfiltrage ont dû permettre de la limiter au maximum.
 
 ### Restitution
 
-`report` transforme le verdict en `ResultInfo` (distance, points, mode,
-drapeaux...) dans le format attendu par le post-traitement Python.
+`report` transforme le verdict en `ResultRecord` (distance, points, mode,
+drapeaux...), qui reprend le contenu de `ResultInfo` attendu par le
+post-traitement Python (voir Contrat de résultat).
 
 ## Convention de nommage des phases
 
@@ -107,8 +125,9 @@ drapeaux...) dans le format attendu par le post-traitement Python.
 
 | Hook | Défaut |
 |---|---|
-| `setup` | aucun paramètre |
+| `setup` | rien à préparer |
 | `narrow_level` | `Level::BRep` |
+| `broad_mode` | `BroadMode::Spatial` |
 | `broad_volume` | AABB brute gonflée de l'`uncertainty` de la source |
 | `mid_volume` | OBB brute gonflée de l'`uncertainty` de la source |
 | `mid_test` | `Candidate::Kept` (aucun filtre) |
@@ -121,14 +140,16 @@ drapeaux...) dans le format attendu par le post-traitement Python.
 enum class Candidate { Rejected, Kept };
 enum class Role      { Source, Target };
 enum class Level     { Boxes, Mesh, BRep };
+enum class BroadMode { Spatial, AllPairs };
 
-class PairRule {
+class PairRuleBase {
 public:
-    virtual ~PairRule() = default;
+    virtual ~PairRuleBase() = default;
 
-    // Configuration
-    virtual void  setup(const RuleParams&) {}
-    virtual Level narrow_level() const { return Level::BRep; }
+    // Configuration (les paramètres typés sont déjà remplis et validés)
+    virtual void      setup() {}
+    virtual Level     narrow_level() const { return Level::BRep; }
+    virtual BroadMode broad_mode()   const { return BroadMode::Spatial; }
 
     // Phase large (le BVH appartient au moteur)
     virtual Bnd_Box broad_volume(const ElementGeometry& e, Role role) const;
@@ -144,31 +165,49 @@ public:
                                 const ElementGeometry& target) const = 0;
 
     // Restitution
-    virtual ResultInfo report(const Verdict& v) const;
+    virtual ResultRecord report(const Verdict& v) const;
+};
+
+// Les paramètres typés de la règle, remplis par le moteur à partir de la RuleSpec
+template <class Params>
+class PairRule : public PairRuleBase {
+public:
+    const Params& params() const { return params_; }
+    Params&       mutable_params() { return params_; }   // réservé au moteur
+private:
+    Params params_;
 };
 ```
+
+Les hooks sont `const` et une règle ne garde aucun état modifiable après
+`setup`. C'est ce qui permettra de paralléliser la phase fine sans
+toucher aux règles.
 
 ### Exemple : Clearance
 
 ```cpp
-class Clearance : public PairRule {
-    double clearance_ = 0.05;
-public:
-    void setup(const RuleParams& p) override { clearance_ = p.get("clearance", 0.05); }
+struct ClearanceParams {
+    double clearance = 0.05;   // m : le seul endroit où figure la valeur par défaut
+};
 
+class Clearance final : public PairRule<ClearanceParams> {
+public:
     Bnd_Box broad_volume(const ElementGeometry& e, Role) const override {
-        return inflate(e.boxes.aabb, clearance_ + e.boxes.uncertainty);
+        return inflate(e.boxes.aabb, params().clearance + e.boxes.uncertainty);
     }
 
     Candidate mid_test(const Bnd_OBB& a, const Bnd_OBB& b) const override {
-        return obb_distance(a, b) <= clearance_ ? Candidate::Kept : Candidate::Rejected;
+        return obb_distance(a, b) <= params().clearance ? Candidate::Kept
+                                                        : Candidate::Rejected;
     }
 
     Verdict narrow_test(const ElementGeometry& a, const ElementGeometry& b) const override {
         auto d = exact_distance(a.brep(), b.brep());
-        return { d.value < clearance_, d };
+        return { d.value < params().clearance, d };
     }
 };
+
+RuleSpec spec_clearance();   // voir Registre des règles
 ```
 
 ### Règles 1-objet
@@ -186,6 +225,125 @@ Clearance  broad: 48 210 → 1 342   mid: 1 342 → 187   narrow: 187 → 12   (
 ```
 
 On voit immédiatement quelle phase filtre mal ou laquelle coûte le plus.
+
+## Familles de règles
+
+Toutes les règles ne suivent pas le schéma « paire → verdict ». Le
+moteur a quatre pipelines. Ils partagent le `GeometryProvider`, les
+statistiques par phase, l'annulation et le contrat de résultat.
+
+| Pipeline | Hooks | Règles |
+|---|---|---|
+| `ElementPipeline` | `setup` → `narrow_test(e)` → `report` | Volume, Area, TopOrBottomSurface, LateralSurface, ProjectedSurface, ObbHigh, ObbLength, Orientation, OneObjectFace |
+| `PairPipeline`, `Spatial` | phases large, intermédiaire et fine (ci-dessus) | Intersection, Intersection2, Clearance, Collision, ClearanceAxisToAxis, Above, Below, OBB_Above, OBB_Below, OBB_Front_And_Back, OBB_Custom, SurfaceRecover, TwoObjectsFace, ClearanceForDoors |
+| `PairPipeline`, `AllPairs` | sans BVH : `mid_test` → `narrow_test` | AngleBetween |
+| `ContextPipeline` | ceux de la paire ou de l'élément, plus `setup_context(const ContextIndex&)` | DirectView, Ray_Check (paires) ; FreeSpace (éléments) |
+| `SetPipeline` | `setup` → `narrow_test(std::span<const ElementGeometry>)` → groupes → `report` | Alignement |
+
+- **`ContextIndex`** : le moteur le construit une fois par exécution sur
+  la liste contexte (BVH de boîtes, arbre de rayons). La règle le reçoit
+  en lecture seule. Elle ne parcourt jamais le contexte élément par
+  élément.
+- **`SetPipeline`** : une règle d'ensemble voit tous les éléments à la
+  fois, parce que son verdict dépend du groupe (Alignement regroupe des
+  éléments colinéaires ou coplanaires). Elle rend un `ResultRecord` par
+  élément et les groupes dans le bloc `alignment`.
+- La table règle → hooks (broad, mid et narrow de chaque règle) reste le
+  principal contenu à écrire (voir Reste à préciser).
+
+## Registre des règles
+
+Le registre C++ est la **source unique** de la description d'une règle :
+type, famille, slots, paramètres, valeurs par défaut, bornes, unités,
+documentation. Le `registry.py` Python ne fait plus qu'assembler le
+catalogue.
+
+```cpp
+RuleSpec spec_clearance() {
+    return RuleSpec::pair<Clearance>(
+        "Clearance", "Clearance", {Slot::Source, Slot::Target},
+        "Flags the pairs closer than clearance.",
+        { param(&ClearanceParams::clearance, "clearance")
+              .doc("Minimum clearance").unit(Unit::Metre).min(0.0) });
+}
+
+void register_all_rules(Registry& registry) {
+    registry.add(spec_volume());
+    registry.add(spec_clearance());
+    // … une ligne par règle
+}
+```
+
+- **Pointeurs de membre** : le nom d'un paramètre n'est écrit qu'une
+  fois, à côté de son champ. Une faute de frappe ne compile pas. Le
+  contrat implicite actuel disparaît (nom identique dans le registre,
+  l'attribut de l'instance, la signature de `compute` et la clé JSON).
+- **`RuleSpec`** porte la fabrique de la règle, le remplissage de la
+  struct depuis le JSON, la validation (types, `min`/`max`, valeurs
+  d'enum, nullable) et l'export `to_json()`, au format exact de l'entrée
+  de catalogue actuelle.
+- **Enregistrement explicite** par `register_all_rules`, pas par des
+  variables statiques : dans une bibliothèque statique, l'éditeur de
+  liens peut retirer ces objets, et la règle disparaît sans erreur.
+- **Répartition C++ / Python du catalogue** :
+
+| Information | Propriétaire |
+|---|---|
+| type, famille, slots, paramètres, fabrique, validation | C++ (`engine.catalogue_json()`) |
+| `supports_grouping`, `supports_criticity`, `supports_actor`, `supports_exceptions` | Python (le post-traitement reste en Python) |
+| facettes IDS | Python (ifctester) |
+| `STATES`, `CATALOGUE_VERSION` | Python (contrats de l'IPC avec BonsaiViewer) |
+| `implementation` : `"cpp"` ou `"python"` | Python, une entrée par règle pendant la migration |
+
+## Contrat de résultat
+
+```cpp
+struct ResultRecord {
+    ElementKey                source;
+    std::optional<ElementKey> target;
+    bool                      status;
+    Measures                  measures;   // enum fixe : distance, penetration_depth,
+                                          // contact_area, ratio, offset, hit_ratio,
+                                          // angle, volume, area
+    std::vector<PointPair>    points;
+    std::vector<FacePair>     faces;      // en triangles
+    std::optional<ObbPair>    obbs;
+    std::variant<std::monostate, AxisBlock, RaycastBlock, ZoneBlock,
+                 AxesBlock, AlignmentBlock> block;
+    Flags                     flags;      // degraded, gross_element, fallback_source…
+};
+
+struct RunResult {
+    std::vector<ResultRecord> results;     // triés par (source, target)
+    DisplayPayload            display;     // vide en RunMode::Verdicts
+    PhaseStats                stats;
+    Diagnostics               diagnostics; // erreurs par élément, GlobalId dupliqués
+};
+```
+
+- **Même contenu que `ResultInfo.to_dict()`**, champ pour champ. Un
+  adaptateur Python reconstruit les `ClashResult` et `ResultInfo`
+  actuels : le pipeline de gestion, l'export JSON et l'IPC ne changent
+  pas.
+- **Tri déterministe** par `(source, target)`. Indispensable pour
+  comparer les paires une à une en test de parité, et pour que le
+  parallélisme ne change pas l'ordre des résultats.
+- **Un élément en échec ne fait pas échouer l'exécution.** Il produit un
+  `flag` et une entrée dans `diagnostics`. Seule une configuration
+  invalide lève une exception, et `RuleSpec` la détecte avant le calcul.
+- **Géométrie d'affichage.** Les OBB, zones de porte, faces de contact,
+  rayons et sondes sont produits par le moteur. Si le C++ ne rendait que
+  des verdicts, Python devrait les recalculer. `DisplayPayload` porte
+  donc des items avec une catégorie (axis, face, obb, zone, context,
+  segment, point), une `ElementKey` et une géométrie **tessellée**
+  (sommets et indices exposés en tableaux numpy). Aucune `TopoDS_Shape`
+  ne traverse la frontière.
+- **`RunMode`** remplace `state` côté moteur : `Verdicts` (exécution
+  normale), `InputsOnly` (géométrie des entrées, sans calcul — l'ancien
+  `Display_Input`), `VerdictsAndDisplay` (l'ancien `Display_Result`, et
+  l'aperçu de l'IPC).
+- **Schéma versionné** (`result_schema_version`). Un JSON Schema commun,
+  testé des deux côtés, empêche les implémentations de diverger.
 
 ## Sources de géométrie
 
@@ -334,17 +492,33 @@ projet.
 
 ```
 engine/
-  core/        ElementKey, ElementBoxes, Mesh
+  api/         Session, RunRequest, RunResult, CancelToken, ProgressSink
+               ← le seul en-tête public (script et BonsaiViewer)
+  registry/    RuleSpec, Registry, register_all_rules, catalogue_json
+  pipeline/    ElementPipeline, PairPipeline, ContextPipeline, SetPipeline,
+               BVH (OCCT), ContextIndex, PhaseStats
+  rules/       une règle = un .cpp (classe + struct de paramètres + RuleSpec)
+  geometry/    algorithmes purs : Eigen, OCCT, Clipper2 (aucune notion d'IFC ni de règle)
+  provider/    GeometryProvider.{h,cpp}, CachePolicy.h
   sources/
     GeometrySource.h
     IfcSource.{h,cpp}
     ifcview/   IfcViewSource.{h,cpp}, Manifest.{h,cpp}
                third_party/  (IfcViewReader, IfcViewFormat, VertexQuantization — LGPL v3)
-  provider/    GeometryProvider.{h,cpp}, CachePolicy.h
-  pipeline/    phases large, intermédiaire, fine
-  rules/
-  bindings/    pybind11
+  core/        ElementKey, ElementBoxes, Mesh, Units, Verdict, ResultRecord, Diagnostics
+  bindings/    pybind11 : couche mince sur api/
+tests/         tests unitaires C++ (Catch2 ou GoogleTest)
 ```
+
+Les dépendances descendent strictement :
+`api → registry → pipeline → rules → geometry → core`, et
+`pipeline → provider → sources → core`. `geometry/` ne connaît ni l'IFC
+ni les règles. `bindings/` n'appelle que `api/`.
+
+Le `geometry/` C++ reprend un à un les modules du `geometry/` Python
+issu du découpage de `clash_utils.py` (vecteurs, triangles, polygones,
+faces, solides, OBB, arbres). Les tests Python de ces modules servent
+d'oracle aux tests unitaires C++.
 
 ## Intégration BonsaiViewer
 
@@ -423,7 +597,7 @@ atteignent la phase fine.
 libifcclash_engine (C++, sans dépendance à la visionneuse)
    ├── bindings pybind11  → script Python : IFC (+ .ifcview optionnel)
    └── API C++ directe    → BonsaiViewer PLUS :
-          IdsEngine (sélection) → engine.run(ViewerSource)
+          IdsEngine (sélection) → Session(ViewerSource).run(...)
           → résultats affichés via SelectionService, AppearanceService, Tables
 ```
 
@@ -433,7 +607,9 @@ données déjà chargées.
 
 ## Cache (par RuleFile)
 
-Un RuleFile parse les IFC et convertit les shapes **une seule fois** :
+Le cache appartient à la `Session`, ouverte une fois par RuleFile (voir
+Interface Python / C++). Il parse les IFC et convertit les shapes
+**une seule fois** :
 
 - shapes converties (le plus coûteux : la conversion IfcGeom), à la
   demande, seulement pour les éléments qui atteignent la phase fine ;
@@ -448,28 +624,123 @@ persiste).
 
 ## Interface Python / C++
 
-L'interface d'appel reste à préciser (candidat naturel : pybind11).
-Contrat d'entrée : les chemins IFC et les listes de GlobalId
-(source / target / context, par fichier), plus la politique de cache.
-Contrat de sortie : les résultats (paires source/target, statut, et les
-données nominales — distance, points, mode...) sous une forme
-permettant au post-traitement Python (criticity, actor, grouping, BCF)
-de rester inchangé.
+Liaison : pybind11, en couche mince sur `api/`. Contrat d'entrée : les
+chemins IFC et la politique de cache à l'ouverture de la session, puis,
+pour chaque règle, son type, ses paramètres moteur et les listes de
+GlobalId (source / target / context, par fichier). Contrat de sortie :
+le `RunResult` (voir Contrat de résultat), que le post-traitement Python
+(criticity, actor, grouping, BCF) consomme sans changement.
+
+### Une session par RuleFile
+
+L'orchestration reste en Python : une règle par appel, plus les
+`SelectRule`, les activations de dossier et les exceptions. Un appel
+sans état qui recevrait les chemins IFC à chaque règle reparserait les
+fichiers à chaque fois, et le cache par RuleFile n'existerait pas. Le
+moteur garde donc son état dans une `Session` :
 
 ```python
-results = engine.run(
+with engine.Session(
     ifc_paths=["archi.ifc", "cvc.ifc"],
-    selections=selections,          # GlobalIds issus de l'IDS, inchangé
     geometry_cache="auto",          # "off" | "auto" | "require"
     cache_dir=None,                 # par défaut, à côté de l'IFC
     write_cache=True,
-)
+) as session:                       # parse et provider : une seule fois
+    result = session.run(
+        rule_type="Clearance",
+        params={"clearance": 0.05},  # clés moteur seulement (catalogue)
+        selections=selections,       # GlobalIds issus de l'IDS, inchangé
+        mode="verdicts",             # "verdicts" | "inputs_only" | "verdicts_and_display"
+        cancel=token,
+        progress=callback,
+    )
 ```
+
+```cpp
+class Session {
+public:
+    Session(std::vector<std::filesystem::path> ifc_paths, SessionOptions);
+    Session(std::unique_ptr<GeometrySource> source, SessionOptions);   // ViewerSource
+
+    RunResult run(const RunRequest&, const CancelToken&, ProgressSink&);
+
+    // Exceptions : une règle évaluée sur un lot de paires, en un appel
+    RunResult evaluate_pairs(const RunRequest&, std::span<const KeyPair> pairs);
+};
+```
+
+- **`evaluate_pairs`** traite les `BooleanLeaf`. Aujourd'hui, une
+  exception réexécute une règle sur chaque paire de résultat. Avec un
+  appel par paire, la frontière Python/C++ serait traversée des milliers
+  de fois : le lot est obligatoire.
+- **GIL** : relâché pendant `run` et `evaluate_pairs`.
+- **Annulation** : `CancelToken` vérifié entre les phases et toutes les
+  N paires (la requête `cancel` de l'IPC s'y branche).
+- **Progression** : le moteur la signale à un rythme limité ; le rappel
+  Python reprend le GIL.
+
+### Côté Python
+
+```
+ifcclash_plus/engine/
+├── orchestrator.py        # sélections → GlobalIds → backend → adaptateur → pipeline
+└── backends/
+    ├── python_backend.py  # les compute() actuels : implémentation de référence
+    └── cpp_backend.py     # Session C++, une par RuleFile
+```
+
+L'orchestrateur choisit le backend de chaque règle d'après le champ
+`implementation` du catalogue. Une règle passe en C++ dès que sa parité
+est verte, sans rien changer d'autre. Le backend Python reste disponible
+pour les tests de parité.
+
+Coût connu : les IFC sont parsés deux fois, par ifctester en Python pour
+la sélection IDS, et par IfcParse en C++ pour la géométrie. C'est
+acceptable au départ. Le `IdsEngine` C++ de BonsaiViewer est la piste
+pour l'éliminer.
+
+## Choix techniques
+
+| Sujet | Choix | Raison |
+|---|---|---|
+| BVH | `BVH_BoxSet` + `BVH_PairTraverse` d'OCCT | `doc/IfcGeomTree.h` utilise déjà ce motif. Reconstruire l'arbre à chaque règle coûte O(n log n), négligeable. Pas de BVH maison. |
+| Algèbre (remplace numpy) | Eigen | Déjà requis par `IfcViewReader` |
+| Polygones 2D (remplace shapely) | Clipper2 | SurfaceRecover (polygones de contact), empreintes de FreeSpace |
+| Liaison | pybind11 | nanobind est plus léger, à reconsidérer si les temps de compilation ou la taille du module posent problème |
+| Build | CMake + scikit-build-core, dépendances via conda-forge | Cohérent avec `conda/meta.yaml` |
+| OCCT | Une seule version dans le processus | `pythonocc-core` et `ifcopenshell` chargent déjà OCCT : une seconde version provoquerait des conflits de symboles |
+| Parallélisme (plus tard) | Phase fine parallèle sur les paires candidates (`OSD_Parallel` ou TBB) | Préparé dès maintenant : hooks `const`, règles sans état après `setup`, conversion B-Rep paresseuse protégée par un `once_flag` par clé dans le provider |
+
+## Ordre de migration
+
+| Étape | Contenu | Ce qu'elle valide |
+|---|---|---|
+| 0 | Prérequis Python : imports relatifs, découpage de `clash_utils.py` en `geometry/` et `ifc/`, séparation de `state` | Le terrain |
+| 1 | Squelette : `Session`, `IfcSource`, provider, registre, liaisons, règle **Volume** | Toute la chaîne, de bout en bout, sur la règle la plus simple |
+| 2 | `PairPipeline` + Intersection, Clearance, Collision | BVH, statistiques par phase, parité sur les règles les plus utilisées |
+| 3 | Above, Below, OBB_* | La table règle → hooks |
+| 4 | AngleBetween, ClearanceAxisToAxis, TwoObjectsFace | Le gain le plus net : ces règles n'ont aucun préfiltre aujourd'hui |
+| 5 | `ContextPipeline` (DirectView, Ray_Check, FreeSpace), `SetPipeline` (Alignement), SurfaceRecover, OneObjectFace, ClearanceForDoors, Intersection2 | Les règles hors du schéma de paire |
+| 6 | `IfcViewSource` | Gain de temps sans effet sur les résultats |
+| 7 | Parallélisme | Les résultats triés ne bougent pas |
+| 8 | `ViewerSource` et API C++ pour BonsaiViewer | Le moteur reste indépendant de la visionneuse |
+
+Les étapes 1 et 2 sont un **prototype** : elles tranchent le format
+d'échange, l'API publique et le comportement du BVH sur des boîtes
+modifiées. La SPEC est figée à leur issue.
 
 ## Tests
 
+- **Unitaires C++** (Catch2 ou GoogleTest) sur `geometry/`, avec les
+  mêmes cas que les tests `test_UnitRule_*` Python.
 - **Parité** : mêmes paires que le Python actuel, règle par règle, sur
-  `Ifc_Model` et `IFC_Test_Model`.
+  `Ifc_Model` et `IFC_Test_Model` (avec `calibration.jsonl`). Les deux
+  backends tournent dans le même test ; on compare les paires triées et
+  les mesures, avec une tolérance documentée par mesure.
+- **Prudence des préfiltres** : une option de debug `prefilter="off"`
+  désactive les phases large et intermédiaire. Les résultats doivent
+  être identiques avec et sans. C'est la vérification, règle par règle,
+  que ces phases ne font qu'éliminer.
 - **Invariance de source** : chaque règle tourne avec
   `geometry_cache="off"` puis `"require"`. Les paires doivent être
   identiques. Un écart signifie une `uncertainty` trop faible ou un
@@ -483,16 +754,15 @@ results = engine.run(
 1. **Table règle → hooks** : pour chaque règle spatiale 2-objets,
    `broad_volume` (par rôle), `mid_volume` et `mid_test`. C'est le
    principal contenu manquant de la spec.
-2. **Format d'échange** des résultats entre C++ et Python (schéma des
-   champs, gestion des données par règle : points d'entrée, distances,
-   drapeaux dégradés...).
-3. **BVH** : s'appuyer sur un composant existant (BVH d'OCCT,
-   opérations de ifcopenshell) ou écrire le nôtre — à trancher pendant
-   le prototype, sachant qu'il doit accepter des boîtes modifiées.
-4. **Ordre de migration** des règles vers le C++ (candidats pour
-   commencer : les règles spatiales 2-objets les plus utilisées, et les
-   5 règles sans préfiltre actuel — AngleBetween, ClearanceAxisToAxis,
-   Ray_Check, DirectView, TwoObjectsFace — qui gagneront le plus).
+2. **Format d'échange** : la structure est fixée (voir Contrat de
+   résultat). Restent à écrire le JSON Schema commun, le détail de chaque
+   bloc (`axis`, `raycast`, `zone`, `axes`, `alignment`) et la tolérance
+   de parité de chaque mesure.
+3. **BVH** : OCCT retenu (voir Choix techniques). À valider pendant le
+   prototype : le coût de la reconstruction par règle sur un gros
+   modèle.
+4. **Ordre de migration** : proposé (voir Ordre de migration), à
+   confirmer à l'issue du prototype.
 5. **`uncertainty` du `.ifcview`** : formule exacte (pas de
    quantification `extent / 65535` à confirmer dans
    `VertexQuantization.h`, plus flèche de tessellation lue dans le
@@ -500,10 +770,23 @@ results = engine.run(
 6. **Stabilité du format `.ifcview`** : ses en-têtes ne sont pas
    installés par IfcOpenShell ; suivre les changements de version et
    définir les versions acceptées.
-7. **API C++ publique du moteur** pour BonsaiViewer : signature de
-   `engine.run(...)` côté C++, format des résultats directement
-   exploitable par les services de la visionneuse, annulation et
-   progression d'un calcul lancé depuis l'interface.
+7. **API C++ publique du moteur** pour BonsaiViewer : la forme est
+   posée (`Session`, `RunRequest`, `RunResult`, `CancelToken`,
+   `ProgressSink` — voir Interface Python / C++). Restent à préciser le
+   format des résultats directement exploitable par les services de la
+   visionneuse et le comportement de l'annulation et de la progression
+   pour un calcul lancé depuis l'interface.
 8. **Instantané `ViewerSource`** : périmètre exact des données copiées
    au lancement et stratégie de verrouillage du cache de triangles
    face au thread de streaming.
+9. **IfcOpenShell C++ sur conda-forge** : vérifier que le paquet expose
+   les en-têtes et les bibliothèques d'IfcParse et d'IfcGeom. Sinon,
+   compiler IfcOpenShell en sous-module, dans la même version que le
+   paquet Python. C'est le principal risque de build.
+10. **GlobalId dupliqués** : choisir le comportement côté Python quand
+    un GlobalId de la sélection correspond à plusieurs éléments
+    (envoyer toutes les entités, ou ignorer l'élément avec un
+    avertissement).
+11. **Parité Clipper2 / shapely** : les aires de contact de
+    SurfaceRecover peuvent différer à la marge. Fixer la tolérance
+    acceptée avant de porter la règle.
