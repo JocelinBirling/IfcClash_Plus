@@ -1111,8 +1111,6 @@ class Custom_OBB(Bnd_OBB):
         # Identifier les deux faces les plus larges ou étroites
         # On compare les dimensions pour déterminer les faces larges ou étroites
         
-        #@todo What can happen when an object is tilted to 45 degres. No real Z can be found.
-        #@todo This function need to be improve for IfcSlab or tilted object, it's not working yet.
         dimensions = {"X": x_size, "Y": y_size, "Z": z_size}
         if only_check_xy==True:
 
@@ -1120,16 +1118,24 @@ class Custom_OBB(Bnd_OBB):
             angular_tolerance=0.1
 
             z_direction=gp_Dir(self.ZDirection())
+            x_direction=gp_Dir(self.XDirection())
+            y_direction=gp_Dir(self.YDirection())
             if Z_absolute.IsParallel(z_direction,angular_tolerance):
                 dimensions = {"X": x_size, "Y": y_size}
-
-            x_direction=gp_Dir(self.XDirection())
-            if Z_absolute.IsParallel(x_direction,angular_tolerance):
+            elif Z_absolute.IsParallel(x_direction,angular_tolerance):
                 dimensions = {"Y": y_size, "Z": z_size}
-
-            y_direction=gp_Dir(self.YDirection())
-            if Z_absolute.IsParallel(y_direction,angular_tolerance):
+            elif Z_absolute.IsParallel(y_direction,angular_tolerance):
                 dimensions = {"X": x_size, "Z": z_size}
+            else:
+                # Objet incliné : aucun axe parallèle à Z. Garder l'axe le
+                # plus grand (hauteur sémantique) et, parmi les deux autres,
+                # le plus horizontal, pour que Wide (la plus petite dimension
+                # retenue) reste une direction horizontale.
+                axes = {"X": (x_size, x_direction), "Y": (y_size, y_direction), "Z": (z_size, z_direction)}
+                biggest = max(axes, key=lambda k: axes[k][0])
+                rest = [k for k in axes if k != biggest]
+                most_horizontal = min(rest, key=lambda k: abs(axes[k][1].Dot(Z_absolute)))
+                dimensions = {biggest: axes[biggest][0], most_horizontal: axes[most_horizontal][0]}
 
 
 
