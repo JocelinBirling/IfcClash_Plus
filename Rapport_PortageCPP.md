@@ -326,6 +326,38 @@ Trois changements, sans modifier les résultats :
     résultats identiques. Le test des boîtes évite la distance exacte pour
     les paires lointaines.
 
+### 6.5 Règles complémentaires `_triang` (le `.ifcview` seul)
+
+Trois règles nouvelles, `Intersection_triang`, `Above_triang` et
+`OBB_Above_triang`, travaillent uniquement sur les triangles du `.ifcview` de
+BonsaiViewer. Aucune géométrie IFC n'est convertie. Code, tests et validation
+sont dans `engine/triang/` (voir `engine/triang/README.md`). Elles existent
+dans le moteur C++ seulement.
+
+Sur le Duplex Architecture × Mechanical, face aux règles d'origine :
+
+| Règle | Gain froid | Gain chaud |
+|---|---|---|
+| Above_triang | ×133 (46 s → 0,35 s) | ×122 |
+| OBB_Above_triang | ×26 | ×72 |
+| Intersection_triang | ×2,8 | ×1 |
+
+Intersection gagne peu : son temps va au test de pénétration de l'arbre
+IfcOpenShell, le même des deux côtés.
+
+**Validation**, par comparaison sur trois maquettes, avec une marge de 11 mm
+(flèche du `.ifcview` + flèche IFC) :
+- chaque écart est rangé dans une cause vérifiée ;
+- aucun écart inexpliqué.
+
+**Causes des écarts** :
+- élément absent du `.ifcview` ;
+- seuil franchi à moins de la marge ;
+- maillage IFC ouvert ou faces coïncidentes : le test de pénétration
+  d'IfcOpenShell change de méthode ou devient instable ;
+- OBB optimale non unique ;
+- défauts des règles d'origine (§8.8 à 8.11).
+
 ## 7. Problèmes rencontrés et corrigés
 
 1. **Corruption du tas à l'ouverture d'un IFC.** Les classes d'IfcParse
@@ -433,6 +465,23 @@ Trois changements, sans modifier les résultats :
      poutres, escaliers, colinéaires ; liste des paramètres) ;
    - références de parité régénérées, plus un cas Perpendicular avec
      `search_radius`.
+8. **Above ne voit pas les objets fins.** Sa grille de 50 × 50 rayons couvre
+   la plus grande dimension de l'objet, hauteur comprise. Pour une colonne
+   montante de 2,4 m, les rayons sont espacés de 4,9 cm ; une section de
+   3 cm passe entre eux, et aucune face n'est vue.
+9. **Above ne teste que les points les plus proches.** Si ce point tombe
+   juste hors de la face source, la paire est perdue, même si la cible
+   surplombe la source ailleurs. Exemple : un tuyau en pente au-dessus d'une
+   semelle.
+10. **Le test « ray » d'Above utilise une droite infinie.**
+    `BRepIntCurveSurface_Inter` est appelé sur une `gp_Lin` sans test de
+    `W ≥ 0` : il garde une cible située sous la source.
+11. **Above et OBB_Above plantent sur un élément dégénéré.** Un axe d'OBB de
+    longueur nulle donne `gp_Dir() - input vector has zero norm`
+    (SampleCastle).
+
+Les défauts 8 à 11 ont été révélés par les règles `_triang` (§6.5). Ils sont
+reproduits par le C++, comme la parité l'exige, et ne sont pas corrigés.
 
 ## 9. Limites et reste à faire
 

@@ -51,6 +51,7 @@ conda-forge 0.9.0post1. Une erreur ici corrompt le tas dès l'ouverture d'un IFC
 | `provider/` | `GeometryProvider`, `CachePolicy` |
 | `sources/` | `GeometrySource`, `IfcSource` (IfcParse + IfcGeom : maillages, B-Rep, requêtes IFC, arbre de rayons), `IfcClashTree`, `ifcview/IfcViewSource` (+ lecteur `third_party/`, LGPL v3) |
 | `core/` | `ElementKey`, `ElementBoxes`, `Mesh`, `ResultRecord`, diagnostics |
+| `triang/` | les règles `_triang` sur les seuls triangles du `.ifcview` (`triang/README.md`) |
 | `bindings/` | pybind11 |
 | `tests/` | tests unitaires C++ |
 

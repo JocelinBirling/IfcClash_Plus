@@ -10,6 +10,17 @@
 // The GIL is released during run / evaluate_pairs; the progress callback
 // takes it back.
 #include "../api/Engine.h"
+#include "../geometry/Faces.h"
+#include "../geometry/MeshMeasures.h"
+#include "../triang/HeightMap.h"
+#include "../triang/TriangleTests.h"
+
+#include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Shape.hxx>
+
+#include <chrono>
+#include <sstream>
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -182,6 +193,106 @@ private:
     std::unique_ptr<Session> session_;
 };
 
+
+// ---- Benchmark entry points (scripts/benchmark_extreme_faces.py): one
+// geometry function on one mesh or B-Rep, timed inside C++ (the numpy and
+// BRep text conversions are excluded).
+std::vector<double> flat_vertices(const py::array_t<double, py::array::c_style | py::array::forcecast>& a) {
+    if (a.ndim() != 2 || a.shape(1) != 3) throw ConfigError("vertices must be an (n, 3) array");
+    return {a.data(), a.data() + a.size()};
+}
+std::vector<int> flat_faces(const py::array_t<int, py::array::c_style | py::array::forcecast>& a) {
+    if (a.ndim() != 2 || a.shape(1) != 3) throw ConfigError("faces must be an (m, 3) array");
+    return {a.data(), a.data() + a.size()};
+}
+template <class F>
+py::tuple timed(F&& f, int repeat) {
+    using clock = std::chrono::steady_clock;
+    repeat = std::max(1, repeat);
+    decltype(f()) out;
+    const auto t0 = clock::now();
+    {
+        py::gil_scoped_release release;
+        for (int r = 0; r < repeat; ++r) out = f();
+    }
+    const double seconds = std::chrono::duration<double>(clock::now() - t0).count() / repeat;
+    return py::make_tuple(out, seconds);
+}
+
+void bind_bench(py::module_& m) {
+    auto b = m.def_submodule("bench", "Timed geometry functions, for the benchmarks.");
+    b.def(
+        "visible_triangles",
+        [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
+           py::array_t<int, py::array::c_style | py::array::forcecast> f, double side, int repeat) {
+            auto verts = flat_vertices(v);
+            auto faces = flat_faces(f);
+            return timed([&] { return triang::visible_triangles(verts, faces, side); }, repeat);
+        },
+        py::arg("vertices"), py::arg("faces"), py::arg("side"), py::arg("repeat") = 1,
+        "triang::visible_triangles (sampled coverage, BVH): (triangle indices, seconds per call).");
+    b.def(
+        "visible_triangles_raster",
+        [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
+           py::array_t<int, py::array::c_style | py::array::forcecast> f, double side, double cell, int max_side,
+           int min_side, int repeat) {
+            auto verts = flat_vertices(v);
+            auto faces = flat_faces(f);
+            triang::HeightMapOptions o;
+            o.cell = cell;
+            o.min_side = min_side;
+            o.max_side = max_side;
+            return timed([&] { return triang::visible_triangles_raster(verts, faces, side, o); }, repeat);
+        },
+        py::arg("vertices"), py::arg("faces"), py::arg("side"), py::arg("cell") = 0.01,
+        py::arg("max_side") = 1024, py::arg("min_side") = 64, py::arg("repeat") = 1,
+        "triang::visible_triangles_raster (height map): (triangle indices, seconds per call).");
+    b.def(
+        "visible_triangles_auto",
+        [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
+           py::array_t<int, py::array::c_style | py::array::forcecast> f, double side, size_t from_triangles,
+           int repeat) {
+            auto verts = flat_vertices(v);
+            auto faces = flat_faces(f);
+            return timed([&] { return triang::visible_triangles_auto(verts, faces, side, from_triangles); },
+                         repeat);
+        },
+        py::arg("vertices"), py::arg("faces"), py::arg("side"),
+        py::arg("from_triangles") = triang::kHeightMapFromTriangles, py::arg("repeat") = 1,
+        "triang::visible_triangles_auto (sampled under from_triangles triangles, height map from it): "
+        "(triangle indices, seconds per call).");
+    b.def(
+        "extreme_faces",
+        [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
+           py::array_t<int, py::array::c_style | py::array::forcecast> f, std::array<double, 3> direction,
+           int repeat) {
+            auto verts = flat_vertices(v);
+            auto faces = flat_faces(f);
+            return timed(
+                [&] {
+                    geometry::Geos geos;
+                    return geometry::extreme_faces(verts, faces, direction, geos);
+                },
+                repeat);
+        },
+        py::arg("vertices"), py::arg("faces"), py::arg("direction"), py::arg("repeat") = 1,
+        "geometry::extreme_faces (port of clash_utils.get_extreme_faces): (triangle indices, seconds).");
+    b.def(
+        "visible_faces_brep",
+        [](const std::string& brep, std::array<double, 3> direction, int repeat) {
+            TopoDS_Shape shape;
+            BRep_Builder builder;
+            std::istringstream in(brep);
+            BRepTools::Read(shape, in, builder);
+            if (shape.IsNull()) throw ConfigError("the BRep text cannot be read");
+            const gp_Dir dir(direction[0], direction[1], direction[2]);
+            return timed([&] { return geometry::visible_faces(shape, dir).size(); }, repeat);
+        },
+        py::arg("brep"), py::arg("direction"), py::arg("repeat") = 1,
+        "geometry::visible_faces (port of get_faces_visible_from_direction_with_plane, 50 x 50 rays on "
+        "the B-Rep): (face count, seconds per call).");
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_ifcclash_engine, m) {
@@ -260,4 +371,5 @@ PYBIND11_MODULE(_ifcclash_engine, m) {
             py::arg("mode") = "verdicts", py::arg("prefilter") = true);
 
     m.def("catalogue_json", &catalogue_json, "The catalogue of the C++ rules, as JSON text.");
+    bind_bench(m);
 }

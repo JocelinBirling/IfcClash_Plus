@@ -80,17 +80,21 @@ Session::Session(std::vector<std::filesystem::path> ifc_paths, SessionOptions op
     auto source = std::make_unique<IfcSource>(ifc_paths, source_options);
     ifc_ = source.get();
     provider_ = std::make_unique<GeometryProvider>(std::move(source), std::move(cache));
+    provider_->set_threads(rule_threads(options_));
 }
 
 Session::Session(std::unique_ptr<GeometrySource> source, SessionOptions options) : options_(std::move(options)) {
     if (!source) throw ConfigError("a session needs a geometry source");
     ifc_ = dynamic_cast<IfcSource*>(source.get());
     provider_ = std::make_unique<GeometryProvider>(std::move(source));
+    provider_->set_threads(rule_threads(options_));
 }
 
 Session::~Session() = default;
 
 size_t Session::file_count() const { return ifc_ ? ifc_->file_count() : 0; }
+
+size_t Session::ifc_conversions() const { return ifc_ ? ifc_->converted_elements() : 0; }
 
 std::vector<ElementKey> Session::resolve(const std::vector<FileSelection>& selection, Diagnostics& diagnostics) {
     if (!ifc_) throw ConfigError("selection resolution needs an IFC source");

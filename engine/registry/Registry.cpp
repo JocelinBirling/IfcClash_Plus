@@ -55,6 +55,10 @@ void register_all_rules(Registry& registry) {
     registry.add(spec_direct_view());
     registry.add(spec_free_space());
     registry.add(spec_alignement());
+    // engine/triang: complementary rules on the .ifcview triangles only.
+    registry.add(spec_intersection_triang());
+    registry.add(spec_above_triang());
+    registry.add(spec_obb_above_triang());
 }
 
 const Registry& default_registry() {

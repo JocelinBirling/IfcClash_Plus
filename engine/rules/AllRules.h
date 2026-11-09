@@ -6,6 +6,10 @@
 namespace ifcclash {
 
 RuleSpec spec_volume();
+// engine/triang: the rules on the .ifcview triangles only
+RuleSpec spec_intersection_triang();
+RuleSpec spec_above_triang();
+RuleSpec spec_obb_above_triang();
 RuleSpec spec_intersection();
 RuleSpec spec_clearance();
 RuleSpec spec_collision();

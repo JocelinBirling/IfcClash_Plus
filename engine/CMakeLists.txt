@@ -71,6 +71,11 @@ add_library(ifcclash_engine STATIC
   rules/ClearanceForDoors.cpp
   rules/ContextRules.cpp
   rules/Alignement.cpp
+  # The _triang rules: the .ifcview triangles only (engine/triang/README.md)
+  triang/ViewTriangles.cpp
+  triang/TriangleTests.cpp
+  triang/HeightMap.cpp
+  triang/TriangRules.cpp
   geometry/Triangles.cpp
   geometry/Faces.cpp
   geometry/Geos.cpp
@@ -126,7 +131,8 @@ if(IFCCLASH_BUILD_TESTS)
     tests/test_registry.cpp
     tests/test_broad_phase.cpp
     tests/test_session.cpp
-    tests/test_ifcview.cpp)
+    tests/test_ifcview.cpp
+    triang/tests/test_triang.cpp)
   target_link_libraries(engine_tests PRIVATE ifcclash_engine Catch2::Catch2WithMain)
   target_compile_definitions(engine_tests PRIVATE
     IFCCLASH_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")

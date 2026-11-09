@@ -51,6 +51,22 @@ public:
     // Clearance, Collision). Only a source holding IfcOpenShell elements
     // provides them.
     virtual TriangleClashService* triangle_clash() { return nullptr; }
+
+    // ---- Variant::ViewMesh (engine/triang): a source that stores its own
+    // tessellation (the .ifcview) gives the world triangles of the elements
+    // it covers, decoded on `threads` threads; one mesh per key (nullptr:
+    // not covered or no triangle).
+    virtual bool accepts_file(uint32_t /*file_index*/) const { return false; }
+    virtual std::vector<std::shared_ptr<const Mesh>> stored_meshes(const std::vector<ElementKey>& keys,
+                                                                   unsigned /*threads*/) {
+        return std::vector<std::shared_ptr<const Mesh>>(keys.size());
+    }
+    // The IfcOpenShell element (triangulation_element) of a mesh given in
+    // world coordinates, for the clash tree: only the IFC source, which
+    // holds the IFC products, can build it. nullptr otherwise.
+    virtual std::shared_ptr<const void> triangulation_native(const ElementKey& /*key*/, const Mesh& /*world_mesh*/) {
+        return nullptr;
+    }
     virtual IfcQueries* ifc_queries() { return nullptr; }
     virtual RayTreeService* ray_trees() { return nullptr; }
 };

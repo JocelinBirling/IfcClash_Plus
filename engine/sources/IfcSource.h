@@ -55,6 +55,7 @@ public:
     std::shared_ptr<const Mesh> mesh(const ElementKey& key, Variant variant) override;
     std::optional<TopoDS_Shape> brep(const ElementKey& key) override;
     TriangleClashService* triangle_clash() override { return clash_tree_.get(); }
+    std::shared_ptr<const void> triangulation_native(const ElementKey& key, const Mesh& world_mesh) override;
     IfcQueries* ifc_queries() override { return this; }
     RayTreeService* ray_trees() override { return this; }
     std::unique_ptr<RayTree> build_ray_tree(const std::vector<ElementKey>& keys) override;
@@ -66,6 +67,9 @@ public:
     express::entity entity(const ElementKey& key);
 
     size_t file_count() const { return files_.size(); }
+    // Elements converted by the iterator since the opening, all variants
+    // (the _triang rules must leave it unchanged).
+    size_t converted_elements() const { return converted_elements_; }
     const std::filesystem::path& path(uint32_t file_index) const;
 
     // Selection resolution. A GlobalId shared by several entities resolves
@@ -93,6 +97,7 @@ private:
     std::unique_ptr<IfcClashTree> clash_tree_;
 
     std::mutex mutex_;
+    size_t converted_elements_ = 0;
     // Per variant (MeshLocal, MeshWorld): the triangulations.
     std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> meshes_[kVariantCount];
     // BrepWorld: the serialized OCC B-Rep (parsed afresh at each brep()).

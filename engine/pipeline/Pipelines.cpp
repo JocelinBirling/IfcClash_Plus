@@ -1,6 +1,7 @@
 #include "Pipelines.h"
 
 #include "BroadPhase.h"
+#include "../core/Errors.h"
 #include "../sources/IfcClashTree.h"
 
 #include <algorithm>
@@ -122,9 +123,40 @@ std::vector<ElementKey> with_geometry(const std::vector<ElementKey>& keys, RunCo
 // decide which elements have geometry; on another base variant the elements
 // are converted in that variant only (no useless triangulation) and keep
 // void boxes: the rule derives its volumes from its element data.
+// The inputs of a rule on the .ifcview triangles (engine/triang): only the
+// elements the .ifcview holds, with its boxes; no IFC geometry is converted.
+// A file without accepted .ifcview is a configuration error; an element
+// missing from an accepted one is skipped with a diagnostic.
+static std::vector<ElementKey> view_inputs(const std::vector<ElementKey>& keys, RunContext& ctx,
+                                           std::vector<ElementBoxes>& boxes_out) {
+    std::vector<ElementKey> out;
+    boxes_out.clear();
+    for (const auto& key : unique_keys(keys)) {
+        if (!ctx.provider.cache_accepts_file(key.file_index)) {
+            throw ConfigError("this rule reads the triangles of the .ifcview: none was accepted for file " +
+                              std::to_string(key.file_index) +
+                              " (missing, older than the IFC or unreadable: see the session diagnostics; "
+                              "geometry_cache must not be 'off')");
+        }
+        if (!ctx.provider.cache_covers(key)) {
+            ctx.diagnostics.add(Severity::Warning, "not_in_ifcview",
+                                "#" + std::to_string(key.entity_id) + " " + key.global_id +
+                                    " is not in the .ifcview: skipped",
+                                key);
+            continue;
+        }
+        auto boxes = ctx.provider.boxes(key);  // covered: the .ifcview boxes
+        if (!boxes || boxes->aabb.IsVoid()) continue;
+        out.push_back(key);
+        boxes_out.push_back(*boxes);
+    }
+    return out;
+}
+
 static std::vector<ElementKey> rule_inputs(Variant base, const std::vector<ElementKey>& keys, RunContext& ctx,
                                            std::vector<ElementBoxes>& boxes_out) {
     if (base == Variant::MeshLocal) return with_geometry(keys, ctx, boxes_out);
+    if (base == Variant::ViewMesh) return view_inputs(keys, ctx, boxes_out);
     std::vector<ElementKey> out = unique_keys(keys);
     ctx.provider.prepare_meshes(out, base);
     boxes_out.assign(out.size(), ElementBoxes{});
@@ -268,7 +300,12 @@ void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int
     const auto t_narrow = Clock::now();  // the narrow time excludes the conversion
 
     auto* clash = ctx.provider.triangle_clash();
-    const size_t outside_before = clash ? clash->clashes_outside_candidates() : 0;
+    auto outside = [&ctx, clash]() {
+        size_t n = clash ? clash->clashes_outside_candidates() : 0;
+        if (auto* view = ctx.provider.view_clash_if_any()) n += view->clashes_outside_candidates();
+        return n;
+    };
+    const size_t outside_before = outside();
 
     // Batches: cancellation and progress between them.
     const size_t kBatch = rule.narrow_whole_run() ? std::max<size_t>(pairs.size(), 1) : 4096;
@@ -299,9 +336,9 @@ void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int
     }
     ctx.stats.phases.push_back({"narrow", pairs.size(), results.size(), seconds_since(t_narrow)});
 
-    if (clash && clash->clashes_outside_candidates() != outside_before) {
+    if (outside() != outside_before) {
         ctx.diagnostics.add(Severity::Error, "prefilter_lost_clash",
-                            std::to_string(clash->clashes_outside_candidates() - outside_before) +
+                            std::to_string(outside() - outside_before) +
                                 " clash(es) found outside the candidate pairs: a prefilter is not conservative");
     }
 }

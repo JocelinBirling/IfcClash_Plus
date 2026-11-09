@@ -110,10 +110,16 @@ IfcViewSource::IfcViewSource(const std::vector<IfcViewFile>& files, const IfcVie
             double scale = 0.0;  // largest coordinate magnitude (float rounding)
         };
         std::unordered_map<uint32_t, Acc> acc;
+        std::unordered_map<uint32_t, std::vector<triang::ViewInstance>> instances;
         for (const auto& inst : meta.instances) {
             if (inst.mesh_id >= meta.meshes.size()) continue;
             const MeshInfo& mesh = meta.meshes[inst.mesh_id];
             Acc& a = acc[inst.object_id];
+            triang::ViewInstance placed;
+            placed.mesh_id = inst.mesh_id;
+            std::copy(std::begin(inst.placement_transformation), std::end(inst.placement_transformation),
+                      placed.placement.begin());
+            instances[inst.object_id].push_back(placed);
             for (int c = 0; c < 8; ++c) {
                 const double local[3] = {(c & 1) ? mesh.local_aabb_max[0] : mesh.local_aabb_min[0],
                                          (c & 2) ? mesh.local_aabb_max[1] : mesh.local_aabb_min[1],
@@ -142,8 +148,14 @@ IfcViewSource::IfcViewSource(const std::vector<IfcViewFile>& files, const IfcVie
             // Tessellation gap (both linear deflections) + float storage
             // of the local boxes and of the rotation.
             entry.boxes.uncertainty = linear + kIfcLinearDeflection + 1e-6 * (1.0 + a.scale + a.size);
+            entry.instances = std::move(instances[object_id]);
             entries[rec.ifc_id] = std::move(entry);
         }
+        triang::ViewGeometry& geometry = geometry_[file.file_index];
+        geometry.path = file.ifcview_path;
+        geometry.geometry_section_offset = view->geometry_section_offset;
+        geometry.meshes = meta.meshes;
+        geometry.chunks = meta.chunks;
         diagnostics.add(Severity::Info, "ifcview_accepted",
                         name + ": " + std::to_string(entries.size()) + " elements, boxes from the .ifcview");
     }
@@ -171,6 +183,25 @@ std::optional<ElementBoxes> IfcViewSource::boxes(const ElementKey& key) {
     ElementBoxes out = e.boxes;
     // The raw boxes carry the uncertainty in the pipeline: the rules inflate
     // by it (default volumes), so the raw ones stay the .ifcview ones.
+    return out;
+}
+
+std::vector<std::shared_ptr<const Mesh>> IfcViewSource::stored_meshes(const std::vector<ElementKey>& keys,
+                                                                      unsigned threads) {
+    std::vector<std::shared_ptr<const Mesh>> out(keys.size());
+    // One decoding pass per file, for the covered keys of that file.
+    std::unordered_map<uint32_t, std::vector<size_t>> by_file;
+    for (size_t i = 0; i < keys.size(); ++i) {
+        if (covers(keys[i])) by_file[keys[i].file_index].push_back(i);
+    }
+    for (const auto& [file_index, where] : by_file) {
+        const auto& entries = files_.at(file_index);
+        std::vector<const std::vector<triang::ViewInstance>*> elements;
+        elements.reserve(where.size());
+        for (size_t i : where) elements.push_back(&entries.at(keys[i].entity_id).instances);
+        auto meshes = triang::decode_elements(geometry_.at(file_index), elements, threads);
+        for (size_t k = 0; k < where.size(); ++k) out[where[k]] = std::move(meshes[k]);
+    }
     return out;
 }
 

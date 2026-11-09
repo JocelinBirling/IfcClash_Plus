@@ -190,6 +190,7 @@ std::optional<ElementKey> IfcSource::resolve(const ElementKey& partial, Diagnost
 
 void IfcSource::convert(uint32_t file_index, const std::vector<int>& entity_ids, Variant variant) {
     if (entity_ids.empty()) return;
+    converted_elements_ += entity_ids.size();
     FileEntry& entry = *files_[file_index];
 
     // The defaults of ifcopenshell.geom.settings(), the geometry library of
@@ -340,6 +341,31 @@ std::unique_ptr<RayTree> IfcSource::build_ray_tree(const std::vector<ElementKey>
         } while (iterator.next());
     }
     return out;
+}
+
+// ---------------------------------------------------------------- foreign triangles
+
+std::shared_ptr<const void> IfcSource::triangulation_native(const ElementKey& key, const Mesh& world_mesh) {
+    // An IfcOpenShell element made of triangles that did not come from the
+    // iterator (the .ifcview ones, engine/triang): the product of the key,
+    // the identity placement, the world vertices and faces as given. The
+    // clash tree computes its own BVH, OBB and normals from them.
+    express::entity product;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        product = entity(key);
+    }
+    if (!product) return nullptr;
+    ifcopenshell::geom::settings settings;
+    auto geometry = std::make_shared<ifcopenshell::geom::triangulation>(
+        settings, product.declaration().name(), std::to_string(key.entity_id), world_mesh.world_verts,
+        world_mesh.faces, std::vector<int>{}, std::vector<double>{}, std::vector<double>{}, std::vector<int>{},
+        std::vector<ifcopenshell::geom::taxonomy::style::ptr>{}, std::vector<int>{}, std::vector<int>{});
+    const ifcopenshell::geom::element element(settings, key.entity_id, 0, std::string(), product.declaration().name(),
+                                              key.global_id, "Body",
+                                              ifcopenshell::geom::taxonomy::make<ifcopenshell::geom::taxonomy::matrix4>(),
+                                              product);
+    return std::make_shared<ifcopenshell::geom::triangulation_element>(element, geometry);
 }
 
 // ---------------------------------------------------------------- IFC queries

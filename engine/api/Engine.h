@@ -81,6 +81,8 @@ public:
     RunResult evaluate_pairs(const RunRequest& request, const std::vector<KeyPair>& pairs);
 
     size_t file_count() const;
+    // IFC elements converted (triangulated) by the session since its opening.
+    size_t ifc_conversions() const;
     // Session-level diagnostics (cache policy...), repeated in every run.
     const Diagnostics& diagnostics() const { return session_diagnostics_; }
 

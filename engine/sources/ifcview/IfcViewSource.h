@@ -15,6 +15,7 @@
 
 #include "../GeometrySource.h"
 #include "../../core/Result.h"
+#include "../../triang/ViewTriangles.h"
 
 #include <filesystem>
 #include <memory>
@@ -65,6 +66,12 @@ public:
     std::optional<ElementBoxes> boxes(const ElementKey& key) override;
     std::shared_ptr<const Mesh> mesh(const ElementKey&) override { return nullptr; }
 
+    // Variant::ViewMesh (engine/triang): the world triangles of the
+    // .ifcview, decoded on demand.
+    bool accepts_file(uint32_t file_index) const override { return files_.count(file_index) != 0; }
+    std::vector<std::shared_ptr<const Mesh>> stored_meshes(const std::vector<ElementKey>& keys,
+                                                           unsigned threads) override;
+
     size_t accepted_files() const { return files_.size(); }
     size_t element_count() const;
 
@@ -78,9 +85,12 @@ private:
     struct Entry {
         std::string global_id;
         ElementBoxes boxes;
+        std::vector<triang::ViewInstance> instances;  // its meshes, placed
     };
     // file_index -> (STEP id -> boxes)
     std::unordered_map<uint32_t, std::unordered_map<int, Entry>> files_;
+    // file_index -> what decoding the triangles needs
+    std::unordered_map<uint32_t, triang::ViewGeometry> geometry_;
 };
 
 }  // namespace ifcclash

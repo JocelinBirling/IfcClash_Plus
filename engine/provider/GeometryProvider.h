@@ -35,9 +35,9 @@ public:
     void prepare(const std::vector<ElementKey>& keys);
     // Before the narrow phase: the meshes / B-Reps of the elements that
     // survived the prefilters, converted in one batch.
-    void prepare_meshes(const std::vector<ElementKey>& keys, Variant variant = Variant::MeshLocal) {
-        primary_->prepare(keys, variant);
-    }
+    // Variant::ViewMesh: the .ifcview triangles (engine/triang), from the
+    // cache source only.
+    void prepare_meshes(const std::vector<ElementKey>& keys, Variant variant = Variant::MeshLocal);
 
     bool has_cache() const { return cache_ != nullptr; }
     // How many boxes came from the cache since the last reset (statistics).
@@ -46,7 +46,7 @@ public:
 
     std::optional<ElementBoxes> boxes(const ElementKey& key);
     std::shared_ptr<const Mesh> mesh(const ElementKey& key);
-    std::shared_ptr<const Mesh> mesh(const ElementKey& key, Variant variant) { return primary_->mesh(key, variant); }
+    std::shared_ptr<const Mesh> mesh(const ElementKey& key, Variant variant);
     std::optional<TopoDS_Shape> brep(const ElementKey& key);
     TriangleClashService* triangle_clash();
 
@@ -60,6 +60,22 @@ public:
     std::shared_ptr<const void> derived(const ElementKey& key, const std::string& tag,
                                         const std::function<std::shared_ptr<const void>()>& compute);
     IfcQueries* ifc_queries() { return primary_->ifc_queries(); }
+
+    // ---- Variant::ViewMesh (engine/triang, the _triang rules)
+    // Whether the cache source accepted the .ifcview of a file / holds an
+    // element.
+    bool cache_accepts_file(uint32_t file_index) const { return cache_ && cache_->accepts_file(file_index); }
+    bool cache_covers(const ElementKey& key) const { return cache_ && cache_->covers(key); }
+    // The IfcOpenShell clash tree of the .ifcview triangles (a second tree,
+    // apart from the one of the IFC triangles), created on first use, and
+    // the mesh to hand it for an element: it carries only the IfcOpenShell
+    // element built from the .ifcview triangles. nullptr when no .ifcview
+    // triangle exists for the key.
+    TriangleClashService* view_clash();
+    TriangleClashService* view_clash_if_any() { return view_clash_.get(); }
+    std::shared_ptr<const Mesh> view_clash_mesh(const ElementKey& key);
+    // Threads of the per-element work (decoding the .ifcview chunks).
+    void set_threads(unsigned threads) { threads_ = threads == 0 ? 1 : threads; }
     RayTreeService* ray_trees() { return primary_->ray_trees(); }
 
 private:
@@ -67,6 +83,11 @@ private:
     std::unique_ptr<GeometrySource> cache_;
     size_t cache_hits_ = 0;
     size_t box_requests_ = 0;
+    unsigned threads_ = 1;
+    std::mutex view_mutex_;
+    std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> view_meshes_;
+    std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> view_clash_meshes_;
+    std::unique_ptr<TriangleClashService> view_clash_;
     std::mutex derived_mutex_;
     std::map<std::string, std::unordered_map<ElementKey, std::shared_ptr<const void>, ElementKeyHash>> derived_;
 };
