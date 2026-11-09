@@ -36,6 +36,9 @@ find_package(Boost CONFIG REQUIRED)
 # zstd: the .ifcview reader (sources/ifcview/third_party, LGPL v3)
 find_path(ZSTD_INCLUDE_DIR zstd.h REQUIRED)
 find_library(ZSTD_LIBRARY NAMES zstd REQUIRED)
+# GEOS: the polygon engine of shapely (exact parity of the 2D operations)
+find_path(GEOS_INCLUDE_DIR geos_c.h REQUIRED)
+find_library(GEOS_C_LIBRARY NAMES geos_c REQUIRED)
 
 # IfcOpenShell (IfcParse / IfcGeom) has no CMake package: headers and
 # shared libraries of the conda-forge ifcopenshell package.
@@ -46,7 +49,7 @@ foreach(lib ifcopenshell.parse ifcopenshell.geometry ifcopenshell.plugin)
   list(APPEND IFCOPENSHELL_LIBRARIES ${IFCOPENSHELL_${var}})
 endforeach()
 
-set(OCCT_LIBS TKernel TKMath TKG3d TKBRep TKGeomBase TKTopAlgo)
+set(OCCT_LIBS TKernel TKMath TKG2d TKG3d TKBRep TKGeomBase TKGeomAlgo TKTopAlgo TKMesh TKPrim TKBO TKBool TKShHealing)
 
 # ---- The engine library
 add_library(ifcclash_engine STATIC
@@ -60,6 +63,18 @@ add_library(ifcclash_engine STATIC
   rules/Intersection.cpp
   rules/Clearance.cpp
   rules/Collision.cpp
+  rules/OneObjectRules.cpp
+  rules/DirectionalRules.cpp
+  rules/AxisRules.cpp
+  rules/FaceRules.cpp
+  rules/SurfaceRecover.cpp
+  rules/ClearanceForDoors.cpp
+  rules/ContextRules.cpp
+  rules/Alignement.cpp
+  geometry/Triangles.cpp
+  geometry/Faces.cpp
+  geometry/Geos.cpp
+  geometry/Obb.cpp
   pipeline/BroadPhase.cpp
   pipeline/Pipelines.cpp
   registry/RuleSpec.cpp
@@ -71,11 +86,11 @@ add_library(ifcclash_engine STATIC
 )
 target_include_directories(ifcclash_engine
   PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}
-  PRIVATE ${IFCOPENSHELL_INCLUDE_DIR} ${ZSTD_INCLUDE_DIR})
+  PRIVATE ${IFCOPENSHELL_INCLUDE_DIR} ${ZSTD_INCLUDE_DIR} ${GEOS_INCLUDE_DIR})
 target_include_directories(ifcclash_engine SYSTEM PUBLIC ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(ifcclash_engine
   PUBLIC  nlohmann_json::nlohmann_json ${OCCT_LIBS}
-  PRIVATE ${IFCOPENSHELL_LIBRARIES} ${ZSTD_LIBRARY} Eigen3::Eigen Boost::headers)
+  PRIVATE ${IFCOPENSHELL_LIBRARIES} ${ZSTD_LIBRARY} ${GEOS_C_LIBRARY} Eigen3::Eigen Boost::headers)
 target_compile_options(ifcclash_engine PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # The macros the conda-forge ifcopenshell package was built with. They
 # change the layout of the IfcParse classes (ifcopenshell::file holds a

@@ -98,6 +98,80 @@ Json info_to_json(const ResultRecord& record) {
         }
         info["points"] = std::move(points);
     }
+    auto face_json = [](const FaceData& f) {
+        Json triangles = Json::array();
+        for (const auto& t : f.triangles) {
+            triangles.push_back(Json::array({point_json(t[0]), point_json(t[1]), point_json(t[2])}));
+        }
+        return Json{{"normal", point_json(f.normal)}, {"area", f.area}, {"triangles", std::move(triangles)}};
+    };
+    if (!record.faces.empty()) {
+        Json faces = Json::array();
+        int number = 1;
+        for (const auto& pair : record.faces) {
+            faces.push_back(Json{{"number", number++},
+                                 {"source", face_json(pair.source)},
+                                 {"target", face_json(pair.target)}});
+        }
+        info["faces"] = std::move(faces);
+    }
+    if (record.volumes.any()) {
+        Json volumes = Json::object();
+        if (record.volumes.intersection) volumes["intersection"] = *record.volumes.intersection;
+        if (record.volumes.ratio) volumes["ratio"] = *record.volumes.ratio;
+        if (record.volumes.containment) volumes["containment"] = *record.volumes.containment;
+        if (record.volumes.clearance_violated) volumes["clearance_violated"] = *record.volumes.clearance_violated;
+        info["volumes"] = std::move(volumes);
+    }
+    auto obb_json = [](const ObbData& o) {
+        Json out{{"center", point_json(o.center)},
+                 {"axes", Json::array({point_json(o.axes[0]), point_json(o.axes[1]), point_json(o.axes[2])})},
+                 {"half_sizes", point_json(o.half_sizes)}};
+        if (o.label) out["label"] = *o.label;
+        return out;
+    };
+    if (!record.source_obbs.empty() || !record.target_obbs.empty()) {
+        Json obbs = Json::object();
+        if (!record.source_obbs.empty()) {
+            obbs["source"] = Json::array();
+            for (const auto& o : record.source_obbs) obbs["source"].push_back(obb_json(o));
+        }
+        if (!record.target_obbs.empty()) {
+            obbs["target"] = Json::array();
+            for (const auto& o : record.target_obbs) obbs["target"].push_back(obb_json(o));
+        }
+        info["obbs"] = std::move(obbs);
+    }
+    if (record.axis) {
+        info["axis"] = Json{{"mode", record.axis->mode ? Json(*record.axis->mode) : Json(nullptr)},
+                            {"degraded", record.axis->degraded ? Json(*record.axis->degraded) : Json(nullptr)}};
+    }
+    if (record.raycast) {
+        auto segments = [](const std::vector<std::pair<Point3, Point3>>& list) {
+            Json out = Json::array();
+            for (const auto& [a, b] : list) out.push_back(Json::array({point_json(a), point_json(b)}));
+            return out;
+        };
+        info["raycast"] = Json{{"planned", record.raycast->planned},
+                               {"cast", record.raycast->cast},
+                               {"hit", record.raycast->hit},
+                               {"hit_segments", segments(record.raycast->hit_segments)},
+                               {"blocked_segments", segments(record.raycast->blocked_segments)}};
+    }
+    if (record.zone) {
+        info["zone"] = Json{{"side", record.zone->side},     {"leaf", record.zone->leaf},
+                            {"width", record.zone->width},   {"depth", record.zone->depth},
+                            {"height", record.zone->height}};
+    }
+    if (!record.axes.empty()) {
+        Json axes = Json::array();
+        for (const auto& a : record.axes) {
+            Json entry{{"center", point_json(a.center)}, {"direction", point_json(a.direction)}, {"length", a.length}};
+            if (a.label) entry["label"] = *a.label;
+            axes.push_back(std::move(entry));
+        }
+        info["axes"] = std::move(axes);
+    }
     return info;
 }
 

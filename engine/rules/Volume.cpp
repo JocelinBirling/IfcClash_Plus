@@ -16,6 +16,7 @@ struct VolumeParams {
 
 class Volume final : public ElementRule<VolumeParams> {
 public:
+    bool parallel_safe() const override { return true; }
     Level narrow_level() const override { return Level::Mesh; }
 
     Verdict narrow_test(const ElementGeometry& e) const override {

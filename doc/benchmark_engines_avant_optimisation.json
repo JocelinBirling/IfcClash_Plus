@@ -1,0 +1,953 @@
+{
+  "paths": [
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Architecture.ifc",
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Mechanical.ifc"
+  ],
+  "ifcviews": [
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Architecture.ifcview",
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Mechanical.ifcview"
+  ],
+  "has_ifcview": true,
+  "sources": 100,
+  "targets": 100,
+  "python_open_s": 0.14712727600272046,
+  "python_timeout": 600.0,
+  "cpp_timeout": 600.0,
+  "rows": [
+    {
+      "rule": "Volume",
+      "kind": "one",
+      "params": {
+        "volume_min": 0.0,
+        "volume_max": 1000000000.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 3.203383911997662,
+      "results": 200,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 0.7339236609986983,
+      "cpp_warm_s": 0.0014287209996837191,
+      "cpp_stats": "Volume   convert: 200 \u2192 200   narrow: 200 \u2192 200   (0.568 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.7407067289968836,
+      "ifcview_warm_s": 0.0015211149948299862,
+      "ifcview_stats": "Volume   convert: 200 \u2192 200   narrow: 200 \u2192 200   (0.565 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Area",
+      "kind": "one",
+      "params": {
+        "volume_min": 0.0,
+        "volume_max": 1000000000.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 3.235551646001113,
+      "results": 200,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 0.7289334269953542,
+      "cpp_warm_s": 0.0014413739991141483,
+      "cpp_stats": "Area   convert: 200 \u2192 200   narrow: 200 \u2192 200   (0.562 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.7616520369992941,
+      "ifcview_warm_s": 0.0015111559987417422,
+      "ifcview_stats": "Area   convert: 200 \u2192 200   narrow: 200 \u2192 200   (0.577 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "TopOrBottomSurface",
+      "kind": "one",
+      "params": {
+        "surface_min": 0.0,
+        "surface_max": 1000000000.0,
+        "top_or_bot_method": "Top"
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 7.542279934998078,
+      "results": 173,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 2.6658168060021126,
+      "cpp_warm_s": 1.7115630979969865,
+      "cpp_stats": "TopOrBottomSurface   convert: 200 \u2192 200   narrow: 200 \u2192 173   (2.374 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 2.6340172060008626,
+      "ifcview_warm_s": 1.7251253750000615,
+      "ifcview_stats": "TopOrBottomSurface   convert: 200 \u2192 200   narrow: 200 \u2192 173   (2.347 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "LateralSurface",
+      "kind": "one",
+      "params": {
+        "surface_min": 0.0,
+        "surface_max": 1000000000.0,
+        "direction": [
+          0.0,
+          1.0,
+          0.0
+        ]
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 3.513844742999936,
+      "results": 193,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 1.0121786799936672,
+      "cpp_warm_s": 0.0018371900005149655,
+      "cpp_stats": "LateralSurface   convert: 200 \u2192 200   narrow: 200 \u2192 193   (0.834 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.9654997159959748,
+      "ifcview_warm_s": 0.0017989580010180362,
+      "ifcview_stats": "LateralSurface   convert: 200 \u2192 200   narrow: 200 \u2192 193   (0.780 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "ProjectedSurface",
+      "kind": "one",
+      "params": {
+        "surface_min": 0.0,
+        "surface_max": 1000000000.0,
+        "direction": [
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 3.865463243004342,
+      "results": 174,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 1.1463663210015511,
+      "cpp_warm_s": 0.18667884499882348,
+      "cpp_stats": "ProjectedSurface   convert: 200 \u2192 200   narrow: 200 \u2192 174   (0.966 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 1.1925764260013239,
+      "ifcview_warm_s": 0.186839328998758,
+      "ifcview_stats": "ProjectedSurface   convert: 200 \u2192 200   narrow: 200 \u2192 174   (0.988 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "ObbHigh",
+      "kind": "one",
+      "params": {
+        "length_min": 0.0,
+        "length_max": 1000000000.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.062661301999469,
+      "results": 200,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.401047400002426,
+      "cpp_warm_s": 2.7325730480006314,
+      "cpp_stats": "ObbHigh   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.214 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.379600420004863,
+      "ifcview_warm_s": 2.6648602040004334,
+      "ifcview_stats": "ObbHigh   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.195 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "ObbLength",
+      "kind": "one",
+      "params": {
+        "length_min": 0.0,
+        "length_max": 1000000000.0,
+        "direction_method": "Narrow"
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.113519184997131,
+      "results": 200,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.4021788940008264,
+      "cpp_warm_s": 2.6568398880044697,
+      "cpp_stats": "ObbLength   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.218 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.409350321002421,
+      "ifcview_warm_s": 2.662065483003971,
+      "ifcview_stats": "ObbLength   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.226 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Orientation",
+      "kind": "one",
+      "params": {
+        "orientation": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "orientation_type": "Parrallel",
+        "direction_method": "Wide",
+        "angular_tolerance": 0.1
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.034981805001735,
+      "results": 0,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.4168052449967945,
+      "cpp_warm_s": 2.6996361240016995,
+      "cpp_stats": "Orientation   convert: 200 \u2192 200   narrow: 200 \u2192 0   (3.233 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.403646495004068,
+      "ifcview_warm_s": 2.7218013789970428,
+      "ifcview_stats": "Orientation   convert: 200 \u2192 200   narrow: 200 \u2192 0   (3.227 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "OneObjectFace",
+      "kind": "one",
+      "params": {
+        "distance": false,
+        "min_distance": null,
+        "max_distance": null,
+        "intersection": false,
+        "intersection_tolerance": 0.0,
+        "orientation": true,
+        "angle": 180.0,
+        "angle_tolerance": 1.0,
+        "face_a_selection": {
+          "orientation": "Top",
+          "extreme_faces": true
+        },
+        "face_b_selection": {
+          "orientation": "Bottom",
+          "extreme_faces": true
+        },
+        "skip_adjacent": true
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 6.155622021993622,
+      "results": 22146,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 1.4784004560060566,
+      "cpp_warm_s": 0.4992381369957002,
+      "cpp_stats": "OneObjectFace   convert: 200 \u2192 200   narrow: 200 \u2192 22146   (0.846 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 1.4867827329944703,
+      "ifcview_warm_s": 0.49306599200644996,
+      "ifcview_stats": "OneObjectFace   convert: 200 \u2192 200   narrow: 200 \u2192 22146   (0.852 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Intersection",
+      "kind": "pair",
+      "params": {
+        "tolerance": 0.002
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 0.680401363002602,
+      "results": 56,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 0.8971670820028521,
+      "cpp_warm_s": 0.02501415000006091,
+      "cpp_stats": "Intersection   convert: 200 \u2192 200   broad: 10000 \u2192 116   mid: 116 \u2192 116   narrow: 116 \u2192 56   (0.703 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.4807093779963907,
+      "ifcview_warm_s": 0.02492163600254571,
+      "ifcview_stats": "Intersection   convert: 200 \u2192 200   broad: 10000 \u2192 136   mid: 136 \u2192 136   convert_narrow: 117 \u2192 117   narrow: 136 \u2192 56   (0.286 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Clearance",
+      "kind": "pair",
+      "params": {
+        "clearance": 0.5,
+        "check_all": true
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 0.805512129998533,
+      "results": 448,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 0.8991591869998956,
+      "cpp_warm_s": 0.053888191003352404,
+      "cpp_stats": "Clearance   convert: 200 \u2192 200   broad: 10000 \u2192 497   mid: 497 \u2192 496   narrow: 496 \u2192 448   (0.713 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.9606359750032425,
+      "ifcview_warm_s": 0.05897596500290092,
+      "ifcview_stats": "Clearance   convert: 200 \u2192 200   broad: 10000 \u2192 532   mid: 532 \u2192 532   convert_narrow: 181 \u2192 181   narrow: 532 \u2192 448   (0.772 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Collision",
+      "kind": "pair",
+      "params": {
+        "allow_touching": false
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 0.6930865530011943,
+      "results": 32,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 0.8606362430000445,
+      "cpp_warm_s": 0.0032101570031954907,
+      "cpp_stats": "Collision   convert: 200 \u2192 200   broad: 10000 \u2192 116   mid: 116 \u2192 116   narrow: 116 \u2192 32   (0.676 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 0.4484991550052655,
+      "ifcview_warm_s": 0.0028315739982645027,
+      "ifcview_stats": "Collision   convert: 200 \u2192 200   broad: 10000 \u2192 136   mid: 136 \u2192 136   convert_narrow: 117 \u2192 117   narrow: 136 \u2192 32   (0.264 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Intersection2",
+      "kind": "pair",
+      "params": {
+        "tolerance": 0.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 4.992800840002019,
+      "results": 66,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 5.169765028003894,
+      "cpp_warm_s": 4.207893999002408,
+      "cpp_stats": "Intersection2   convert: 200 \u2192 200   broad: 10000 \u2192 115   mid: 115 \u2192 96   narrow: 96 \u2192 66   (4.915 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 4.987600032000046,
+      "ifcview_warm_s": 4.134857221004495,
+      "ifcview_stats": "Intersection2   convert: 200 \u2192 200   broad: 10000 \u2192 115   mid: 115 \u2192 96   convert_narrow: 99 \u2192 99   narrow: 96 \u2192 66   (4.752 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Above",
+      "kind": "pair",
+      "params": {
+        "above_type": "Above_MaxToMin",
+        "tolerance": 1.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 65.7617617270007,
+      "results": 99,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 54.45303230600257,
+      "cpp_warm_s": 54.37518186200032,
+      "cpp_stats": "Above   convert: 200 \u2192 200   broad: 10000 \u2192 169   mid: 169 \u2192 167   narrow: 167 \u2192 99   (54.174 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 54.89310916700197,
+      "ifcview_warm_s": 55.423137117002625,
+      "ifcview_stats": "Above   convert: 200 \u2192 200   broad: 10000 \u2192 169   mid: 169 \u2192 167   convert_narrow: 128 \u2192 128   narrow: 167 \u2192 99   (54.618 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Below",
+      "kind": "pair",
+      "params": {
+        "below_type": "Below_MinToMax",
+        "tolerance": 1.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 67.36531915000523,
+      "results": 77,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 54.99992996399669,
+      "cpp_warm_s": 53.41104433799774,
+      "cpp_stats": "Below   convert: 200 \u2192 200   broad: 10000 \u2192 122   mid: 122 \u2192 120   narrow: 120 \u2192 77   (54.762 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 54.03142534699873,
+      "ifcview_warm_s": 53.38499982399662,
+      "ifcview_stats": "Below   convert: 200 \u2192 200   broad: 10000 \u2192 122   mid: 122 \u2192 120   convert_narrow: 88 \u2192 88   narrow: 120 \u2192 77   (53.745 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "OBB_Above",
+      "kind": "pair",
+      "params": {
+        "tolerance": 1.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.377838884000084,
+      "results": 163,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.64415026599454,
+      "cpp_warm_s": 2.8810837370037916,
+      "cpp_stats": "OBB_Above   convert: 200 \u2192 200   broad: 10000 \u2192 169   mid: 169 \u2192 169   narrow: 169 \u2192 163   (3.395 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.5992068339983234,
+      "ifcview_warm_s": 2.9111687100012205,
+      "ifcview_stats": "OBB_Above   convert: 200 \u2192 200   broad: 10000 \u2192 169   mid: 169 \u2192 169   convert_narrow: 128 \u2192 128   narrow: 169 \u2192 163   (3.350 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "OBB_Below",
+      "kind": "pair",
+      "params": {
+        "tolerance": 1.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.2699611309944885,
+      "results": 114,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.5982560379998176,
+      "cpp_warm_s": 2.84000857299543,
+      "cpp_stats": "OBB_Below   convert: 200 \u2192 200   broad: 10000 \u2192 122   mid: 122 \u2192 122   narrow: 122 \u2192 114   (3.296 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.528361443000904,
+      "ifcview_warm_s": 2.795448381002643,
+      "ifcview_stats": "OBB_Below   convert: 200 \u2192 200   broad: 10000 \u2192 122   mid: 122 \u2192 122   convert_narrow: 90 \u2192 90   narrow: 122 \u2192 114   (3.285 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "OBB_Front_And_Back",
+      "kind": "pair",
+      "params": {
+        "tolerance": 0.5,
+        "direction_method": "Wide"
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.321419252999476,
+      "results": 127,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.692212493995612,
+      "cpp_warm_s": 2.9310184630012373,
+      "cpp_stats": "OBB_Front_And_Back   convert: 200 \u2192 200   broad: 10000 \u2192 174   mid: 174 \u2192 174   narrow: 174 \u2192 127   (3.391 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.629007994000858,
+      "ifcview_warm_s": 2.8952259889993,
+      "ifcview_stats": "OBB_Front_And_Back   convert: 200 \u2192 200   broad: 10000 \u2192 174   mid: 174 \u2192 174   convert_narrow: 134 \u2192 134   narrow: 174 \u2192 127   (3.370 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "OBB_Custom",
+      "kind": "pair",
+      "params": {
+        "list_of_modifications": [
+          "detach_top_by_extrude:0.5",
+          "NEW_OBB",
+          "extend_down:50%"
+        ]
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.896209657003055,
+      "results": 293,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 4.1172052300025825,
+      "cpp_warm_s": 3.429876451002201,
+      "cpp_stats": "OBB_Custom   convert: 200 \u2192 200   broad: 10000 \u2192 250   mid: 250 \u2192 250   narrow: 250 \u2192 293   (3.851 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 4.128901800002495,
+      "ifcview_warm_s": 3.3857312709951657,
+      "ifcview_stats": "OBB_Custom   convert: 200 \u2192 200   broad: 10000 \u2192 250   mid: 250 \u2192 250   convert_narrow: 145 \u2192 145   narrow: 250 \u2192 293   (3.835 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "AngleBetween",
+      "kind": "pair",
+      "params": {
+        "direction_method_for_source": "Wide",
+        "direction_method_for_target": "Wide",
+        "angle_difference": 90.0,
+        "angle_tolerance": 5.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 5.162277800998709,
+      "results": 4465,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.3840117209983873,
+      "cpp_warm_s": 2.6363265010004397,
+      "cpp_stats": "AngleBetween   convert: 200 \u2192 200   mid: 10000 \u2192 10000   narrow: 10000 \u2192 4465   (3.151 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.329921069998818,
+      "ifcview_warm_s": 2.6337445419994765,
+      "ifcview_stats": "AngleBetween   convert: 200 \u2192 200   mid: 10000 \u2192 10000   convert_narrow: 200 \u2192 200   narrow: 10000 \u2192 4465   (3.109 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "ClearanceAxisToAxis",
+      "kind": "pair",
+      "params": {
+        "mode": "MinDistance",
+        "min_distance": 0.2,
+        "max_distance": 5.0,
+        "tolerance": 0.01,
+        "linearity_ratio": 1.5,
+        "on_non_linear": "Fallback",
+        "parallel_tolerance": 5.0
+      },
+      "faults": [],
+      "python_s_status": "timeout",
+      "python_s_limit": 600.0,
+      "cpp_cold_s_status": "timeout",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "timeout",
+      "cpp_warm_s_limit": 600.0,
+      "ifcview_cold_s_status": "timeout",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "timeout",
+      "ifcview_warm_s_limit": 600.0
+    },
+    {
+      "rule": "TwoObjectsFace",
+      "kind": "pair",
+      "params": {
+        "distance": true,
+        "min_distance": 0.3,
+        "max_distance": null,
+        "intersection": true,
+        "intersection_tolerance": 0.0,
+        "orientation": false,
+        "angle": null,
+        "angle_tolerance": 0.0,
+        "source_face_selection": {
+          "orientation": "Top",
+          "extreme_faces": true
+        },
+        "target_face_selection": {
+          "orientation": "Bottom"
+        }
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 225.92786461499782,
+      "results": 8575,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 6.924880842998391,
+      "cpp_warm_s": 5.943012349998753,
+      "cpp_stats": "TwoObjectsFace   convert: 200 \u2192 186   broad: 8613 \u2192 169   mid: 169 \u2192 169   narrow: 169 \u2192 8575   (6.558 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 6.947022537999146,
+      "ifcview_warm_s": 5.916031665001356,
+      "ifcview_stats": "TwoObjectsFace   convert: 200 \u2192 186   broad: 8613 \u2192 169   mid: 169 \u2192 169   convert_narrow: 120 \u2192 120   narrow: 169 \u2192 8575   (6.580 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "SurfaceRecover",
+      "kind": "pair",
+      "params": {
+        "direction": "Auto",
+        "reference": "Source",
+        "tolerance": 0.001,
+        "min_covering": null,
+        "max_covering": [
+          "relative",
+          80.0
+        ]
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 8.689845697001147,
+      "results": 0,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 5.485364446001768,
+      "cpp_warm_s": 3.89572683100414,
+      "cpp_stats": "SurfaceRecover   convert: 200 \u2192 200   broad: 10000 \u2192 159   mid: 159 \u2192 159   narrow: 159 \u2192 0   (5.223 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 5.482347453995317,
+      "ifcview_warm_s": 3.865434371000447,
+      "ifcview_stats": "SurfaceRecover   convert: 200 \u2192 200   broad: 10000 \u2192 159   mid: 159 \u2192 159   convert_narrow: 130 \u2192 130   narrow: 159 \u2192 0   (5.218 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "ClearanceForDoors",
+      "kind": "pair",
+      "params": {
+        "zone_shape": "Arc",
+        "sides": "Swing",
+        "leaves": null,
+        "width": null,
+        "depth": null,
+        "height": null,
+        "tolerance": 0.001
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 212.5055138500029,
+      "results": 332,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 12.013277682999615,
+      "cpp_warm_s": 9.979565681001986,
+      "cpp_stats": "ClearanceForDoors   convert: 200 \u2192 200   broad: 10000 \u2192 391   mid: 391 \u2192 391   narrow: 391 \u2192 332   (11.799 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 12.938026376999915,
+      "ifcview_warm_s": 10.219513560004998,
+      "ifcview_stats": "ClearanceForDoors   convert: 200 \u2192 200   broad: 10000 \u2192 391   mid: 391 \u2192 391   convert_narrow: 164 \u2192 164   narrow: 391 \u2192 332   (12.715 s)",
+      "ifcview_diagnostics": [
+        "187 of 200 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Ray_Check",
+      "kind": "pair_ctx",
+      "params": {
+        "max_ray_length": 5.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 366.90515370799403,
+      "results": 268,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 4.207235075002245,
+      "cpp_warm_s": 2.599769311993441,
+      "cpp_stats": "Ray_Check   convert: 200 \u2192 200   broad: 10000 \u2192 4441   mid: 4441 \u2192 4441   narrow: 4441 \u2192 268   (3.271 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 4.1807287050032755,
+      "ifcview_warm_s": 2.5920941080039483,
+      "ifcview_stats": "Ray_Check   convert: 200 \u2192 200   broad: 10000 \u2192 4441   mid: 4441 \u2192 4441   convert_narrow: 200 \u2192 200   narrow: 4441 \u2192 268   (3.248 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "DirectView",
+      "kind": "pair_ctx",
+      "params": {
+        "ray_source": "Source",
+        "ray_count": 10,
+        "threshold": 50.0,
+        "max_distance": null
+      },
+      "faults": [],
+      "python_s_status": "timeout",
+      "python_s_limit": 600.0,
+      "cpp_cold_s_status": "timeout",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "timeout",
+      "cpp_warm_s_limit": 600.0,
+      "ifcview_cold_s_status": "timeout",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "timeout",
+      "ifcview_warm_s_limit": 600.0
+    },
+    {
+      "rule": "FreeSpace",
+      "kind": "one_ctx",
+      "params": {
+        "diameter": 1.0,
+        "height": 2.0
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 8.214813155995216,
+      "results": 200,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 4.197308698996494,
+      "cpp_warm_s": 2.5780124539960525,
+      "cpp_stats": "FreeSpace   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.268 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 4.165610955999,
+      "ifcview_warm_s": 2.6202951789964573,
+      "ifcview_stats": "FreeSpace   convert: 200 \u2192 200   narrow: 200 \u2192 200   (3.235 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    },
+    {
+      "rule": "Alignement",
+      "kind": "one",
+      "params": {
+        "axis": null,
+        "alignment_type": "Plane",
+        "tolerance": 0.05,
+        "min_group": 3
+      },
+      "faults": [],
+      "python_s_status": "ok",
+      "python_s_limit": 600.0,
+      "python_s": 3.7598766139999498,
+      "results": 62,
+      "cpp_cold_s_status": "ok",
+      "cpp_cold_s_limit": 600.0,
+      "cpp_warm_s_status": "ok",
+      "cpp_warm_s_limit": 600.0,
+      "cpp_cold_s": 3.49081427299825,
+      "cpp_warm_s": 2.7469283160025952,
+      "cpp_stats": "Alignement   convert: 200 \u2192 200   narrow: 200 \u2192 62   (3.305 s)",
+      "cpp_same": true,
+      "ifcview_cold_s_status": "ok",
+      "ifcview_cold_s_limit": 600.0,
+      "ifcview_warm_s_status": "ok",
+      "ifcview_warm_s_limit": 600.0,
+      "ifcview_cold_s": 3.512140172002546,
+      "ifcview_warm_s": 2.756901900997036,
+      "ifcview_stats": "Alignement   convert: 200 \u2192 200   narrow: 200 \u2192 62   (3.313 s)",
+      "ifcview_diagnostics": [
+        "0 of 0 boxes from the .ifcview"
+      ],
+      "ifcview_same": true
+    }
+  ]
+}

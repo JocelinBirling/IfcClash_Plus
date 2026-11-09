@@ -4,9 +4,13 @@
 #include "../sources/IfcClashTree.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <exception>
+#include <mutex>
 #include <optional>
 #include <set>
+#include <thread>
 #include <unordered_set>
 
 namespace ifcclash {
@@ -24,6 +28,59 @@ void tick(RunContext& ctx, std::string_view phase, size_t done, size_t total) {
         ctx.cancel.throw_if_cancelled();
         ctx.progress.report(phase, done, total);
     }
+}
+
+// body(i) for every i in [0, n), on up to ctx.threads threads (the calling
+// thread included) when `parallel`, else in order on the calling thread.
+// Each body writes its result at its index: the output does not depend on
+// the scheduling. The progress is reported and the cancellation checked
+// by the calling thread (the progress sink may call back into Python); the
+// other threads only stop on cancellation. The first exception of a body
+// is rethrown once every thread has stopped.
+template <class Body>
+void for_each_element(size_t n, bool parallel, RunContext& ctx, std::string_view phase, Body&& body) {
+    const size_t workers = parallel ? std::min<size_t>(std::max(1u, ctx.threads), n) : 1;
+    if (workers <= 1) {
+        for (size_t i = 0; i < n; ++i) {
+            tick(ctx, phase, i, n);
+            body(i);
+        }
+        return;
+    }
+    std::atomic<size_t> next{0}, done{0};
+    std::atomic<bool> stop{false};
+    std::exception_ptr error;
+    std::mutex error_mutex;
+    auto work = [&](bool caller) {
+        size_t own = 0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            const size_t i = next.fetch_add(1);
+            if (i >= n) return;
+            try {
+                if (caller) {
+                    if (own++ % 4 == 0) {
+                        ctx.cancel.throw_if_cancelled();
+                        ctx.progress.report(phase, done.load(), n);
+                    }
+                } else if (ctx.cancel.cancelled()) {
+                    throw Cancelled();
+                }
+                body(i);
+            } catch (...) {
+                std::lock_guard<std::mutex> lock(error_mutex);
+                if (!error) error = std::current_exception();
+                stop.store(true);
+                return;
+            }
+            done.fetch_add(1);
+        }
+    };
+    std::vector<std::thread> pool;
+    pool.reserve(workers - 1);
+    for (size_t w = 1; w < workers; ++w) pool.emplace_back(work, false);
+    work(true);
+    for (auto& t : pool) t.join();
+    if (error) std::rethrow_exception(error);
 }
 
 std::vector<ElementKey> unique_keys(const std::vector<ElementKey>& keys) {
@@ -61,35 +118,84 @@ std::vector<ElementKey> with_geometry(const std::vector<ElementKey>& keys, RunCo
     return out;
 }
 
+// The input elements of a rule. On MeshLocal (the default) the raw boxes
+// decide which elements have geometry; on another base variant the elements
+// are converted in that variant only (no useless triangulation) and keep
+// void boxes: the rule derives its volumes from its element data.
+static std::vector<ElementKey> rule_inputs(Variant base, const std::vector<ElementKey>& keys, RunContext& ctx,
+                                           std::vector<ElementBoxes>& boxes_out) {
+    if (base == Variant::MeshLocal) return with_geometry(keys, ctx, boxes_out);
+    std::vector<ElementKey> out = unique_keys(keys);
+    ctx.provider.prepare_meshes(out, base);
+    boxes_out.assign(out.size(), ElementBoxes{});
+    return out;
+}
+
 // ---------------------------------------------------------------- elements
 
 std::vector<ResultRecord> ElementPipeline::run(const ElementRuleBase& rule, const std::vector<ElementKey>& elements,
                                                RunContext& ctx) {
     const auto t_start = Clock::now();
-    ctx.provider.prepare(unique_keys(elements));
+    if (rule.base_variant() == Variant::MeshLocal) ctx.provider.prepare(unique_keys(elements));
 
     std::vector<ElementBoxes> boxes;
-    const std::vector<ElementKey> keys = with_geometry(elements, ctx, boxes);
-    ctx.provider.prepare_meshes(keys);
+    const std::vector<ElementKey> keys = rule_inputs(rule.base_variant(), elements, ctx, boxes);
+    for (Variant variant : rule.narrow_variants()) ctx.provider.prepare_meshes(keys, variant);
     // The geometry conversion (IfcOpenShell iterator): usually the bulk of
     // a cold run, shown apart from the phases.
     ctx.stats.phases.push_back({"convert", unique_keys(elements).size(), keys.size(), seconds_since(t_start)});
     ctx.cancel.throw_if_cancelled();
 
     const auto t_narrow = Clock::now();
+    std::vector<std::vector<Verdict>> verdicts_of(keys.size());
+    for_each_element(keys.size(), rule.parallel_safe(), ctx, "narrow", [&](size_t i) {
+        ElementGeometry element(keys[i], boxes[i], ctx.provider);
+        verdicts_of[i] =
+            rule.multi_verdicts() ? rule.narrow_multi(element) : std::vector<Verdict>{rule.narrow_test(element)};
+    });
     std::vector<ResultRecord> results;
     for (size_t i = 0; i < keys.size(); ++i) {
-        tick(ctx, "narrow", i, keys.size());
-        ElementGeometry element(keys[i], boxes[i], ctx.provider);
-        const Verdict verdict = rule.narrow_test(element);
-        if (!verdict.status) continue;
-        ResultRecord record = rule.report(verdict);
+        for (const Verdict& verdict : verdicts_of[i]) {
+            if (!verdict.status) continue;
+            ResultRecord record = rule.report(verdict);
+            record.source = keys[i];
+            record.target.reset();
+            results.push_back(std::move(record));
+        }
+    }
+    ctx.stats.phases.push_back({"narrow", keys.size(), results.size(), seconds_since(t_narrow)});
+
+    sort_results(results);
+    ctx.stats.total_seconds = seconds_since(t_start);
+    return results;
+}
+
+// ---------------------------------------------------------------- sets
+
+std::vector<ResultRecord> SetPipeline::run(const SetRuleBase& rule, const std::vector<ElementKey>& elements,
+                                           RunContext& ctx) {
+    const auto t_start = Clock::now();
+    if (rule.base_variant() == Variant::MeshLocal) ctx.provider.prepare(unique_keys(elements));
+    std::vector<ElementBoxes> boxes;
+    const std::vector<ElementKey> keys = rule_inputs(rule.base_variant(), elements, ctx, boxes);
+    for (Variant variant : rule.narrow_variants()) ctx.provider.prepare_meshes(keys, variant);
+    ctx.stats.phases.push_back({"convert", unique_keys(elements).size(), keys.size(), seconds_since(t_start)});
+    ctx.cancel.throw_if_cancelled();
+
+    const auto t_narrow = Clock::now();
+    std::vector<ElementGeometry> geoms;
+    geoms.reserve(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i) geoms.emplace_back(keys[i], boxes[i], ctx.provider);
+    const std::vector<Verdict> verdicts = rule.narrow_set(geoms);
+    std::vector<ResultRecord> results;
+    for (size_t i = 0; i < verdicts.size() && i < keys.size(); ++i) {
+        if (!verdicts[i].status) continue;
+        ResultRecord record = rule.report(verdicts[i]);
         record.source = keys[i];
         record.target.reset();
         results.push_back(std::move(record));
     }
     ctx.stats.phases.push_back({"narrow", keys.size(), results.size(), seconds_since(t_narrow)});
-
     sort_results(results);
     ctx.stats.total_seconds = seconds_since(t_start);
     return results;
@@ -128,6 +234,21 @@ std::vector<ElementGeometry> geometries(const std::vector<ElementKey>& keys, con
     return out;
 }
 
+// The element data of the rule, derived once per element and role; the
+// elements without data are dropped (the Python engines skip them).
+std::vector<ElementGeometry> with_element_data(const PairRuleBase& rule, std::vector<ElementGeometry> geoms, Role role,
+                                               RunContext& ctx) {
+    if (!rule.needs_element_data()) return geoms;
+    std::vector<ElementGeometry> out;
+    out.reserve(geoms.size());
+    for_each_element(geoms.size(), rule.parallel_safe(), ctx, "element_data",
+                     [&](size_t i) { geoms[i].data = rule.element_data(geoms[i], role); });
+    for (const auto& g : geoms) {
+        if (g.data) out.push_back(g);
+    }
+    return out;
+}
+
 void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int>>& pairs,
                   const std::vector<ElementGeometry>& gs, const std::vector<ElementGeometry>& gt, RunContext& ctx,
                   std::vector<ResultRecord>& results) {
@@ -140,7 +261,7 @@ void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int
         needed.push_back(gt[static_cast<size_t>(j)].key);
     }
     const auto survivors = unique_keys(needed);
-    ctx.provider.prepare_meshes(survivors);
+    for (Variant variant : rule.narrow_variants()) ctx.provider.prepare_meshes(survivors, variant);
     if (ctx.provider.has_cache()) {
         ctx.stats.phases.push_back({"convert_narrow", survivors.size(), survivors.size(), seconds_since(t0)});
     }
@@ -150,7 +271,7 @@ void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int
     const size_t outside_before = clash ? clash->clashes_outside_candidates() : 0;
 
     // Batches: cancellation and progress between them.
-    constexpr size_t kBatch = 4096;
+    const size_t kBatch = rule.narrow_whole_run() ? std::max<size_t>(pairs.size(), 1) : 4096;
     for (size_t first = 0; first < pairs.size(); first += kBatch) {
         ctx.cancel.throw_if_cancelled();
         ctx.progress.report("narrow", first, pairs.size());
@@ -160,13 +281,20 @@ void narrow_pairs(const PairRuleBase& rule, const std::vector<std::pair<int, int
         for (size_t n = first; n < last; ++n) {
             batch.emplace_back(&gs[static_cast<size_t>(pairs[n].first)], &gt[static_cast<size_t>(pairs[n].second)]);
         }
-        const std::vector<Verdict> verdicts = rule.narrow_batch(batch);
-        for (size_t k = 0; k < batch.size(); ++k) {
-            if (!verdicts[k].status) continue;
-            ResultRecord record = rule.report(verdicts[k]);
+        auto emit = [&](const Verdict& verdict, size_t k) {
+            if (!verdict.status) return;
+            ResultRecord record = rule.report(verdict);
             record.source = batch[k].first->key;
             record.target = batch[k].second->key;
             results.push_back(std::move(record));
+        };
+        if (rule.multi_verdicts()) {
+            for (size_t k = 0; k < batch.size(); ++k) {
+                for (const Verdict& verdict : rule.narrow_multi(*batch[k].first, *batch[k].second)) emit(verdict, k);
+            }
+        } else {
+            const std::vector<Verdict> verdicts = rule.narrow_batch(batch);
+            for (size_t k = 0; k < batch.size(); ++k) emit(verdicts[k], k);
         }
     }
     ctx.stats.phases.push_back({"narrow", pairs.size(), results.size(), seconds_since(t_narrow)});
@@ -187,15 +315,23 @@ std::vector<ResultRecord> PairPipeline::run(const PairRuleBase& rule, const std:
     // One conversion pass for both lists.
     std::vector<ElementKey> all = sources;
     all.insert(all.end(), targets.begin(), targets.end());
-    ctx.provider.prepare(unique_keys(all));
+    const Variant base = rule.base_variant();
+    if (base == Variant::MeshLocal) ctx.provider.prepare(unique_keys(all));
+    else ctx.provider.prepare_meshes(unique_keys(all), base);
 
     PairInputs in;
-    in.keys_s = with_geometry(sources, ctx, in.boxes_s);
-    in.keys_t = with_geometry(targets, ctx, in.boxes_t);
-    ctx.stats.phases.push_back({"convert", unique_keys(all).size(), in.keys_s.size() + in.keys_t.size(),
-                                seconds_since(t_start)});
-    const auto gs = geometries(in.keys_s, in.boxes_s, ctx.provider);
-    const auto gt = geometries(in.keys_t, in.boxes_t, ctx.provider);
+    in.keys_s = rule_inputs(base, sources, ctx, in.boxes_s);
+    in.keys_t = rule_inputs(base, targets, ctx, in.boxes_t);
+    for (Variant variant : rule.data_variants()) ctx.provider.prepare_meshes(unique_keys(all), variant);
+    std::unordered_map<ElementKey, int, ElementKeyHash> ranks;
+    for (const auto& key : unique_keys(all)) ranks.emplace(key, static_cast<int>(ranks.size()));
+    auto ranked = [&](std::vector<ElementGeometry> geoms) {
+        for (auto& g : geoms) g.rank = ranks[g.key];
+        return geoms;
+    };
+    const auto gs = with_element_data(rule, ranked(geometries(in.keys_s, in.boxes_s, ctx.provider)), Role::Source, ctx);
+    const auto gt = with_element_data(rule, ranked(geometries(in.keys_t, in.boxes_t, ctx.provider)), Role::Target, ctx);
+    ctx.stats.phases.push_back({"convert", unique_keys(all).size(), gs.size() + gt.size(), seconds_since(t_start)});
     ctx.cancel.throw_if_cancelled();
 
     // ---- Broad phase
@@ -224,7 +360,7 @@ std::vector<ResultRecord> PairPipeline::run(const PairRuleBase& rule, const std:
     for (const auto& [i, j] : raw) {
         const auto& ks = gs[static_cast<size_t>(i)].key;
         const auto& kt = gt[static_cast<size_t>(j)].key;
-        if (ks == kt) continue;
+        if (ks == kt && rule.skip_self()) continue;
         if (rule.symmetry() == PairSymmetry::Unordered && !seen.insert(unordered(ks, kt)).second) continue;
         candidates.emplace_back(i, j);
     }
@@ -265,12 +401,21 @@ std::vector<ResultRecord> PairPipeline::evaluate(const PairRuleBase& rule, const
         all.push_back(s);
         all.push_back(t);
     }
-    ctx.provider.prepare(unique_keys(all));
+    const Variant base = rule.base_variant();
+    if (base == Variant::MeshLocal) ctx.provider.prepare(unique_keys(all));
+    else ctx.provider.prepare_meshes(unique_keys(all), base);
 
     std::vector<ElementKey> ks, kt;
     std::vector<ElementBoxes> bs, bt;
     for (const auto& [s, t] : pairs) {
-        if (s == t) continue;
+        if (s == t && rule.skip_self()) continue;
+        if (base != Variant::MeshLocal) {
+            ks.push_back(s);
+            kt.push_back(t);
+            bs.emplace_back();
+            bt.emplace_back();
+            continue;
+        }
         auto b1 = ctx.provider.boxes(s);
         auto b2 = ctx.provider.boxes(t);
         if (!b1 || !b2 || b1->aabb.IsVoid() || b2->aabb.IsVoid()) {
@@ -283,11 +428,20 @@ std::vector<ResultRecord> PairPipeline::evaluate(const PairRuleBase& rule, const
         bs.push_back(*b1);
         bt.push_back(*b2);
     }
-    const auto gs = geometries(ks, bs, ctx.provider);
-    const auto gt = geometries(kt, bt, ctx.provider);
+    auto gs = geometries(ks, bs, ctx.provider);
+    auto gt = geometries(kt, bt, ctx.provider);
+    std::vector<bool> usable(gs.size(), true);
+    if (rule.needs_element_data()) {
+        for (size_t n = 0; n < gs.size(); ++n) {
+            gs[n].data = rule.element_data(gs[n], Role::Source);
+            gt[n].data = rule.element_data(gt[n], Role::Target);
+            usable[n] = gs[n].data && gt[n].data;
+        }
+    }
 
     std::vector<std::pair<int, int>> candidates;
     for (int n = 0; n < static_cast<int>(gs.size()); ++n) {
+        if (!usable[static_cast<size_t>(n)]) continue;
         if (ctx.prefilter) {
             if (rule.broad_mode() == BroadMode::Spatial &&
                 rule.broad_volume(gs[n], Role::Source).IsOut(rule.broad_volume(gt[n], Role::Target)))

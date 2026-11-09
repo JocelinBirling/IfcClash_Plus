@@ -44,4 +44,17 @@ TriangleClashService* GeometryProvider::triangle_clash() {
     return primary_->triangle_clash();
 }
 
+std::shared_ptr<const void> GeometryProvider::derived(const ElementKey& key, const std::string& tag,
+                                                      const std::function<std::shared_ptr<const void>()>& compute) {
+    {
+        std::lock_guard<std::mutex> lock(derived_mutex_);
+        auto& entries = derived_[tag];
+        auto it = entries.find(key);
+        if (it != entries.end()) return it->second;
+    }
+    auto value = compute();
+    std::lock_guard<std::mutex> lock(derived_mutex_);
+    return derived_[tag].emplace(key, std::move(value)).first->second;
+}
+
 }  // namespace ifcclash

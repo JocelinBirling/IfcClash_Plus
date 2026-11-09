@@ -45,11 +45,11 @@ conda-forge 0.9.0post1. Une erreur ici corrompt le tas dès l'ouverture d'un IFC
 |---|---|
 | `api/` | `Session`, `RunRequest`, `RunResult`, `CancelToken`, `ProgressSink`, `catalogue_json` — le seul en-tête public |
 | `registry/` | `RuleSpec` (paramètres par pointeur de membre, validation, export catalogue), `Registry`, `register_all_rules` |
-| `pipeline/` | `ElementPipeline`, `PairPipeline`, phase large (BVH OCCT `BVH_BoxSet` + `BVH_PairTraverse`), statistiques |
-| `rules/` | une règle = un `.cpp` : Volume, Intersection, Clearance, Collision |
-| `geometry/` | algorithmes purs (volume de maillage, boîtes) |
+| `pipeline/` | `ElementPipeline`, `PairPipeline`, `SetPipeline`, phase large (BVH OCCT `BVH_BoxSet` + `BVH_PairTraverse`), statistiques |
+| `rules/` | les 28 règles : un `.cpp` par règle ou par famille (OneObject, Directional, Axis, Face, Context, Alignement…) |
+| `geometry/` | algorithmes purs : mesures de maillage, `Obb`, `Faces`, `Triangles`, `Geos` (API C de GEOS), `Numpy.h` (ordre d'arrondi de numpy/OpenBLAS) |
 | `provider/` | `GeometryProvider`, `CachePolicy` |
-| `sources/` | `GeometrySource`, `IfcSource` (IfcParse + IfcGeom), `IfcClashTree`, `ifcview/IfcViewSource` (+ lecteur `third_party/`, LGPL v3) |
+| `sources/` | `GeometrySource`, `IfcSource` (IfcParse + IfcGeom : maillages, B-Rep, requêtes IFC, arbre de rayons), `IfcClashTree`, `ifcview/IfcViewSource` (+ lecteur `third_party/`, LGPL v3) |
 | `core/` | `ElementKey`, `ElementBoxes`, `Mesh`, `ResultRecord`, diagnostics |
 | `bindings/` | pybind11 |
 | `tests/` | tests unitaires C++ |
@@ -72,12 +72,32 @@ cible) n'est testée qu'une fois, comme dans l'arbre. Son orientation suit
 l'ordre de la source. Côté Python, elle dépend de l'ordre de parcours de
 l'arbre : le test de parité compare alors des paires non orientées.
 
+## Cache de session et threads
+
+- `GeometryProvider::derived` garde, pour toute la Session, les données
+  dérivées par élément : le B-Rep maillé et son OBB
+  (`ElementGeometry::meshed_brep()`), et les faces visibles par direction
+  (`ElementGeometry::visible_faces()`). Elles sont partagées entre règles et
+  exécutions, en lecture seule.
+- Les règles qui ne lisent que la géométrie déclarent `parallel_safe()`. Leur
+  phase fine (règles d'un objet) ou leurs `element_data` (règles de paires) se
+  répartissent alors sur `SessionOptions::rule_threads` threads, tous les cœurs
+  par défaut.
+- Les résultats ne dépendent ni du nombre de threads ni du cache. C'est vérifié
+  par `test_threads_and_session_cache_change_nothing`.
+
+## Parité avec Python
+
+Les références Python sont figées dans `tests/parity_golden/`. On les
+régénère avec `scripts/make_parity_golden.py` après toute modification du
+moteur Python. `tests/test_parity_cpp.py` ne lance que le C++ et compare à
+1e-9 près. Les cas sont définis dans `tests/parity_cases.py`.
+
 ## Ce qui n'est pas encore fait
 
-- `IfcSource::brep()` : aucune règle portée n'a besoin de B-Rep pour l'instant.
+- États d'affichage (`Display_Input` / `Display_Result`) : restent en Python.
 - `.ifcview` : lecture faite (boîtes et OBB des phases large et intermédiaire,
   repli par élément, fraîcheur par mtime). Pas d'écriture (`write_cache`
   ignoré) ni de vérification du hash du manifeste.
-- `ContextPipeline`, `SetPipeline`, et les 24 autres règles (étapes 3 à 5).
-- Parallélisme (étape 7), `ViewerSource` (étape 8).
+- Parallélisme de la phase fine des paires (étape 7), `ViewerSource` (étape 8).
 - Packaging scikit-build-core : le module est construit par CMake seul.

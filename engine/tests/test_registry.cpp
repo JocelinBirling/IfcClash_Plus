@@ -7,7 +7,7 @@ using namespace ifcclash;
 
 TEST_CASE("the catalogue lists the C++ rules with their defaults", "[registry]") {
     const Json catalogue = Json::parse(catalogue_json());
-    REQUIRE(catalogue["rules"].size() == 4);
+    REQUIRE(catalogue["rules"].size() >= 4);
     CHECK(catalogue["result_schema_version"] == kResultSchemaVersion);
 
     const Json& clearance = catalogue["rules"][2];

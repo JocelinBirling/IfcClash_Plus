@@ -813,6 +813,7 @@ def _serialize_rule_specific_data(rule: "RuleCheck") -> dict[str, Any]:
         data["linearity_ratio"] = rule.linearity_ratio
         data["on_non_linear"] = rule.on_non_linear
         data["parallel_tolerance"] = rule.parallel_tolerance
+        data["search_radius"] = rule.search_radius
 
     return data
 
@@ -1134,6 +1135,7 @@ def deserialize_rule_check(data: dict[str, Any], ifc_paths: list[str] = None) ->
             linearity_ratio=data.get("linearity_ratio", 10.0),
             on_non_linear=data.get("on_non_linear", "Skip"),
             parallel_tolerance=data.get("parallel_tolerance", 1.0),
+            search_radius=data.get("search_radius"),
         )
     else:
         raise NotImplementedError(f"Deserialization for {rule_type} not yet implemented")

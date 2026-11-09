@@ -24,6 +24,9 @@ struct RunContext {
     // skipped (every pair reaches the narrow phase). The results must be
     // identical with and without: the check that these phases only remove.
     bool prefilter = true;
+    // Threads for the per-element work of the parallel-safe rules
+    // (RuleBase::parallel_safe): 1 = sequential.
+    unsigned threads = 1;
 };
 
 // The elements that have geometry, in input order, duplicates removed. The
@@ -35,6 +38,12 @@ std::vector<ElementKey> with_geometry(const std::vector<ElementKey>& keys, RunCo
 class ElementPipeline {
 public:
     static std::vector<ResultRecord> run(const ElementRuleBase& rule, const std::vector<ElementKey>& elements,
+                                         RunContext& ctx);
+};
+
+class SetPipeline {
+public:
+    static std::vector<ResultRecord> run(const SetRuleBase& rule, const std::vector<ElementKey>& elements,
                                          RunContext& ctx);
 };
 

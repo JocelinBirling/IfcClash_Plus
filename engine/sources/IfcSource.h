@@ -9,6 +9,8 @@
 
 #include "GeometrySource.h"
 #include "IfcClashTree.h"
+#include "IfcQueries.h"
+#include "IfcRayTree.h"
 
 #include "../core/Result.h"
 
@@ -24,6 +26,9 @@
 namespace ifcopenshell {
 class file;
 }
+namespace express {
+class entity;
+}
 
 namespace ifcclash {
 
@@ -34,7 +39,7 @@ struct IfcSourceOptions {
     int iterator_threads = 0;
 };
 
-class IfcSource final : public GeometrySource {
+class IfcSource final : public GeometrySource, public IfcQueries, public RayTreeService {
 public:
     // Throws ConfigError when a file cannot be opened.
     IfcSource(const std::vector<std::filesystem::path>& paths, IfcSourceOptions options = {});
@@ -44,10 +49,21 @@ public:
     bool supports(Level) const override { return true; }
     bool covers(const ElementKey& key) const override;
 
-    void prepare(const std::vector<ElementKey>& keys) override;
+    void prepare(const std::vector<ElementKey>& keys, Variant variant = Variant::MeshLocal) override;
     std::optional<ElementBoxes> boxes(const ElementKey& key) override;
     std::shared_ptr<const Mesh> mesh(const ElementKey& key) override;
+    std::shared_ptr<const Mesh> mesh(const ElementKey& key, Variant variant) override;
+    std::optional<TopoDS_Shape> brep(const ElementKey& key) override;
     TriangleClashService* triangle_clash() override { return clash_tree_.get(); }
+    IfcQueries* ifc_queries() override { return this; }
+    RayTreeService* ray_trees() override { return this; }
+    std::unique_ptr<RayTree> build_ray_tree(const std::vector<ElementKey>& keys) override;
+    std::vector<std::string> material_names(const ElementKey& key) override;
+    std::string ifc_class(const ElementKey& key) override;
+    std::array<double, 16> local_placement(const ElementKey& key) override;
+    std::optional<std::string> door_operation_type(const ElementKey& key) override;
+    // The entity of a key (null when unknown), for the IFC queries.
+    express::entity entity(const ElementKey& key);
 
     size_t file_count() const { return files_.size(); }
     const std::filesystem::path& path(uint32_t file_index) const;
@@ -68,7 +84,7 @@ private:
     struct FileEntry;
 
     void index_global_ids(FileEntry& entry);
-    void triangulate(uint32_t file_index, const std::vector<int>& entity_ids);
+    void convert(uint32_t file_index, const std::vector<int>& entity_ids, Variant variant);
 
     IfcSourceOptions options_;
     // Declared before the tree: the tree refers to the entities of the files
@@ -77,10 +93,15 @@ private:
     std::unique_ptr<IfcClashTree> clash_tree_;
 
     std::mutex mutex_;
-    std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> meshes_;
+    // Per variant (MeshLocal, MeshWorld): the triangulations.
+    std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> meshes_[kVariantCount];
+    // BrepWorld: the serialized OCC B-Rep (parsed afresh at each brep()).
+    std::unordered_map<ElementKey, std::string, ElementKeyHash> breps_;
+    // The raw boxes, from the MeshLocal triangulation.
     std::unordered_map<ElementKey, ElementBoxes, ElementKeyHash> boxes_;
-    // Elements already submitted to the iterator (with or without geometry).
-    std::unordered_set<ElementKey, ElementKeyHash> converted_;
+    // Elements already submitted to the iterator, per variant (with or
+    // without geometry).
+    std::unordered_set<ElementKey, ElementKeyHash> converted_[kVariantCount];
 };
 
 }  // namespace ifcclash

@@ -884,11 +884,17 @@ class TestRulesAdvanced(unittest.TestCase):
     def test_clearance_axis_to_axis_rule(self):
         """Test ClearanceAxisToAxis rule on the basement beam grid.
         The selected W310 run (...:209260) continues the collinear
-        run (...:207325, axis offset 0), meets a W410 at a right angle
-        0.114 m off its axis, crosses another one 2.85 m away and runs
-        parallel to the two W410 grids 5.02 m away. With the interval
-        [4.5, 5.5], the two parallel runs are compliant: the 5 other
-        pairs clash."""
+        run (...:207325), meets a W410 at a right angle 0.114 m off its
+        axis, crosses another one 2.85 m away, runs parallel to a W410
+        5.02 m away and is 9.7 and 10.1 m from two far W410. With the
+        interval [4.5, 5.5]:
+        - the collinear continuation does not face the run: not a
+          side-by-side pair, not measured (it came out as "too close"
+          with an offset 0 before the 2026-11-09 fix);
+        - "too close" is checked on every pair: 0.114 and 2.85 clash;
+        - "too far" only against the nearest beam (0.114 m): the far
+          beams at 9.7 and 10.1 m are not holes (they came out before).
+        2 results."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -914,35 +920,26 @@ class TestRulesAdvanced(unittest.TestCase):
         OneRuleFile.run()
         assert_result_shape(rule)
 
-        self.assertEqual(len(rule.result), 5)
+        self.assertEqual(len(rule.result), 2)
         for result in rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
-            # Only the pairs outside [4.5, 5.5] clash, the two
-            # parallel runs at 5.02 m stay compliant.
-            self.assertTrue(
-                result.info.distance < 4.5 or result.info.distance > 5.5
-            )
-        # The collinear continuation shares the support line: its
-        # offset is measured in Perpendicular mode.
-        collinear = [
-            result for result in rule.result if result.info.axis_mode == "Perpendicular"
-        ]
-        self.assertEqual(len(collinear), 1)
-        self.assertAlmostEqual(collinear[0].info.distance, 0.0, places=4)
-        self.assertAlmostEqual(collinear[0].info.angle, 0.0, places=4)
-        # The crossing and connecting pairs fall back to the segments.
+            # The two crossing / connecting beams, too close, measured
+            # between the segments (their axes are at right angles).
+            self.assertEqual(result.info.axis_mode, "MinDistance")
+            self.assertAlmostEqual(result.info.angle, 90.0, places=1)
         self.assertEqual(
-            len([r for r in rule.result if r.info.axis_mode == "MinDistance"]), 4
+            sorted(round(r.info.distance, 3) for r in rule.result), [0.114, 2.85]
         )
 
     def test_clearance_axis_to_axis_modes(self):
         """Test ClearanceAxisToAxis rule on the beam run split by the
         stair opening: the two collinear segments (...:207325 and
         ...:209260) share their support line and their axis ends sit
-        2.2 m apart. The Perpendicular mode measures the offset of
-        the support lines (0), the MinDistance mode measures the
-        end-to-end gap of the segments (2.2 m): the same interval
-        validates one mode and clashes the other."""
+        2.2 m apart. The Perpendicular mode compares side-by-side runs
+        only: the two segments do not face each other, so the pair is
+        not measured (before the 2026-11-09 fix, its offset 0 came out
+        as "too close"). The MinDistance mode measures the end-to-end
+        gap of the segments (2.2 m)."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -986,12 +983,8 @@ class TestRulesAdvanced(unittest.TestCase):
         assert_result_shape(min_distance_rule)
         assert_result_shape(min_distance_gap_rule)
 
-        # The support lines are the same: offset 0, below the interval.
-        self.assertEqual(len(perpendicular_rule.result), 1)
-        result = perpendicular_rule.result[0]
-        self.assertIsInstance(result, ClashResultTwoObjects)
-        self.assertAlmostEqual(result.info.distance, 0.0, places=4)
-        self.assertEqual(result.info.axis_mode, "Perpendicular")
+        # Collinear segments are not side by side: no Perpendicular result.
+        self.assertEqual(len(perpendicular_rule.result), 0)
 
         # The 2.2 m end-to-end gap stays inside [1.0, 3.0].
         self.assertEqual(len(min_distance_rule.result), 0)
@@ -1006,10 +999,12 @@ class TestRulesAdvanced(unittest.TestCase):
         """Test ClearanceAxisToAxis rule on the stair flights. A flight
         is not a linear object (linearity ratio 5.3 below the default
         threshold of 10), so the stair-railing pairs take the
-        On_Non_Linear path: Skip leaves the 8 ordered pairs out,
-        Fallback measures the skin-to-skin distance (the handrail
-        floats 0.68 m above its flight) and flags the results as
-        degraded."""
+        On_Non_Linear path: Skip leaves the 8 pairs out, Fallback
+        measures the skin-to-skin distance and flags the results as
+        degraded. With max_distance=0, "too far" is checked against the
+        nearest railing of each flight only — its own handrail, 0.053 m
+        away: 2 results (the 8 pairs came out before the 2026-11-09
+        fix)."""
 
         OneRuleFile = RuleFile()
         OneRuleFile.list_ifc_path = [self.ifc_path]
@@ -1040,12 +1035,16 @@ class TestRulesAdvanced(unittest.TestCase):
         assert_result_shape(skip_rule)
         assert_result_shape(fallback_rule)
 
-        # Every skin-to-skin distance is above 0: the 8 ordered pairs
-        # would all clash, but Skip leaves them out.
+        # Every skin-to-skin distance is above 0, but Skip leaves the
+        # non-linear pairs out.
         self.assertEqual(len(skip_rule.result), 0)
 
-        # Fallback measures them skin to skin and flags the results.
-        self.assertEqual(len(fallback_rule.result), 8)
+        # Fallback measures them skin to skin and flags the results:
+        # each flight against its nearest railing.
+        self.assertEqual(len(fallback_rule.result), 2)
+        self.assertEqual(
+            sorted(round(r.info.distance, 3) for r in fallback_rule.result), [0.053, 0.053]
+        )
         for result in fallback_rule.result:
             self.assertIsInstance(result, ClashResultTwoObjects)
             self.assertEqual(result.info.axis_mode, "Fallback")

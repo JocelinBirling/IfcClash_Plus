@@ -37,6 +37,10 @@ struct SessionOptions {
     double ifcview_linear_deflection = 0.01;   // m
     bool write_cache = false;
     int iterator_threads = 0;  // 0 = hardware concurrency
+    // Per-element work of the parallel-safe rules (OBB, visible faces, one-
+    // object measures): 0 = hardware concurrency, 1 = sequential. The
+    // results do not depend on it.
+    int rule_threads = 0;
 };
 
 // The elements of one file picked by a slot (from the IDS selection in

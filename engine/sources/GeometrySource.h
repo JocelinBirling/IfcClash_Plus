@@ -20,6 +20,8 @@ namespace ifcclash {
 enum class Level { Boxes, Mesh, BRep };
 
 class TriangleClashService;  // IFC-specific narrow tests (sources/IfcClashTree.h)
+class IfcQueries;            // IFC semantic queries (sources/IfcQueries.h)
+class RayTreeService;        // IFC ray trees (sources/IfcRayTree.h)
 
 class GeometrySource {
 public:
@@ -30,18 +32,27 @@ public:
 
     // Batch hint: the elements a run is about to ask for. A source that
     // converts geometry (IfcSource) converts them in one pass.
-    virtual void prepare(const std::vector<ElementKey>& /*keys*/) {}
+    virtual void prepare(const std::vector<ElementKey>& /*keys*/, Variant /*variant*/ = Variant::MeshLocal) {}
 
     // An element without computable geometry has no boxes / mesh:
     // std::nullopt / nullptr (never an exception).
     virtual std::optional<ElementBoxes> boxes(const ElementKey&) = 0;
     virtual std::shared_ptr<const Mesh> mesh(const ElementKey&) = 0;
+    // The other triangulation variants (MeshWorld).
+    virtual std::shared_ptr<const Mesh> mesh(const ElementKey& key, Variant variant) {
+        return variant == Variant::MeshLocal ? mesh(key) : nullptr;
+    }
+    // The B-Rep in world coordinates (Variant::BrepWorld), a FRESH shape at
+    // every call: the rules mesh it (BRepMesh) as the Python engine does on
+    // its own fresh shape, and must not see the triangulation of another.
     virtual std::optional<TopoDS_Shape> brep(const ElementKey&) { return std::nullopt; }
 
     // The exact triangle clash queries of IfcOpenShell (Intersection,
     // Clearance, Collision). Only a source holding IfcOpenShell elements
     // provides them.
     virtual TriangleClashService* triangle_clash() { return nullptr; }
+    virtual IfcQueries* ifc_queries() { return nullptr; }
+    virtual RayTreeService* ray_trees() { return nullptr; }
 };
 
 }  // namespace ifcclash

@@ -6,6 +6,8 @@
 #include "../sources/IfcSource.h"
 #include "../sources/ifcview/IfcViewSource.h"
 
+#include <algorithm>
+#include <thread>
 #include <unordered_set>
 
 namespace ifcclash {
@@ -61,6 +63,11 @@ std::unique_ptr<GeometrySource> make_cache(const std::vector<std::filesystem::pa
     }
     if (source->accepted_files() == 0) return nullptr;
     return source;
+}
+
+unsigned rule_threads(const SessionOptions& options) {
+    if (options.rule_threads > 0) return static_cast<unsigned>(options.rule_threads);
+    return std::max(1u, std::thread::hardware_concurrency());
 }
 
 }  // namespace
@@ -143,12 +150,16 @@ RunResult Session::run(const RunRequest& request, const CancelToken& cancel, Pro
 
     const auto sources = resolve(request.selections.source, result.diagnostics);
     const auto targets = resolve(request.selections.target, result.diagnostics);
-    if (!request.selections.context.empty()) {
+    const auto context = resolve(request.selections.context, result.diagnostics);
+    if (rule->uses_context()) {
+        rule->setup_context(context, *provider_);
+    } else if (!context.empty()) {
         result.diagnostics.add(Severity::Warning, "context_ignored",
                                request.rule_type + " takes no context selection: ignored");
     }
 
     RunContext ctx{*provider_, cancel, progress, result.diagnostics, result.stats, request.prefilter};
+    ctx.threads = rule_threads(options_);
     const size_t hits_before = provider_->cache_hits();
     const size_t requests_before = provider_->box_requests();
 
@@ -171,8 +182,10 @@ RunResult Session::run(const RunRequest& request, const CancelToken& cancel, Pro
         case PipelineKind::Pair:
             result.results = PairPipeline::run(static_cast<const PairRuleBase&>(*rule), sources, targets, ctx);
             break;
-        case PipelineKind::Context:
         case PipelineKind::Set:
+            result.results = SetPipeline::run(static_cast<const SetRuleBase&>(*rule), sources, ctx);
+            break;
+        case PipelineKind::Context:
             throw ConfigError(request.rule_type + ": pipeline not implemented yet");
     }
 
@@ -208,6 +221,7 @@ RunResult Session::evaluate_pairs(const RunRequest& request, const std::vector<K
     CancelToken never;
     NullProgress quiet;
     RunContext ctx{*provider_, never, quiet, result.diagnostics, result.stats, request.prefilter};
+    ctx.threads = rule_threads(options_);
     result.results = PairPipeline::evaluate(static_cast<const PairRuleBase&>(*rule), resolved, ctx);
     fill_display(request, {}, result);
     return result;

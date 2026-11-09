@@ -156,7 +156,7 @@ public:
     PySession(std::vector<std::filesystem::path> paths, const std::string& geometry_cache,
               std::optional<std::filesystem::path> cache_dir, bool write_cache, int iterator_threads,
               std::vector<std::filesystem::path> ifcview_paths, const std::string& ifcview_freshness,
-              double ifcview_linear_deflection) {
+              double ifcview_linear_deflection, int rule_threads) {
         SessionOptions options;
         options.geometry_cache = cache_policy_from_string(geometry_cache);
         options.cache_dir = std::move(cache_dir);
@@ -165,6 +165,7 @@ public:
         options.ifcview_linear_deflection = ifcview_linear_deflection;
         options.write_cache = write_cache;
         options.iterator_threads = iterator_threads;
+        options.rule_threads = rule_threads;
         py::gil_scoped_release release;
         session_ = std::make_unique<Session>(std::move(paths), options);
     }
@@ -207,11 +208,12 @@ PYBIND11_MODULE(_ifcclash_engine, m) {
 
     py::class_<PySession>(m, "Session")
         .def(py::init<std::vector<std::filesystem::path>, const std::string&, std::optional<std::filesystem::path>,
-                      bool, int, std::vector<std::filesystem::path>, const std::string&, double>(),
+                      bool, int, std::vector<std::filesystem::path>, const std::string&, double, int>(),
              py::kw_only(), py::arg("ifc_paths"), py::arg("geometry_cache") = "auto",
              py::arg("cache_dir") = py::none(), py::arg("write_cache") = false, py::arg("iterator_threads") = 0,
              py::arg("ifcview_paths") = std::vector<std::filesystem::path>{},
-             py::arg("ifcview_freshness") = "mtime", py::arg("ifcview_linear_deflection") = 0.01)
+             py::arg("ifcview_freshness") = "mtime", py::arg("ifcview_linear_deflection") = 0.01,
+             py::arg("rule_threads") = 0)
         .def_property_readonly("diagnostics",
                                [](PySession& self) { return to_py(to_json(self.session().diagnostics())); })
         .def("__enter__", [](PySession& self) -> PySession& { return self; }, py::return_value_policy::reference)

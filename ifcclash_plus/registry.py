@@ -50,7 +50,16 @@ def _p(name, kind, default, doc="", values=None, complex_=False, unit=""):
 # (SPEC_OptimisationInCPP, "Côté Python"): a rule moves to "cpp" once its
 # parity test (tests/test_parity_cpp.py) is green. Without the compiled
 # module the orchestrator falls back on Python anyway.
-CPP_RULES = frozenset({"Volume", "Intersection", "Clearance", "Collision"})
+CPP_RULES = frozenset(
+    {
+        "Volume", "Area", "TopOrBottomSurface", "LateralSurface", "ProjectedSurface",
+        "ObbHigh", "ObbLength", "Orientation", "OneObjectFace",
+        "AngleBetween", "Intersection", "Intersection2", "Clearance", "ClearanceAxisToAxis",
+        "Collision", "Above", "Below", "OBB_Above", "OBB_Below", "OBB_Front_And_Back",
+        "OBB_Custom", "SurfaceRecover", "TwoObjectsFace", "ClearanceForDoors",
+        "Ray_Check", "DirectView", "FreeSpace", "Alignement",
+    }
+)
 
 
 def _rule(type_, label, family, slots, doc, params):
@@ -238,7 +247,7 @@ RULES: list[dict[str, Any]] = [
         "Clearance Axis To Axis",
         "TwoObjectRule",
         ["source", "target"],
-        "Flags the pairs of linear elements whose axis-to-axis distance is outside the bounds.",
+        "Flags, axis to axis, the pairs of linear elements closer than min_distance and each source farther than max_distance from its nearest target.",
         [
             _p("mode", "enum", "Perpendicular", "Distance mode", ["Perpendicular", "MinDistance"]),
             _p("min_distance", "float", None, "Minimum distance", unit="model"),
@@ -247,6 +256,7 @@ RULES: list[dict[str, Any]] = [
             _p("linearity_ratio", "float", 10.0, "Linearity ratio"),
             _p("on_non_linear", "enum", "Skip", "Non linear elements", ["Skip", "Fallback"]),
             _p("parallel_tolerance", "float", 1.0, "Parallelism tolerance", unit="deg"),
+            _p("search_radius", "float", None, "Neighbour search radius", unit="model"),
         ],
     ),
     _rule(

@@ -45,13 +45,19 @@ class Unsupported(Exception):
     not ported, files unknown): the orchestrator falls back on Python."""
 
 
+_implemented = None
+
+
 def implemented_rules():
     """The rule types the C++ module implements."""
+    global _implemented
     if _native is None:
         return set()
-    import json
+    if _implemented is None:
+        import json
 
-    return {rule["type"] for rule in json.loads(_native.catalogue_json())["rules"]}
+        _implemented = {rule["type"] for rule in json.loads(_native.catalogue_json())["rules"]}
+    return _implemented
 
 
 def session_for(paths):
@@ -101,11 +107,13 @@ def _slot(elements, files):
     return [{"file_index": i, "entity_ids": ids} for i, ids in sorted(by_file.items())]
 
 
-def run(rule_type, params, files_paths, files, sources, targets=None, prefilter=True):
+def run(rule_type, params, files_paths, files, sources, targets=None, prefilter=True, context=None):
     """Run one rule on the C++ engine and return its raw result dict."""
     selections = {"source": _slot(sources, files)}
     if targets is not None:
         selections["target"] = _slot(targets, files)
+    if context is not None:
+        selections["context"] = _slot(context, files)
     session = session_for(files_paths)
     return session.run(
         rule_type=rule_type,
@@ -139,8 +147,70 @@ def to_clash_results(raw, files):
             result.info.add_point_pair(
                 tuple(point["source"]), tuple(point["target"]), label=point.get("label")
             )
+        _fill_blocks(result.info, info)
         results.append(result)
     return results
+
+
+def _point(value):
+    return tuple(float(c) for c in value)
+
+
+def _face(face):
+    return (
+        _point(face["normal"]),
+        face["area"],
+        [tuple(_point(p) for p in triangle) for triangle in face["triangles"]],
+    )
+
+
+def _obb(obb):
+    return (
+        _point(obb["center"]),
+        tuple(_point(axis) for axis in obb["axes"]),
+        _point(obb["half_sizes"]),
+        obb.get("label"),
+    )
+
+
+def _fill_blocks(target, info):
+    """The blocks of ResultInfo.to_dict() other than measure / points,
+    back into the ResultInfo (same tuples as the Python rules pose)."""
+    from RuleClass import RaycastData, ZoneData
+
+    for face in info.get("faces", []):
+        target.add_face_pair(_face(face["source"]), _face(face["target"]))
+    volumes = info.get("volumes", {})
+    for name, attribute in (
+        ("intersection", "volume_intersection"),
+        ("ratio", "volume_ratio"),
+        ("containment", "containment_ratio"),
+        ("clearance_violated", "clearance_violated_volume"),
+    ):
+        if name in volumes:
+            setattr(target, attribute, volumes[name])
+    obbs = info.get("obbs", {})
+    for obb in obbs.get("source", []):
+        target.add_source_obb(_obb(obb))
+    for obb in obbs.get("target", []):
+        target.add_target_obb(_obb(obb))
+    if "axis" in info:
+        target.axis_mode = info["axis"]["mode"]
+        target.axis_degraded = info["axis"]["degraded"]
+    if "raycast" in info:
+        r = info["raycast"]
+        target.raycast = RaycastData(
+            r["planned"],
+            r["cast"],
+            r["hit"],
+            [(_point(a), _point(b)) for a, b in r["hit_segments"]],
+            [(_point(a), _point(b)) for a, b in r["blocked_segments"]],
+        )
+    if "zone" in info:
+        z = info["zone"]
+        target.zone = ZoneData(z["side"], z["leaf"], z["width"], z["depth"], z["height"])
+    for axis in info.get("axes", []):
+        target.add_axis((_point(axis["center"]), _point(axis["direction"]), axis["length"], axis.get("label")))
 
 
 def compute(rule, sources, targets=None, context=None):
@@ -148,9 +218,21 @@ def compute(rule, sources, targets=None, context=None):
     if _native is None:
         raise Unsupported("the C++ module _ifcclash_engine is not available")
     rule_type = type(rule).__name__
-    if context:
-        raise Unsupported(f"{rule_type}: the context pipeline is not ported yet")
+    if getattr(rule, "state", None) in ("Display_Input", "Display_Result"):
+        # The display geometries some rules emit from compute() are not
+        # ported: the display states stay on the Python engine.
+        raise Unsupported(f"{rule_type}: display states run on the Python engine")
+    if rule_type not in implemented_rules():
+        raise Unsupported(f"{rule_type}: not ported to C++ yet")
     paths, files = _files_of(rule)
     params = {name: getattr(rule, name) for name in engine_params(rule_type)}
-    raw = run(rule_type, params, paths, files, sources, targets if hasattr(rule, "select_target") else None)
+    raw = run(
+        rule_type,
+        params,
+        paths,
+        files,
+        sources,
+        targets if hasattr(rule, "select_target") else None,
+        context=context,
+    )
     return to_clash_results(raw, files)

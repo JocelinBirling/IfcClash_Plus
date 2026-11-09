@@ -69,21 +69,80 @@ struct Flags {
     bool any() const { return degraded || gross_element || fallback_source; }
 };
 
-// What narrow_test decides. Only status == true becomes a result (the Python
-// engines only append the clashing elements).
-struct Verdict {
-    bool status = false;
+using Triangle3 = std::array<Point3, 3>;
+
+// FaceData (normal, area, triangles); a pair is numbered like the points.
+struct FaceData {
+    Point3 normal{};
+    double area = 0.0;
+    std::vector<Triangle3> triangles;
+};
+struct FacePair {
+    FaceData source;
+    FaceData target;
+};
+
+// ObbData: complete enough to rebuild the solid.
+struct ObbData {
+    Point3 center{};
+    std::array<Point3, 3> axes{};
+    Point3 half_sizes{};
+    std::optional<std::string> label;
+};
+
+// AxesData (Orientation).
+struct AxisData {
+    Point3 center{};
+    Point3 direction{};
+    double length = 0.0;
+    std::optional<std::string> label;
+};
+
+struct Volumes {
+    std::optional<double> intersection, ratio, containment, clearance_violated;
+    bool any() const { return intersection || ratio || containment || clearance_violated; }
+};
+
+struct AxisBlock {  // ClearanceAxisToAxis
+    std::optional<std::string> mode;
+    std::optional<bool> degraded;
+};
+
+struct RaycastBlock {  // DirectView
+    int planned = 0, cast = 0, hit = 0;
+    std::vector<std::pair<Point3, Point3>> hit_segments, blocked_segments;
+};
+
+struct ZoneBlock {  // ClearanceForDoors
+    std::string side, leaf;
+    double width = 0.0, depth = 0.0, height = 0.0;
+};
+
+// Everything a rule attaches to a result (ResultInfo), shared by the
+// verdict and the record.
+struct InfoBlocks {
     Measures measures;
     std::vector<PointPair> points;
+    std::vector<FacePair> faces;
+    std::vector<ObbData> source_obbs, target_obbs;
+    std::vector<AxisData> axes;
+    Volumes volumes;
+    std::optional<AxisBlock> axis;
+    std::optional<RaycastBlock> raycast;
+    std::optional<ZoneBlock> zone;
+};
+
+// What narrow_test decides. Only status == true becomes a result (the Python
+// engines only append the clashing elements).
+struct Verdict : InfoBlocks {
+    bool status = false;
     Flags flags;
 };
 
-struct ResultRecord {
+struct ResultRecord : InfoBlocks {
     ElementKey source;
     std::optional<ElementKey> target;
     bool status = true;
-    Measures measures;
-    std::vector<PointPair> points;
     Flags flags;
 };
 

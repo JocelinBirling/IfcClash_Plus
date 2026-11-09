@@ -2801,6 +2801,46 @@ def axis_angle(direction_1: np.ndarray, direction_2: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cosine)))
 
 
+def _same_sense(direction_1: np.ndarray, direction_2: np.ndarray) -> np.ndarray:
+    """direction_2, reversed when it points against direction_1.
+
+    The sign of an OBB axis is arbitrary: two quasi-parallel axes may
+    come with opposite senses. Their bisector must be taken on the
+    same sense, else d1 + d2 is a tiny vector perpendicular to the
+    axes and the "offset" becomes the distance along them.
+    """
+    return -direction_2 if float(np.dot(direction_1, direction_2)) < 0.0 else direction_2
+
+
+def axial_overlap(
+    center_1: np.ndarray,
+    direction_1: np.ndarray,
+    half_length_1: float,
+    center_2: np.ndarray,
+    direction_2: np.ndarray,
+    half_length_2: float,
+) -> float:
+    """The length over which two quasi-parallel support segments face
+    each other: the overlap of their projections on the common
+    direction (the bisector of the two axes, as the offset).
+
+    Positive: the segments run side by side over that length. Zero or
+    negative: they do not face each other (a collinear continuation,
+    two runs shifted along their axis), the negative value being the
+    gap between their projections.
+    """
+    common = direction_1 + _same_sense(direction_1, direction_2)
+    norm = float(np.linalg.norm(common))
+    common = direction_1 if norm < 1e-12 else common / norm
+    position_1 = float(np.dot(center_1, common))
+    position_2 = float(np.dot(center_2, common))
+    extent_1 = half_length_1 * abs(float(np.dot(direction_1, common)))
+    extent_2 = half_length_2 * abs(float(np.dot(direction_2, common)))
+    return min(position_1 + extent_1, position_2 + extent_2) - max(
+        position_1 - extent_1, position_2 - extent_2
+    )
+
+
 def parallel_line_offset(
     center_1: np.ndarray,
     direction_1: np.ndarray,
@@ -2815,7 +2855,7 @@ def parallel_line_offset(
     offset is the length of the component of the centers delta that
     is perpendicular to the common direction.
     """
-    common = direction_1 + direction_2
+    common = direction_1 + _same_sense(direction_1, direction_2)
     norm = float(np.linalg.norm(common))
     if norm < 1e-12:
         # Anti-parallel axes: same support direction, opposite signs.
@@ -2840,7 +2880,7 @@ def parallel_line_offset_closest(
     pair of the offset, not the closest points of the (infinite)
     support lines.
     """
-    common = direction_1 + direction_2
+    common = direction_1 + _same_sense(direction_1, direction_2)
     norm = float(np.linalg.norm(common))
     if norm < 1e-12:
         # Anti-parallel axes: same support direction, opposite signs.

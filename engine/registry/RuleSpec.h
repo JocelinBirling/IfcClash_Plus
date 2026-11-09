@@ -72,6 +72,8 @@ const char* kind_of() {
     else if constexpr (std::is_floating_point_v<V>) return "float";
     else if constexpr (std::is_same_v<V, std::string>) return "string";
     else if constexpr (std::is_same_v<V, std::array<double, 3>>) return "direction";
+    else if constexpr (std::is_same_v<V, std::vector<std::string>>) return "string_list";
+    else if constexpr (std::is_same_v<V, Json>) return "object";
     else static_assert(sizeof(V) == 0, "unsupported parameter type");
 }
 
@@ -98,6 +100,19 @@ V convert(const ParamDesc& d, const Json& v) {
             if (!ok) bad_param(d.name, "'" + s + "' is not one of the allowed values");
         }
         return s;
+    } else if constexpr (std::is_same_v<V, Json>) {
+        // A structured parameter (a FaceSelection dictionary, a direction
+        // given as a name or a vector...): kept as is, the rule validates
+        // its content in setup().
+        return v;
+    } else if constexpr (std::is_same_v<V, std::vector<std::string>>) {
+        if (!v.is_array()) bad_param(d.name, "expected a list of strings");
+        std::vector<std::string> out;
+        for (const auto& item : v) {
+            if (!item.is_string()) bad_param(d.name, "expected a list of strings");
+            out.push_back(item.get<std::string>());
+        }
+        return out;
     } else {
         static_assert(std::is_same_v<V, std::array<double, 3>>);
         if (!v.is_array() || v.size() != 3) bad_param(d.name, "expected three numbers (x, y, z)");
@@ -143,7 +158,9 @@ public:
                 }
                 field = detail::convert<typename T::value_type>(check, value);
             } else {
-                if (value.is_null()) detail::bad_param(check.name, "null is not allowed");
+                if constexpr (!std::is_same_v<T, Json>) {
+                    if (value.is_null()) detail::bad_param(check.name, "null is not allowed");
+                }
                 field = detail::convert<T>(check, value);
             }
         };
@@ -184,6 +201,13 @@ public:
                             std::vector<ParamDesc> params) {
         return make<R>(std::move(type), std::move(label), Family::OneObjectRule, PipelineKind::Element,
                        std::move(slots), std::move(doc), std::move(params));
+    }
+
+    template <class R>
+    static RuleSpec set(std::string type, std::string label, std::vector<Slot> slots, std::string doc,
+                        std::vector<ParamDesc> params) {
+        return make<R>(std::move(type), std::move(label), Family::ComplexRule, PipelineKind::Set, std::move(slots),
+                       std::move(doc), std::move(params));
     }
 
     template <class R>

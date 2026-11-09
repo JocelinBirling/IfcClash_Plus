@@ -1,5 +1,4 @@
-# COPY of tests/test_Rule_IFC_Test_Model.py — the classes of the rules ported to C++
-# (TestIntersection, TestCollision, TestClearance), generated on 2026-11-09 (SPEC_OptimisationInCPP).
+# COPY of tests/test_Rule_IFC_Test_Model.py (all the classes), generated on 2026-11-09 (SPEC_OptimisationInCPP).
 #
 # Same tests, same models, same expected values as the original, but every
 # rule runs on the C++ engine: IFCCLASH_ENGINE=cpp forces the backend and
@@ -398,7 +397,424 @@ class TestClearance(IFCModelRuleTestCase):
                            "UshapeA", "CubeB", 0, clearance=0.001)
 
 
-if __name__ == "__main__":
-    import unittest
+class TestAbove(IFCModelRuleTestCase):
+    """Above rule (face-based) in semantic order: the TARGET is above the SOURCE.
 
+    [expected] tests not run when written: order and parameters derived from
+    the documented semantics and the distances in calibration.jsonl.
+    """
+
+    def test_CubeA_Above_CubeB_1m(self):
+        # CubeA (z 1.5-2.5) is above CubeB (z -0.5-0.5), gap 1.0m.
+        # The tolerance must cover the face-to-face gap (1.0): 0.1 is too short.
+        self._assert_count("CubeA_Above_CubeB_1m.ifc", Above,
+                           "CubeB", "CubeA", 1,
+                           above_type="Above_MaxToMin", tolerance=1.0)
+        self._assert_count("CubeA_Above_CubeB_1m.ifc", Above,
+                           "CubeB", "CubeA", 0,
+                           above_type="Above_MaxToMin", tolerance=0.1)
+
+    def test_CubeB_Above_45CuboidA(self):
+        # min distance 0.2767; tolerance 1.0 to cover the diagonal gap of the 45deg cuboid.
+        self._assert_count("CubeB_Above_45CuboidA.ifc", Above,
+                           "45CuboidA", "CubeB", 1,
+                           above_type="Above_MaxToMin", tolerance=1.0)
+
+    def test_CubeB_Above_UshapeA(self):
+        # UshapeA (z max 4.0), CubeB (z 4.5-5.5): gap 0.5m.
+        self._assert_count("CubeB_Above_UshapeA.ifc", Above,
+                           "UshapeA", "CubeB", 1,
+                           above_type="Above_MaxToMin", tolerance=1.0)
+
+    def test_CylinderA_Above_SlabA(self):
+        # gap 0.5m.
+        self._assert_count("CylinderA_Above_SlabA.ifc", Above,
+                           "SlabA", "CylinderA", 1,
+                           above_type="Above_MaxToMin", tolerance=1.0)
+        self._assert_count("CylinderA_Above_SlabA.ifc", Above,
+                           "SlabA", "CylinderA", 0,
+                           above_type="Above_MaxToMin", tolerance=0.1)
+
+    def test_SuzanneA_Above_SlabA(self):
+        # min distance 1.0156: tolerance 1.1 needed, 1.0 insufficient.
+        self._assert_count("SuzanneA_Above_SlabA.ifc", Above,
+                           "SlabA", "SuzanneA", 1,
+                           above_type="Above_MaxToMin", tolerance=1.1)
+        self._assert_count("SuzanneA_Above_SlabA.ifc", Above,
+                           "SlabA", "SuzanneA", 0,
+                           above_type="Above_MaxToMin", tolerance=0.9)
+
+    def test_SuzanneA_Above_UshapeA(self):
+        # min distance 0.2156.
+        self._assert_count("SuzanneA_Above_UshapeA.ifc", Above,
+                           "UshapeA", "SuzanneA", 1,
+                           above_type="Above_MaxToMin", tolerance=0.3)
+
+    def test_SuzanneB_Above_SuzanneA(self):
+        # min distance 0.2118.
+        self._assert_count("SuzanneB_Above_SuzanneA.ifc", Above,
+                           "SuzanneA", "SuzanneB", 1,
+                           above_type="Above_MaxToMin", tolerance=0.3)
+
+    def test_CubeB_NotAbove_UshapeA(self):
+        # [expected] CubeB sits in the U opening, NOT above UshapeA: 0.
+        # NB [calibrated, reverse order]: OBB_Above(CubeB, UshapeA, 0.1) = 1
+        # (UshapeA does surround CubeB upward) - the "above" relation is true
+        # in the other direction here, which the model name denies.
+        self._assert_count("CubeB_NotAbove_UshapeA.ifc", Above,
+                           "UshapeA", "CubeB", 0,
+                           above_type="Above_MaxToMin", tolerance=0.1)
+
+    def test_SuzanneA_NotAbove_UshapeA(self):
+        # [expected] SuzanneA overlaps the U plate (distance 0.0156),
+        # it is not above: 0.
+        self._assert_count("SuzanneA_NotAbove_UshapeA.ifc", Above,
+                           "UshapeA", "SuzanneA", 0,
+                           above_type="Above_MaxToMin", tolerance=0.1)
+
+    def test_SuzanneA_NotFullyAbove_SlabA(self):
+        # [expected] "not fully above": the strict check top face of the
+        # source / bottom face of the target must fail.
+        self._assert_count("SuzanneA_NotFullyAbove_SlabA.ifc", Above,
+                           "SlabA", "SuzanneA", 0,
+                           above_type="Above_MaxToMin", tolerance=1.1)
+
+    def test_CubeB_NorFrontNorAbove_45CuboidA(self):
+        # [expected] neither in front nor above: 0 even with a wide tolerance.
+        self._assert_count("CubeB_NorFrontNorAbove_45CuboidA.ifc", Above,
+                           "45CuboidA", "CubeB", 0,
+                           above_type="Above_MaxToMin", tolerance=2.0)
+
+
+class TestBelow(IFCModelRuleTestCase):
+    """Below rule (face-based) in semantic order: the TARGET is below the SOURCE.
+
+    [expected] tests not run when written.
+    """
+
+    def test_CubeA_Below_CubeB_1m(self):
+        # CubeA (z -0.5-0.5) is below CubeB (z 1.5-2.5), gap 1.0m.
+        self._assert_count("CubeA_Below_CubeB_1m.ifc", Below,
+                           "CubeB", "CubeA", 1,
+                           below_type="Below_MinToMax", tolerance=1.0)
+        self._assert_count("CubeA_Below_CubeB_1m.ifc", Below,
+                           "CubeB", "CubeA", 0,
+                           below_type="Below_MinToMax", tolerance=0.1)
+
+    def test_CubeB_Below_45CuboidA(self):
+        # min distance 0.5914; tolerance 1.0 to cover the gap.
+        self._assert_count("CubeB_Below_45CuboidA.ifc", Below,
+                           "45CuboidA", "CubeB", 1,
+                           below_type="Below_MinToMax", tolerance=1.0)
+
+    def test_SuzanneA_Below_SlabA(self):
+        # min distance 0.9156: tolerance 1.0.
+        self._assert_count("SuzanneA_Below_SlabA.ifc", Below,
+                           "SlabA", "SuzanneA", 1,
+                           below_type="Below_MinToMax", tolerance=1.0)
+
+    def test_SuzanneA_NotFullyBelow_SlabA(self):
+        # [calibrated] the slab is offset in X/Y: SuzanneA is PARTIALLY under
+        # its footprint (z SuzanneA <= 0.985, slab >= 1.9). The face-based
+        # rule detects the partial below relation, like OBB_Below (1).
+        self._assert_count("SuzanneA_NotFullyBelow_SlabA.ifc", Below,
+                           "SlabA", "SuzanneA", 1,
+                           below_type="Below_MinToMax", tolerance=1.0)
+
+
+class TestOBB_Above(IFCModelRuleTestCase):
+    """OBB_Above rule in semantic order: extrusion zone ABOVE the source.
+
+    [expected] unless stated otherwise, tests not run when written.
+    """
+
+    def test_CubeA_Above_CubeB_1m(self):
+        # zone extruded by 1.0 above CubeB: CubeB top z=0.5 -> zone up to 1.5,
+        # CubeA starts at z=1.5. Tolerance 1.0 to cover it, 0.1 too short.
+        self._assert_count("CubeA_Above_CubeB_1m.ifc", OBB_Above,
+                           "CubeB", "CubeA", 1, tolerance=1.0)
+        self._assert_count("CubeA_Above_CubeB_1m.ifc", OBB_Above,
+                           "CubeB", "CubeA", 0, tolerance=0.1)
+
+    def test_CubeB_Above_45CuboidA(self):
+        self._assert_count("CubeB_Above_45CuboidA.ifc", OBB_Above,
+                           "45CuboidA", "CubeB", 1, tolerance=1.0)
+
+    def test_CubeB_Above_UshapeA(self):
+        self._assert_count("CubeB_Above_UshapeA.ifc", OBB_Above,
+                           "UshapeA", "CubeB", 1, tolerance=1.0)
+
+    def test_CylinderA_Above_SlabA(self):
+        self._assert_count("CylinderA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "CylinderA", 1, tolerance=1.0)
+        self._assert_count("CylinderA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "CylinderA", 0, tolerance=0.1)
+
+    def test_SuzanneA_Above_SlabA(self):
+        # min distance 1.0156.
+        self._assert_count("SuzanneA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "SuzanneA", 1, tolerance=1.1)
+        self._assert_count("SuzanneA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "SuzanneA", 0, tolerance=1.0) #This one is true.
+
+    def test_SuzanneA_Above_UshapeA(self):
+        # min distance 0.2156.
+        self._assert_count("SuzanneA_Above_UshapeA.ifc", OBB_Above,
+                           "UshapeA", "SuzanneA", 1, tolerance=0.3)
+
+    def test_SuzanneB_Above_SuzanneA(self):
+        # min distance 0.2118.
+        self._assert_count("SuzanneB_Above_SuzanneA.ifc", OBB_Above,
+                           "SuzanneA", "SuzanneB", 1, tolerance=0.3)
+
+    def test_CubeB_NotAbove_UshapeA(self):
+        # [expected] CubeB is not above UshapeA: 0 in semantic order.
+        # NB [calibrated, reverse order]: OBB_Above(CubeB, UshapeA, 0.1) = 1,
+        # because UshapeA is indeed "above" CubeB (the U surrounds it).
+        self._assert_count("CubeB_NotAbove_UshapeA.ifc", OBB_Above,
+                           "UshapeA", "CubeB", 0, tolerance=0.1)
+
+    def test_SuzanneA_NotAbove_UshapeA(self):
+        # [expected] same: 0 in semantic order.
+        self._assert_count("SuzanneA_NotAbove_UshapeA.ifc", OBB_Above,
+                           "UshapeA", "SuzanneA", 0, tolerance=0.1)
+
+    def test_SuzanneA_NotFullyAbove_SlabA(self):
+        # [expected] illustration of the OBB / face-based difference: the
+        # OBB zone extruded above SlabA covers part of SuzanneA
+        # The OBB is not big enough to get into Suzanne.
+        self._assert_count("SuzanneA_NotFullyAbove_SlabA.ifc", OBB_Above,
+                           "SlabA", "SuzanneA", 0, tolerance=1.5)
+        self._assert_count("SuzanneA_NotFullyAbove_SlabA.ifc", OBB_Above,
+                           "SlabA", "SuzanneA", 1, tolerance=1.6)
+
+    def test_CubeB_NorFrontNorAbove_45CuboidA(self):
+        # [expected] neither in front nor above: 0 even with a wide tolerance.
+        self._assert_count("CubeB_NorFrontNorAbove_45CuboidA.ifc", OBB_Above,
+                           "45CuboidA", "CubeB", 0, tolerance=2.0)
+
+
+class TestOBB_Below(IFCModelRuleTestCase):
+    """OBB_Below rule in semantic order: extrusion zone BELOW the source.
+
+    [expected] tests not run when written.
+    """
+
+    def test_CubeA_Below_CubeB_1m(self):
+        self._assert_count("CubeA_Below_CubeB_1m.ifc", OBB_Below,
+                           "CubeB", "CubeA", 1, tolerance=1.0)
+        self._assert_count("CubeA_Below_CubeB_1m.ifc", OBB_Below,
+                           "CubeB", "CubeA", 0, tolerance=0.1)
+
+    def test_CubeB_Below_45CuboidA(self):
+        self._assert_count("CubeB_Below_45CuboidA.ifc", OBB_Below,
+                           "45CuboidA", "CubeB", 1, tolerance=1.0)
+
+    def test_SuzanneA_Below_SlabA(self):
+        # min distance 0.9156.
+        self._assert_count("SuzanneA_Below_SlabA.ifc", OBB_Below,
+                           "SlabA", "SuzanneA", 1, tolerance=1.0)
+
+    def test_SuzanneA_NotFullyBelow_SlabA(self):
+        # [expected] mirror illustration of the partial OBB detection
+        # (see TestOBB_Above.test_SuzanneA_NotFullyAbove_SlabA).
+        self._assert_count("SuzanneA_NotFullyBelow_SlabA.ifc", OBB_Below,
+                           "SlabA", "SuzanneA", 1, tolerance=1.0)
+
+
+class TestOBB_Front_And_Back(IFCModelRuleTestCase):
+    """OBB_Front_And_Back rule: zones extruded along the two main directions
+    of the source OBB; the target must touch a zone.
+
+    Markers: [calibrated] = observed count (file-name order, where it matches
+    the semantic order or the rule is nearly symmetric); [expected] = not
+    run when written.
+    """
+
+    def test_CubeB_InFront_45CuboidA(self):
+        # [calibrated] the zones are anchored on the SOURCE and the relation
+        # is NOT symmetric: CubeB's axis-aligned zones reach the 45deg cuboid
+        # (file-name order, tol 1.0 -> 1), but the zones anchored on the
+        # 45deg cuboid do not reach CubeB (semantic order -> 0).
+        self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
+                           "CubeB", "45CuboidA", 1, tolerance=1.0, method="Wide")
+        self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
+                           "CubeB", "45CuboidA", 0, tolerance=0.1, method="Wide")
+        self._assert_count("CubeB_InFront_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
+
+    def test_CubeB_InFrontOf_CuboidA_50cm(self):
+        # [calibrated file-name order: tol 1.0 -> 1, tol 0.5 -> 0]
+        # semantic order: source=CuboidA (CubeB is in front of it).
+        self._assert_count("CubeB_InFrontOf_CuboidA_50cm.ifc", OBB_Front_And_Back,
+                           "CuboidA", "CubeB", 1, tolerance=1.0, method="Wide")
+        self._assert_count("CubeB_InFrontOf_CuboidA_50cm.ifc", OBB_Front_And_Back,
+                           "CuboidA", "CubeB", 0, tolerance=0.5, method="Wide")
+
+    def test_SuzanneA_InFrontOf_CuboidA_146cm(self):
+        # [calibrated] min distance 1.4601 (model renamed 150cm -> 146cm to
+        # match the real distance): tolerance 2.0 so that the zone anchored
+        # on CuboidA reaches SuzanneA.
+        self._assert_count("SuzanneA_InFrontOf_CuboidA_146cm.ifc", OBB_Front_And_Back,
+                           "CuboidA", "SuzanneA", 1, tolerance=2.0, method="Wide")
+
+    def test_SuzanneB_Behind_SuzanneA(self):
+        # [calibrated] the file-name order IS the semantic order here:
+        # SuzanneA is in front of SuzanneB. The zone anchored on SuzanneB
+        # misses SuzanneA by ~0.067 at tol 0.1 (the former expected 1 was
+        # calibrated with the invalid zone solid, which made every distance
+        # collapse to 0); from tol 0.3 the zone reaches -> 1.
+        # Narrow -> 0.
+        self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
+                           "SuzanneB", "SuzanneA", 1, tolerance=0.3, method="Wide")
+        self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
+                           "SuzanneB", "SuzanneA", 0, tolerance=0.1, method="Wide")
+        self._assert_count("SuzanneB_Behind_SuzanneA.ifc", OBB_Front_And_Back,
+                           "SuzanneB", "SuzanneA", 0, tolerance=0.1, method="Narrow")
+
+    def test_CubeB_Side_45CuboidA(self):
+        # [recalibrated] same asymmetry as test_CubeB_InFront_45CuboidA
+        # for the small tolerance, but the improved main-direction
+        # detection (the most vertical axis of a tilted OBB is excluded)
+        # makes the 45deg cuboid's Wide direction horizontal: its
+        # front/back zone now reaches CubeB at the side (semantic order,
+        # tol 1.0 -> 1).
+        self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
+                           "CubeB", "45CuboidA", 1, tolerance=1.0, method="Wide")
+        self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
+                           "CubeB", "45CuboidA", 0, tolerance=0.1, method="Wide")
+        self._assert_count("CubeB_Side_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 1, tolerance=1.0, method="Wide")
+
+    def test_CubeB_Side_CuboidA_50cm(self):
+        # [calibrated file-name order: 0 at every tested tolerance <= 1.0]
+        # sideways placement outside the front/back zones of CuboidA -> 0.
+        self._assert_count("CubeB_Side_CuboidA_50cm.ifc", OBB_Front_And_Back,
+                           "CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
+
+    def test_CubeB_NorFrontNorAbove_45CuboidA(self):
+        # [calibrated file-name order: 0 for both Wide and Narrow] neither
+        # in front nor behind.
+        self._assert_count("CubeB_NorFrontNorAbove_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Wide")
+        self._assert_count("CubeB_NorFrontNorAbove_45CuboidA.ifc", OBB_Front_And_Back,
+                           "45CuboidA", "CubeB", 0, tolerance=1.0, method="Narrow")
+
+
+class TestAngleBetween(IFCModelRuleTestCase):
+    """AngleBetween rule on the Orient / NoOrient models.
+
+    Measured real angles (OBB main directions, Wide/Narrow method; the
+    45deg cuboid angles are measured with the improved main-direction
+    detection, which excludes the most vertical axis of a tilted OBB):
+      - CuboidA_Orient_45Cuboid_45    : Wide-Narrow 45deg, Wide-Wide 90deg,
+                                        Narrow-Wide 180deg (anti-parallel),
+                                        Narrow-Narrow 90deg;
+      - CuboidA_NoOrient_45Cuboid     : Wide-Wide/Wide-Narrow 75.2deg,
+                                        Narrow-Wide/Narrow-Narrow 131.2deg;
+      - CuboidA_Orient_FallenCuboidA_90: Wide-Wide 90deg, Wide-Narrow 0deg,
+                                        Narrow-Wide 0deg, Narrow-Narrow 90deg.
+    """
+
+    def test_CuboidA_Orient_FallenCuboidA_90(self):
+        # [calibrated] nominal 90deg angle between Wide directions.
+        self._assert_count("CuboidA_Orient_FallenCuboidA_90.ifc", AngleBetween,
+                           "CuboidA", "FallenCuboidA", 1,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=90, angle_tolerance=5)
+        # [calibrated] crossed directions: 0deg between Wide of CuboidA and Narrow of FallenCuboidA.
+        self._assert_count("CuboidA_Orient_FallenCuboidA_90.ifc", AngleBetween,
+                           "CuboidA", "FallenCuboidA", 1,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=0, angle_tolerance=5)
+        # [calibrated] counter-examples: neither 0deg nor 45deg between Wide-Wide directions.
+        self._assert_count("CuboidA_Orient_FallenCuboidA_90.ifc", AngleBetween,
+                           "CuboidA", "FallenCuboidA", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=0, angle_tolerance=5)
+        self._assert_count("CuboidA_Orient_FallenCuboidA_90.ifc", AngleBetween,
+                           "CuboidA", "FallenCuboidA", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=45, angle_tolerance=15)
+
+    def test_CuboidA_Orient_45Cuboid_45(self):
+        # [recalibrated, measured angles] actual target: 45CuboidA (see
+        # NAME_OVERRIDES). With the improved main-direction detection for
+        # tilted objects, the 45deg cuboid's Wide direction is horizontal:
+        # it is anti-parallel to CuboidA's Narrow (length) direction (the
+        # rule measures the signed angle between the direction vectors,
+        # 180deg) and perpendicular to its Wide (thickness) direction.
+        self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 1,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=45, angle_tolerance=15)
+        self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=45, angle_tolerance=15)
+        self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 1,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Wide",
+                           angle_difference=180, angle_tolerance=5)
+        self._assert_count("CuboidA_Orient_45Cuboid_45.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 1,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Narrow",
+                           angle_difference=90, angle_tolerance=5)
+
+    def test_CuboidA_NoOrient_45Cuboid(self):
+        # [expected, measured angles] no direction pair forms 0, 45 or
+        # 90 degrees (75.2 / 131.2): all these searches fail.
+        self._assert_count("CuboidA_NoOrient_45Cuboid.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=45, angle_tolerance=5)
+        self._assert_count("CuboidA_NoOrient_45Cuboid.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 0,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Wide",
+                           angle_difference=45, angle_tolerance=5)
+        self._assert_count("CuboidA_NoOrient_45Cuboid.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=90, angle_tolerance=5)
+        self._assert_count("CuboidA_NoOrient_45Cuboid.ifc", AngleBetween,
+                           "CuboidA", "45Cuboid", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=0, angle_tolerance=5)
+
+
+class TestUnimplementedRules(IFCModelRuleTestCase):
+    """Rules documented but absent from ifcclash_plus/Rules.py."""
+
+    def test_Inside_rule_not_implemented(self):
+        # The CubeA_Inside_BigCubeA, CubeB_Inside_BigCubeA,
+        # CubeA_InsideFaceTouch_BigCubeA and CubeA_TouchOutside_BigCubeA_1mm
+        # models are covered through Intersection/Collision/Clearance (see
+        # the classes above); the Inside rule only exists in doc/2ObjectsRules/Inside.
+        self.skipTest(
+            "Inside rule documented (doc/2ObjectsRules/Inside) but not "
+            "implemented in ifcclash_plus/Rules.py."
+        )
+
+    def test_SurfaceRecover_not_implemented(self):
+        # Models SlabA_RecoverTop_CuboidB_100%/50% and
+        # SlabA_RecoverTop_CylinderA_100%/50%.
+        self.skipTest(
+            "SurfaceRecover rule documented (doc/2ObjectsRules/SurfaceRecover.md) "
+            "but not implemented in ifcclash_plus/Rules.py."
+        )
+
+
+if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,4 @@
-# COPY of tests/test_Rule_IFC_Test_Model_New.py — the classes of the rules ported to C++
-# (TestIntersection, TestCollision, TestClearance), generated on 2026-11-09 (SPEC_OptimisationInCPP).
+# COPY of tests/test_Rule_IFC_Test_Model_New.py (all the classes), generated on 2026-11-09 (SPEC_OptimisationInCPP).
 #
 # Same tests, same models, same expected values as the original, but every
 # rule runs on the C++ engine: IFCCLASH_ENGINE=cpp forces the backend and
@@ -122,6 +121,61 @@ class TestIntersection(IFCModelRuleTestCase):
                            1, tolerance=0.001)
 
 
+class TestIntersection2(IFCModelRuleTestCase):
+    """Moteur BREP pur (PythonOCC) : voit les volumes que le BVH manque."""
+
+    def test_volumes_vus_par_le_brep(self):
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", Intersection2,
+                           "SlabA", "SlabB", 1, tolerance=0.0)
+        # chevauchement coplanaire : le BREP calcule un volume commun
+        self._assert_count("SlabA_SameZ_OverlapXY_SlabB.ifc", Intersection2,
+                           "SlabA", "SlabB", 1, tolerance=0.0)
+        self._assert_count("CubeA_PartialIntersect_UshapeA.ifc", Intersection2,
+                           "CubeA", "UshapeA", 1, tolerance=0.0)
+        # sphère dans dalle : le BREP voit l'intersection courbe/plan
+        self._assert_count("SphereA_Intersect_SlabA.ifc", Intersection2,
+                           "SphereA", "SlabA", 1, tolerance=0.0)
+        # pointe de cone dans le cube
+        self._assert_count("ConeA_PointIn_CubeB.ifc", Intersection2,
+                           "ConeA", "CubeB", 1, tolerance=0.0)
+        # plaque de 1mm dans le cube
+        self._assert_count("PlateThinA_Through_CubeB_1mm.ifc", Intersection2,
+                           "PlateThinA", "CubeB", 1, tolerance=0.0)
+        self._assert_count("CylinderA_Inside_BigCubeA.ifc", Intersection2,
+                           "CylinderA", "BigCubeA", 1, tolerance=0.0)
+        self._assert_count("CylinderTrueA_Intersect_CubeA_1mm.ifc",
+                           Intersection2, "CylinderTrueA", "CubeA",
+                           1, tolerance=0.0)
+
+    def test_contacts_sans_volume_non_vus(self):
+        self._assert_count("SphereA_TangentTop_SlabA.ifc", Intersection2,
+                           "SphereA", "SlabA", 0, tolerance=0.0)
+        self._assert_count("SphereA_Tangent_SphereB.ifc", Intersection2,
+                           "SphereA", "SphereB", 0, tolerance=0.0)
+        self._assert_count("CylinderA_TouchOutside_HollowCylinderA.ifc",
+                           Intersection2, "CylinderA", "HollowCylinderA",
+                           0, tolerance=0.0)
+
+    def test_pas_d_intersection(self):
+        self._assert_count("CubeA_NextTo_CubeB_0,1mm.ifc", Intersection2,
+                           "CubeA", "CubeB", 0, tolerance=0.0)
+        self._assert_count("45CuboidA_DiagClose_CubeB_37cm.ifc", Intersection2,
+                           "45CuboidA", "CubeB", 0, tolerance=0.0)
+        self._assert_count("CylinderSmallA_Clearance_HollowCylinderA_1cm.ifc",
+                           Intersection2, "CylinderSmallA", "HollowCylinderA",
+                           0, tolerance=0.0)
+
+    def test_faux_positif_tore_maille(self):
+        # le cube est geometriquement dans le trou du tore, mais le BREP
+        # (mesh_to_solid sur faces loose) le voit comme intersectant
+        self._assert_count("CubeA_InHole_TorusA.ifc", Intersection2,
+                           "CubeA", "TorusA", 1, tolerance=0.0)
+
+
+# ---------------------------------------------------------------------------
+# Collision
+# ---------------------------------------------------------------------------
+
 class TestCollision(IFCModelRuleTestCase):
     def test_collisions(self):
         self._assert_count("SlabA_ZOverlap_SlabB.ifc", Collision,
@@ -177,7 +231,6 @@ class TestCollision(IFCModelRuleTestCase):
 # Clearance (distance strictement entre 0 et clearance ; les paires qui
 # s'intersectent en volume ne sont PAS flaggees)
 # ---------------------------------------------------------------------------
-
 
 class TestClearance(IFCModelRuleTestCase):
     def test_distances(self):
@@ -274,8 +327,189 @@ class TestClearance(IFCModelRuleTestCase):
 # Above / Below (face-based)
 # ---------------------------------------------------------------------------
 
+class TestAboveBelow(IFCModelRuleTestCase):
+    def test_z_overlap_ni_above_ni_below(self):
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", Above,
+                           "SlabB", "SlabA", 0, **ABOVE, tolerance=0.1)
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", Above,
+                           "SlabA", "SlabB", 0, **ABOVE, tolerance=0.1)
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", Below,
+                           "SlabB", "SlabA", 0, **BELOW, tolerance=0.1)
+
+    def test_not_below(self):
+        self._assert_count("CubeA_NotBelow_CubeB_1m.ifc", Below,
+                           "CubeB", "CubeA", 0, **BELOW, tolerance=1.0)
+        self._assert_count("CubeA_NotBelow_CubeB_1m.ifc", Above,
+                           "CubeB", "CubeA", 0, **ABOVE, tolerance=1.0)
+
+    def test_source_inclinee(self):
+        self._assert_count("CubeA_Above_45CuboidA.ifc", Above,
+                           "45CuboidA", "CubeA", 0, **ABOVE, tolerance=1.0)
+        self._assert_count("CubeA_Above_45CuboidA.ifc", Above,
+                           "45CuboidA", "CubeA", 1, **ABOVE, tolerance=2.0)
+        self._assert_count("CubeA_Below_45CuboidA.ifc", Below,
+                           "45CuboidA", "CubeA", 0, **BELOW, tolerance=1.0)
+        self._assert_count("CubeA_Below_45CuboidA.ifc", Below,
+                           "45CuboidA", "CubeA", 1, **BELOW, tolerance=2.0)
+
+    def test_multi_objets(self):
+        m = "CubeA_Above_CubeB_Above_SlabA.ifc"
+        self._assert_count(m, Above, "CubeB", "CubeA", 1, **ABOVE, tolerance=1.0)
+        self._assert_count(m, Above, "SlabA", "CubeB", 1, **ABOVE, tolerance=1.0)
+        self._assert_count(m, Above, "SlabA", "CubeA", 1, **ABOVE, tolerance=3.5)
+
+    def test_formes_courbes(self):
+        # sphere au-dessus de la dalle : gap 0.5m, borne exclusive
+        self._assert_count("SphereA_Above_SlabA.ifc", Above,
+                           "SlabA", "SphereA", 1, **ABOVE, tolerance=0.6)
+        self._assert_count("SphereA_Above_SlabA.ifc", Above,
+                           "SlabA", "SphereA", 0, **ABOVE, tolerance=0.4)
+        # sphere qui chevauche la plage Z de la dalle : pas above
+        self._assert_count("SphereA_NotAbove_SlabA.ifc", Above,
+                           "SlabA", "SphereA", 0, **ABOVE, tolerance=0.1)
+        # cone au-dessus : gap 1.0m
+        self._assert_count("ConeA_Above_SlabA.ifc", Above,
+                           "SlabA", "ConeA", 1, **ABOVE, tolerance=1.1)
+        self._assert_count("ConeA_Above_SlabA.ifc", Above,
+                           "SlabA", "ConeA", 0, **ABOVE, tolerance=0.9)
+        # cube dans le creux du U : pas above
+        self._assert_count("CubeB_InU_Crevasse_UshapeA.ifc", Above,
+                           "UshapeA", "CubeB", 0, **ABOVE, tolerance=0.1)
+
+    def test_above_facebased_echoue_sur_tore_et_poutre(self):
+        # get_extreme_faces ne trouve pas de "face du dessus" nette :
+        # Above=0 meme avec une grosse tolerance, OBB_Above=1 (voir plus bas)
+        self._assert_count("CubeA_Above_TorusA.ifc", Above,
+                           "TorusA", "CubeA", 0, **ABOVE, tolerance=2.0)
+        self._assert_count("BeamLongA_Above_CubeA.ifc", Above,
+                           "CubeA", "BeamLongA", 0, **ABOVE, tolerance=3.0)
+        self._assert_count("CubeA_AboveNotInFront_CuboidA_3m.ifc", Above,
+                           "CuboidA", "CubeA", 1, **ABOVE, tolerance=2.0)
+
+
+# ---------------------------------------------------------------------------
+# OBB_Above / OBB_Below / OBB_Front_And_Back (zones OBB)
+# ---------------------------------------------------------------------------
+
+class TestOBB(IFCModelRuleTestCase):
+    def test_obb_above(self):
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", OBB_Above,
+                           "SlabA", "SlabB", 1, tolerance=0.1)
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", OBB_Above,
+                           "SlabB", "SlabA", 0, tolerance=0.1)
+        self._assert_count("SlabA_ZOverlapNoXY_SlabB.ifc", OBB_Above,
+                           "SlabA", "SlabB", 0, tolerance=0.1)
+        self._assert_count("CubeA_NotBelow_CubeB_1m.ifc", OBB_Above,
+                           "CubeB", "CubeA", 0, tolerance=1.0)
+        self._assert_count("CubeA_AboveNotInFront_CuboidA_3m.ifc", OBB_Above,
+                           "CuboidA", "CubeA", 1, tolerance=2.0)
+        self._assert_count("CubeA_Above_45CuboidA.ifc", OBB_Above,
+                           "45CuboidA", "CubeA", 1, tolerance=2.0)
+        self._assert_count("CubeA_Above_CubeB_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "CubeA", 1, tolerance=3.5)
+        self._assert_count("SphereA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "SphereA", 1, tolerance=0.6)
+        # sphère qui chevauche en Z : l'OBB la detecte quand meme (faux positif)
+        self._assert_count("SphereA_NotAbove_SlabA.ifc", OBB_Above,
+                           "SlabA", "SphereA", 1, tolerance=0.1)
+        # faux positif OBB sur le tore : le cube est dans le trou
+        self._assert_count("CubeA_InHole_TorusA.ifc", OBB_Above,
+                           "TorusA", "CubeA", 1, tolerance=0.1)
+        self._assert_count("CubeA_Above_TorusA.ifc", OBB_Above,
+                           "TorusA", "CubeA", 1, tolerance=1.0)
+        self._assert_count("ConeA_Above_SlabA.ifc", OBB_Above,
+                           "SlabA", "ConeA", 1, tolerance=1.1)
+        # poutre élancée : OBB_Above=1 alors que Above face-based=0
+        self._assert_count("BeamLongA_Above_CubeA.ifc", OBB_Above,
+                           "CubeA", "BeamLongA", 1, tolerance=2.0)
+
+    def test_obb_below(self):
+        self._assert_count("SlabA_ZOverlap_SlabB.ifc", OBB_Below,
+                           "SlabA", "SlabB", 0, tolerance=0.1)
+        self._assert_count("CubeA_NotBelow_CubeB_1m.ifc", OBB_Below,
+                           "CubeB", "CubeA", 0, tolerance=1.0)
+        self._assert_count("CubeA_Below_45CuboidA.ifc", OBB_Below,
+                           "45CuboidA", "CubeA", 1, tolerance=2.0)
+        self._assert_count("CubeA_Above_CubeB_Above_SlabA.ifc", OBB_Below,
+                           "CubeA", "SlabA", 1, tolerance=3.5)
+        self._assert_count("CubeA_InHole_TorusA.ifc", OBB_Below,
+                           "TorusA", "CubeA", 1, tolerance=0.1)
+        self._assert_count("CubeA_Above_TorusA.ifc", OBB_Below,
+                           "TorusA", "CubeA", 0, tolerance=1.0)
+        self._assert_count("BeamLongA_Above_CubeA.ifc", OBB_Below,
+                           "CubeA", "BeamLongA", 0, tolerance=2.0)
+        self._assert_count("SphereA_Above_SlabA.ifc", OBB_Below,
+                           "SlabA", "SphereA", 0, tolerance=0.6)
+
+    def test_obb_front_and_back(self):
+        # au-dessus => ni front ni back
+        self._assert_count("CubeA_AboveNotInFront_CuboidA_3m.ifc",
+                           OBB_Front_And_Back, "CuboidA", "CubeA",
+                           0, tolerance=2.0, method="Wide")
+        self._assert_count("CubeA_AboveNotInFront_CuboidA_3m.ifc",
+                           OBB_Front_And_Back, "CuboidA", "CubeA",
+                           0, tolerance=2.0, method="Narrow")
+        # côté +X : hors zone Wide (front en Y), dans la zone Narrow (axe X)
+        self._assert_count("SuzanneA_Side_CuboidA_NotFrontNotBehind.ifc",
+                           OBB_Front_And_Back, "CuboidA", "SuzanneA",
+                           0, tolerance=1.0, method="Wide")
+        self._assert_count("SuzanneA_Side_CuboidA_NotFrontNotBehind.ifc",
+                           OBB_Front_And_Back, "CuboidA", "SuzanneA",
+                           1, tolerance=1.0, method="Narrow")
+        # cube dans le creux du U : hors zones front/back
+        self._assert_count("CubeB_InU_Crevasse_UshapeA.ifc",
+                           OBB_Front_And_Back, "UshapeA", "CubeB",
+                           0, tolerance=1.0, method="Wide")
+        # cube dans le trou du tore : hors zone front
+        self._assert_count("CubeA_InHole_TorusA.ifc", OBB_Front_And_Back,
+                           "TorusA", "CubeA", 0, tolerance=0.1, method="Wide")
+        # poutre à côté du cube (gap 1cm en Y) : dans la zone front du cube
+        self._assert_count("BeamLongA_Clearance_CubeA_1cm.ifc",
+                           OBB_Front_And_Back, "CubeA", "BeamLongA",
+                           1, tolerance=0.5, method="Wide")
+
+
+# ---------------------------------------------------------------------------
+# AngleBetween (directions principales OBB)
+# ---------------------------------------------------------------------------
+
+class TestAngleBetween(IFCModelRuleTestCase):
+    """Poutre selon X (10m) vs cube : Wide du cube parallele a X, Narrow a 90deg."""
+
+    def test_beam_long_angles(self):
+        m = "BeamLongA_Above_CubeA.ifc"
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 1,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=0, angle_tolerance=5)
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=90, angle_tolerance=5)
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 1,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Narrow",
+                           angle_difference=90, angle_tolerance=5)
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 1,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Wide",
+                           angle_difference=0, angle_tolerance=5)
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 1,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Narrow",
+                           angle_difference=90, angle_tolerance=5)
+
+    def test_beam_long_clearance_angles(self):
+        m = "BeamLongA_Clearance_CubeA_1cm.ifc"
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 0,
+                           direction_method_for_source="Wide",
+                           direction_method_for_target="Wide",
+                           angle_difference=90, angle_tolerance=5)
+        self._assert_count(m, AngleBetween, "CubeA", "BeamLongA", 1,
+                           direction_method_for_source="Narrow",
+                           direction_method_for_target="Narrow",
+                           angle_difference=90, angle_tolerance=5)
+
 
 if __name__ == "__main__":
-    import unittest
-
     unittest.main()

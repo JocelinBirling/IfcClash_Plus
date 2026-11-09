@@ -265,6 +265,7 @@ class TestComputeAnglesDispatch(unittest.TestCase):
                 "linearity_ratio",
                 "on_non_linear",
                 "parallel_tolerance",
+                "search_radius",
             ],
         )
 

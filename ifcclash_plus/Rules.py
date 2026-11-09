@@ -26,6 +26,8 @@ from CustomOBB import (
     create_obb_from_TopoDs_Shape,
 )
 from OCC.Core.BRepExtrema import BRepExtrema_DistShapeShape, BRepExtrema_ExtFF
+from OCC.Core.Bnd import Bnd_Box
+from OCC.Core.BRepBndLib import brepbndlib
 import ifcopenshell.util.placement
 from OCC.Core.gp import gp_Ax3, gp_Pnt, gp_Dir, gp_Trsf, gp_XYZ, gp_Vec, gp_Lin
 import ifcopenshell.util.shape
@@ -1209,6 +1211,19 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
     skipped, or measured skin to skin (the Fallback of on_non_linear)
     and the result then carries the degraded flag.
 
+    Which pairs are checked (a network, not an isolated pair):
+    - Perpendicular only compares segments that face each other over
+      some length: a collinear continuation, or a parallel run
+      shifted along its axis, is not a side-by-side pair (no result).
+    - search_radius (optional): a pair measured beyond it is not a
+      neighbour and is not checked.
+    - min_distance ("too close") is checked on every remaining pair;
+      max_distance ("too far", a hole) only between each source and
+      its NEAREST remaining target: the outer pipes of a bundle, or
+      two unrelated runs, are not "too far" from each other.
+    - A pair met in both orientations (overlapping selections) comes
+      out once.
+
     This is the axis counterpart of Clearance, which measures skin to
     skin: the execution dimensions and the regulatory spacings of a
     network are expressed axis to axis, whatever the diameters. The
@@ -1233,6 +1248,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         linearity_ratio=10.0,
         on_non_linear="Skip",
         parallel_tolerance=1.0,
+        search_radius=None,
         state="Final",
     ):
         super().__init__(state, source, target)
@@ -1285,6 +1301,14 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
                 f"got {parallel_tolerance!r}"
             )
 
+        if search_radius is not None and (
+            not isinstance(search_radius, (int, float)) or search_radius < 0
+        ):
+            raise ValueError(
+                f"search_radius must be None or a positive number (m), "
+                f"got {search_radius!r}"
+            )
+
         self.mode = mode
         self.min_distance = float(min_distance) if min_distance is not None else None
         self.max_distance = float(max_distance) if max_distance is not None else None
@@ -1292,6 +1316,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         self.linearity_ratio = float(linearity_ratio)
         self.on_non_linear = on_non_linear
         self.parallel_tolerance = float(parallel_tolerance)
+        self.search_radius = float(search_radius) if search_radius is not None else None
 
         # The axes and the fallback distances come from the world
         # TopoDS shapes of the objects.
@@ -1310,14 +1335,17 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         for entity, geom in clash_utils.element_shapes(
             elements, self.geom_settings
         ):
-            obb = create_obb_from_TopoDs_Shape(geom)
+            obb = create_obb_from_TopoDs_Shape(geom)  # meshes geom
             center, direction, half_length, thickness = clash_utils.obb_long_axis(
                 obb
             )
+            box = Bnd_Box()
+            brepbndlib.Add(geom, box)  # bounds the skin (Fallback radius test)
             objects.append(
                 {
                     "entity": entity,
                     "geom": geom,
+                    "box": box,
                     "center": center,
                     "direction": direction,
                     "half_length": half_length,
@@ -1357,6 +1385,84 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             )
         return float(distance_tool.Value()), None, None
 
+    def _measure(
+        self, source_obj, target_obj, mode, linearity_ratio, on_non_linear,
+        parallel_tolerance, search_radius,
+    ):
+        """The measure of one pair, or None when the pair is not
+        concerned by the rule:
+
+        - two linear objects: the perpendicular offset of their support
+          lines when Perpendicular applies (quasi-parallel axes) — and
+          only if the segments face each other over some length (a
+          collinear continuation or a run shifted along its axis is not
+          a side-by-side pair) — else the minimum distance between the
+          segments;
+        - a non-linear object: skipped, or the skin-to-skin distance
+          (Fallback, degraded);
+        - a measured distance beyond search_radius: not a neighbour.
+        """
+        linear = (
+            source_obj["linearity"] >= linearity_ratio
+            and target_obj["linearity"] >= linearity_ratio
+        )
+        angle = clash_utils.axis_angle(source_obj["direction"], target_obj["direction"])
+
+        if linear:
+            if mode == "Perpendicular" and angle <= parallel_tolerance:
+                overlap = clash_utils.axial_overlap(
+                    source_obj["center"], source_obj["direction"], source_obj["half_length"],
+                    target_obj["center"], target_obj["direction"], target_obj["half_length"],
+                )
+                if overlap <= 1e-6:
+                    return None  # not side by side
+                distance, source_point, target_point = (
+                    clash_utils.parallel_line_offset_closest(
+                        source_obj["center"],
+                        source_obj["direction"],
+                        target_obj["center"],
+                        target_obj["direction"],
+                    )
+                )
+                mode_used = "Perpendicular"
+            else:
+                # The support segment spans the full OBB extent of the
+                # axis: center ± half length.
+                distance, source_point, target_point = clash_utils.segment_segment_closest(
+                    source_obj["center"] - source_obj["direction"] * source_obj["half_length"],
+                    source_obj["center"] + source_obj["direction"] * source_obj["half_length"],
+                    target_obj["center"] - target_obj["direction"] * target_obj["half_length"],
+                    target_obj["center"] + target_obj["direction"] * target_obj["half_length"],
+                )
+                mode_used = "MinDistance"
+            source_point = tuple(float(v) for v in source_point)
+            target_point = tuple(float(v) for v in target_point)
+            degraded = False
+        elif on_non_linear == "Skip":
+            return None
+        else:
+            # The boxes bound the skins: beyond the radius, the exact
+            # (costly) distance cannot come back inside it.
+            if search_radius is not None and source_obj["box"].Distance(target_obj["box"]) > search_radius:
+                return None
+            distance, source_point, target_point = self._skin_distance(
+                source_obj["geom"], target_obj["geom"]
+            )
+            mode_used = "Fallback"
+            degraded = True
+
+        distance = float(distance)
+        if search_radius is not None and distance > search_radius:
+            return None
+        return {
+            "distance": distance,
+            "angle": angle,
+            "source_point": source_point,
+            "target_point": target_point,
+            "mode": mode_used,
+            "degraded": degraded,
+        }
+
     # ---- The engine (SPEC: pure computation, testable without any IFC)
 
     def compute(
@@ -1370,6 +1476,7 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
         linearity_ratio=10.0,
         on_non_linear="Skip",
         parallel_tolerance=1.0,
+        search_radius=None,
         liste_objet_contexte=None,
     ):
         """The clash engine of the rule: flags the pairs whose
@@ -1398,81 +1505,70 @@ class ClearanceAxisToAxis(RuleCheckTwoObjects):
             self._register_support_segment_display(target_objects)
             return []
 
-        results = []
-        for source_obj in source_objects:
+        # 1. The measure of every concerned pair, in loop order (source
+        #    then target): the pairs that do not face each other
+        #    (Perpendicular), the skipped non-linear pairs and the pairs
+        #    beyond the search radius are not concerned.
+        measured = []
+        for source_index, source_obj in enumerate(source_objects):
             for target_obj in target_objects:
                 if source_obj["entity"] == target_obj["entity"]:
                     continue
-
-                linear = (
-                    source_obj["linearity"] >= linearity_ratio
-                    and target_obj["linearity"] >= linearity_ratio
+                measure = self._measure(
+                    source_obj, target_obj, mode, linearity_ratio,
+                    on_non_linear, parallel_tolerance, search_radius,
                 )
+                if measure is not None:
+                    measured.append((source_index, source_obj, target_obj, measure))
 
-                angle = clash_utils.axis_angle(
-                    source_obj["direction"], target_obj["direction"]
-                )
+        # 2. The nearest concerned target of each source: "too far" is a
+        #    hole between neighbours, checked on it alone. The distances
+        #    within 1e-9 m of the minimum are ties: the first target in
+        #    the selection order wins.
+        best = {}
+        for source_index, _, _, measure in measured:
+            best[source_index] = min(best.get(source_index, math.inf), measure["distance"])
+        nearest = {}
+        for position, (source_index, _, _, measure) in enumerate(measured):
+            if source_index not in nearest and measure["distance"] <= best[source_index] + 1e-9:
+                nearest[source_index] = position
 
-                if linear:
-                    if mode == "Perpendicular" and angle <= parallel_tolerance:
-                        distance, source_point, target_point = (
-                            clash_utils.parallel_line_offset_closest(
-                                source_obj["center"],
-                                source_obj["direction"],
-                                target_obj["center"],
-                                target_obj["direction"],
-                            )
-                        )
-                        source_point = tuple(float(v) for v in source_point)
-                        target_point = tuple(float(v) for v in target_point)
-                        mode_used = "Perpendicular"
-                    else:
-                        # The support segment spans the full OBB
-                        # extent of the axis: center ± half length.
-                        distance, source_point, target_point = (
-                            clash_utils.segment_segment_closest(
-                                source_obj["center"]
-                                - source_obj["direction"] * source_obj["half_length"],
-                                source_obj["center"]
-                                + source_obj["direction"] * source_obj["half_length"],
-                                target_obj["center"]
-                                - target_obj["direction"] * target_obj["half_length"],
-                                target_obj["center"]
-                                + target_obj["direction"] * target_obj["half_length"],
-                            )
-                        )
-                        source_point = tuple(float(v) for v in source_point)
-                        target_point = tuple(float(v) for v in target_point)
-                        mode_used = "MinDistance"
-                    degraded = False
-                elif on_non_linear == "Skip":
-                    continue
-                else:
-                    distance, source_point, target_point = self._skin_distance(
-                        source_obj["geom"], target_obj["geom"]
-                    )
-                    mode_used = "Fallback"
-                    degraded = True
+        # 3. "Too close" on every concerned pair, "too far" on the
+        #    nearest one; a pair met in both orientations (overlapping
+        #    selections) comes out once, in its first orientation.
+        results = []
+        reported = set()
+        for position, (source_index, source_obj, target_obj, measure) in enumerate(measured):
+            distance = measure["distance"]
+            too_close = min_distance is not None and distance < min_distance - tolerance
+            too_far = (
+                max_distance is not None
+                and nearest[source_index] == position
+                and distance > max_distance + tolerance
+            )
+            if not (too_close or too_far):
+                continue
+            pair = frozenset((source_obj["entity"], target_obj["entity"]))
+            if pair in reported:
+                continue
+            reported.add(pair)
 
-                if self._outside_interval(
-                    distance, min_distance, max_distance, tolerance
-                ):
-                    result = ClashResultTwoObjects(
-                        source=source_obj["entity"],
-                        target=target_obj["entity"],
-                        state=True,
-                    )
-                    result.info.distance = distance  # m — nominale
-                    result.info.angle = angle  # deg — secondaire
-                    if source_point is not None and target_point is not None:
-                        result.info.add_point_pair(source_point, target_point)
-                    result.info.axis_mode = mode_used
-                    result.info.axis_degraded = degraded
-                    # The two support segments of the pair: enough to
-                    # rebuild the display without rerunning the rule.
-                    result.info.add_axis(_support_axis_data(source_obj, "source"))
-                    result.info.add_axis(_support_axis_data(target_obj, "target"))
-                    results.append(result)
+            result = ClashResultTwoObjects(
+                source=source_obj["entity"],
+                target=target_obj["entity"],
+                state=True,
+            )
+            result.info.distance = distance  # m — nominale
+            result.info.angle = measure["angle"]  # deg — secondaire
+            if measure["source_point"] is not None and measure["target_point"] is not None:
+                result.info.add_point_pair(measure["source_point"], measure["target_point"])
+            result.info.axis_mode = measure["mode"]
+            result.info.axis_degraded = measure["degraded"]
+            # The two support segments of the pair: enough to
+            # rebuild the display without rerunning the rule.
+            result.info.add_axis(_support_axis_data(source_obj, "source"))
+            result.info.add_axis(_support_axis_data(target_obj, "target"))
+            results.append(result)
 
         if self.state == "Display_Result":
             # Every geometry AND the result list come out.

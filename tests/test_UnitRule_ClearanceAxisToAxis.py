@@ -26,6 +26,7 @@ from Rules import ClearanceAxisToAxis
 from RuleClass import SelectFacet, RuleFile, ClashResultTwoObjects
 from CustomOBB import create_obb_from_TopoDs_Shape
 from clash_utils import (
+    axial_overlap,
     axis_angle,
     obb_long_axis,
     parallel_line_offset,
@@ -248,18 +249,17 @@ class TestClearanceAxisToAxis(unittest.TestCase):
         self.assertAlmostEqual(result.info.distance, 0.1, places=4)
         self.assertEqual(result.info.axis_mode, "MinDistance")
 
-    def test_perpendicular_mode_measures_the_offset_not_the_gap(self):
-        """The same end-to-end runs in Perpendicular mode: the axes
-        share their support line, the offset is 0 — the mode choice
-        changes what the rule validates."""
+    def test_perpendicular_mode_ignores_collinear_runs(self):
+        """The same end-to-end runs in Perpendicular mode: the segments
+        do not face each other (a collinear continuation), so they are
+        not a side-by-side pair — no result, whatever the interval
+        (before the 2026-11-09 fix, their offset 0 came out as "too
+        close")."""
         rule = self.run_rule(
             self.end_to_end_model, "PipeA", "PipeB", mode="Perpendicular",
             min_distance=0.05, max_distance=0.15,
         )
-        self.assertEqual(len(rule.result), 1)
-        result = rule.result[0]
-        self.assertAlmostEqual(result.info.distance, 0.0, places=4)
-        self.assertEqual(result.info.axis_mode, "Perpendicular")
+        self.assertEqual(len(rule.result), 0)
 
     # ---- Non-linear objects
 
@@ -343,6 +343,128 @@ class TestClearanceAxisToAxis(unittest.TestCase):
             ClearanceAxisToAxis(source, target, max_distance=1.0, parallel_tolerance=0.0)
         with self.assertRaises(ValueError):
             ClearanceAxisToAxis(source, target, max_distance=1.0, parallel_tolerance=95.0)
+        with self.assertRaises(ValueError):
+            ClearanceAxisToAxis(source, target, max_distance=1.0, search_radius=-0.5)
+
+
+class TestClearanceAxisToAxisNetwork(unittest.TestCase):
+    """The rule on networks: every pipe in the source AND the target,
+    as the documentation examples (a bundle, a connection check). Only
+    the real defects come out: no collinear continuation, no unrelated
+    run, no outer pair of a bundle, each pair once."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.temp_dir, True)
+
+    def run_network(self, elements, **parameters):
+        path = os.path.join(self.temp_dir, f"network_{len(os.listdir(self.temp_dir))}.ifc")
+        make_model(path, elements)
+        select = SelectFacet()
+        select.applicability = [ids.Entity(name="IFCBUILDINGELEMENTPROXY")]
+        rule_file = RuleFile()
+        rule_file.list_ifc_path = [path]
+        rule = ClearanceAxisToAxis(select, select, **parameters)
+        rule_file.contains = [rule]
+        rule_file.run()
+        assert_result_shape(rule)
+        return sorted(
+            (r.source.Name, r.target.Name, round(r.info.distance, 4)) for r in rule.result
+        )
+
+    BUNDLE = dict(mode="Perpendicular", min_distance=0.14, max_distance=0.16)
+
+    def test_correct_bundle_of_three_pipes(self):
+        """Three pipes 0.15 m apart: the outer pair (0.30 m) is not a
+        hole, each pipe is checked against its nearest neighbour."""
+        results = self.run_network(
+            [box(f"P{i}", 0.0, y=0.15 * i, dx=4.0, dy=0.1, height=0.1) for i in range(3)],
+            **self.BUNDLE,
+        )
+        self.assertEqual(results, [])
+
+    def test_hole_in_a_bundle(self):
+        """The third pipe 0.40 m away: a 0.25 m hole from its nearest
+        neighbour, reported once."""
+        results = self.run_network(
+            [
+                box("P0", 0.0, y=0.00, dx=4.0, dy=0.1, height=0.1),
+                box("P1", 0.0, y=0.15, dx=4.0, dy=0.1, height=0.1),
+                box("P2", 0.0, y=0.40, dx=4.0, dy=0.1, height=0.1),
+            ],
+            **self.BUNDLE,
+        )
+        self.assertEqual(results, [("P2", "P1", 0.25)])
+
+    def test_too_close_pair_reported_once(self):
+        """Two pipes 0.10 m apart in an overlapping selection: one
+        result, not (A, B) and (B, A)."""
+        results = self.run_network(
+            [
+                box("A", 0.0, y=0.00, dx=4.0, dy=0.1, height=0.1),
+                box("B", 0.0, y=0.10, dx=4.0, dy=0.1, height=0.1),
+            ],
+            mode="Perpendicular", min_distance=0.14,
+        )
+        self.assertEqual(results, [("A", "B", 0.1)])
+
+    def test_continuation_and_shifted_runs_are_not_side_by_side(self):
+        """C continues A on the same line 10 m further, E runs parallel
+        to B 0.15 m away but 20 m further along x: neither faces its
+        partner, so no "too close" (offset 0) nor "too far"."""
+        results = self.run_network(
+            [
+                box("A", 0.0, y=0.00, dx=4.0, dy=0.1, height=0.1),
+                box("B", 0.0, y=0.15, dx=4.0, dy=0.1, height=0.1),
+                box("C", 10.0, y=0.00, dx=4.0, dy=0.1, height=0.1),
+                box("E", 20.0, y=0.30, dx=4.0, dy=0.1, height=0.1),
+            ],
+            mode="Perpendicular", min_distance=0.14,
+        )
+        self.assertEqual(results, [])
+
+    def test_isolated_run_and_search_radius(self):
+        """An isolated run 5 m from the bundle: without search radius,
+        its nearest neighbour is "too far"; with a 0.5 m radius it has
+        no neighbour and is not checked."""
+        elements = [
+            box("A", 0.0, y=0.00, dx=4.0, dy=0.1, height=0.1),
+            box("B", 0.0, y=0.15, dx=4.0, dy=0.1, height=0.1),
+            box("D", 0.0, y=5.00, dx=4.0, dy=0.1, height=0.1),
+        ]
+        self.assertEqual(self.run_network(elements, **self.BUNDLE), [("D", "B", 4.85)])
+        self.assertEqual(self.run_network(elements, search_radius=0.5, **self.BUNDLE), [])
+
+    def test_connections_coaxiality(self):
+        """Two connections: A-B good (collinear, butted), C-D off by
+        2 cm. Only C-D comes out: the unrelated runs 3 m apart are not
+        each other's nearest neighbour."""
+        results = self.run_network(
+            [
+                box("A", 0.0, y=0.00, dx=2.0, dy=0.1, height=0.1),
+                box("B", 2.0, y=0.00, dx=2.0, dy=0.1, height=0.1),
+                box("C", 0.0, y=3.00, dx=2.0, dy=0.1, height=0.1),
+                box("D", 2.0, y=3.02, dx=2.0, dy=0.1, height=0.1),
+            ],
+            mode="MinDistance", max_distance=0.005,
+        )
+        self.assertEqual(results, [("C", "D", 0.02)])
+
+    def test_fallback_beyond_search_radius_not_measured(self):
+        """A compact block 5 m from a pipe (non-linear, Fallback): with
+        a 1 m radius the pair is not a neighbour — no result, and the
+        skin distance is not even computed (box test)."""
+        elements = [
+            box("Block", 0.0, y=5.0, dx=1.0, dy=1.0, height=1.0),
+            box("Pipe", 0.0, dx=4.0, dy=0.1, height=0.1),
+        ]
+        far = self.run_network(elements, min_distance=0.1, max_distance=0.5, on_non_linear="Fallback")
+        self.assertEqual(len(far), 1)
+        self.assertEqual(
+            self.run_network(elements, min_distance=0.1, max_distance=0.5, on_non_linear="Fallback",
+                             search_radius=1.0),
+            [],
+        )
 
 
 class TestAxisHelpers(unittest.TestCase):
@@ -397,6 +519,28 @@ class TestAxisHelpers(unittest.TestCase):
             np.array([1.0, 0.5, 0.0]), np.array([1.0, 0.0, 0.0]),
         )
         self.assertAlmostEqual(offset, 0.5, places=9)
+
+    def test_parallel_line_offset_nearly_anti_parallel(self):
+        """Two quasi-parallel axes given with opposite senses (the sign
+        of an OBB axis is arbitrary): the bisector is taken on one
+        sense, the offset stays the lateral one (0.15), not the 10 m
+        along the axes (the bug before 2026-11-09)."""
+        angle = np.radians(0.1)
+        offset = parallel_line_offset(
+            np.array([0.0, 0.0, 0.0]),
+            np.array([1.0, 0.0, 0.0]),
+            np.array([10.0, 0.15, 0.0]),
+            np.array([-np.cos(angle), np.sin(angle), 0.0]),
+        )
+        self.assertAlmostEqual(offset, 0.15, delta=0.01)
+
+    def test_axial_overlap(self):
+        """Side by side over 2 m, butted end to end (0) and shifted
+        apart (-6 m gap)."""
+        x = np.array([1.0, 0.0, 0.0])
+        self.assertAlmostEqual(axial_overlap(np.zeros(3), x, 2.0, np.array([1.0, 0.15, 0.0]), x, 2.0), 3.0)
+        self.assertAlmostEqual(axial_overlap(np.zeros(3), x, 1.0, np.array([2.0, 0.0, 0.0]), -x, 1.0), 0.0)
+        self.assertAlmostEqual(axial_overlap(np.zeros(3), x, 2.0, np.array([10.0, 0.0, 0.0]), x, 2.0), -6.0)
 
     def test_parallel_line_offset_anti_parallel(self):
         """Anti-parallel axis directions: same support line, the

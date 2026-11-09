@@ -31,6 +31,30 @@ void register_all_rules(Registry& registry) {
     registry.add(spec_intersection());
     registry.add(spec_clearance());
     registry.add(spec_collision());
+    registry.add(spec_area());
+    registry.add(spec_top_or_bottom_surface());
+    registry.add(spec_lateral_surface());
+    registry.add(spec_projected_surface());
+    registry.add(spec_obb_high());
+    registry.add(spec_obb_length());
+    registry.add(spec_orientation());
+    registry.add(spec_above());
+    registry.add(spec_below());
+    registry.add(spec_obb_above());
+    registry.add(spec_obb_below());
+    registry.add(spec_obb_front_and_back());
+    registry.add(spec_obb_custom());
+    registry.add(spec_angle_between());
+    registry.add(spec_clearance_axis_to_axis());
+    registry.add(spec_intersection2());
+    registry.add(spec_one_object_face());
+    registry.add(spec_two_objects_face());
+    registry.add(spec_surface_recover());
+    registry.add(spec_clearance_for_doors());
+    registry.add(spec_ray_check());
+    registry.add(spec_direct_view());
+    registry.add(spec_free_space());
+    registry.add(spec_alignement());
 }
 
 const Registry& default_registry() {
