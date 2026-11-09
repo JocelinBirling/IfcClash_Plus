@@ -46,6 +46,13 @@ def _p(name, kind, default, doc="", values=None, complex_=False, unit=""):
     return param
 
 
+# The backend of each rule during the C++ migration
+# (SPEC_OptimisationInCPP, "Côté Python"): a rule moves to "cpp" once its
+# parity test (tests/test_parity_cpp.py) is green. Without the compiled
+# module the orchestrator falls back on Python anyway.
+CPP_RULES = frozenset({"Volume", "Intersection", "Clearance", "Collision"})
+
+
 def _rule(type_, label, family, slots, doc, params):
     return {
         "type": type_,
@@ -59,6 +66,7 @@ def _rule(type_, label, family, slots, doc, params):
         "supports_grouping": True,
         "supports_criticity": True,
         "supports_actor": True,
+        "implementation": "cpp" if type_ in CPP_RULES else "python",
     }
 
 
@@ -561,6 +569,14 @@ def find_facet(facet_type: str) -> dict[str, Any]:
 # reads the engine part of the flat declaration and calls compute
 # with it, the ResultPipeline reads the management part, the
 # orchestrator reads the selects.
+
+
+def implementation(rule_type: str) -> str:
+    """The backend of a rule: "cpp" or "python" (the catalogue field)."""
+    try:
+        return find_rule(rule_type).get("implementation", "python")
+    except KeyError:
+        return "python"
 
 
 def engine_params(rule_type: str) -> list[str]:

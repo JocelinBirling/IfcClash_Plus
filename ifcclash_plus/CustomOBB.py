@@ -179,7 +179,7 @@ def create_obb_with_free_z(shape:TopoDS_Compound) -> "Custom_OBB":
     return obb
 
 
-def create_obb_from_geom_verts(geom:W.Triangulation) -> "Custom_OBB":
+def create_obb_from_geom_verts(geom: W.triangulation) -> "Custom_OBB":
     """
     Crée une OBB à partir des sommets d'une géométrie IfcOpenShell.
 
@@ -360,7 +360,7 @@ def create_obb_from_TopoDs_Shape_via_pca(shape:TopoDS_Compound) -> "Custom_OBB":
     return obb
 
 
-def create_obb_from_verts_withOCC(geom:W.Triangulation) -> "Custom_OBB":
+def create_obb_from_verts_withOCC(geom: W.triangulation) -> "Custom_OBB":
     """
     Crée une Bnd_OBB à partir d'une liste de sommets (X, Y, Z) en utilisant la fonction ReBuild.
 

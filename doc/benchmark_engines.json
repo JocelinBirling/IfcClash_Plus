@@ -1,0 +1,91 @@
+{
+  "models": [
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Architecture.ifc",
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Mechanical.ifc"
+  ],
+  "ifcview": [
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Architecture.ifcview",
+    "/home/jocelin/Documents/200 - IFC/IfcSampleFiles-main/Ifc2x3_Duplex_Mechanical.ifcview"
+  ],
+  "python_open_s": 0.1506961940031033,
+  "rows": [
+    {
+      "rule": "Volume",
+      "params": {
+        "volume_min": 0.0,
+        "volume_max": 1000000000.0
+      },
+      "results": 810,
+      "python_s": 14.838100799999665,
+      "cpp_cold_s": 1.1293143350048922,
+      "cpp_warm_s": 0.004925743996864185,
+      "cpp_stats": "Volume   narrow: 810 \u2192 810   (0.998 s)",
+      "cpp_same_pairs": true,
+      "ifcview_cold_s": 1.1713599909999175,
+      "ifcview_warm_s": 0.004576514002110343,
+      "ifcview_stats": "Volume   narrow: 810 \u2192 810   (1.014 s)",
+      "ifcview_diagnostics": [
+        "760 of 810 boxes from the .ifcview"
+      ],
+      "ifcview_same_pairs": true
+    },
+    {
+      "rule": "Intersection",
+      "params": {
+        "tolerance": 0.002
+      },
+      "results": 802,
+      "python_s": 1.3914659219954046,
+      "cpp_cold_s": 1.5966681049976614,
+      "cpp_warm_s": 0.32689812700118637,
+      "cpp_stats": "Intersection   broad: 149864 \u2192 1600   mid: 1600 \u2192 1590   narrow: 1590 \u2192 802   (1.396 s)",
+      "cpp_same_pairs": true,
+      "ifcview_cold_s": 1.5243821250041947,
+      "ifcview_warm_s": 0.33498223300557584,
+      "ifcview_stats": "Intersection   broad: 149864 \u2192 1981   mid: 1981 \u2192 1981   narrow: 1981 \u2192 802   (1.359 s)",
+      "ifcview_diagnostics": [
+        "760 of 810 boxes from the .ifcview"
+      ],
+      "ifcview_same_pairs": true
+    },
+    {
+      "rule": "Clearance",
+      "params": {
+        "clearance": 0.05,
+        "check_all": false
+      },
+      "results": 1953,
+      "python_s": 1.4975018769982853,
+      "cpp_cold_s": 1.3129602310000337,
+      "cpp_warm_s": 0.06119791400124086,
+      "cpp_stats": "Clearance   broad: 149864 \u2192 2426   mid: 2426 \u2192 2414   narrow: 2414 \u2192 1953   (1.136 s)",
+      "cpp_same_pairs": true,
+      "ifcview_cold_s": 1.3314234229983413,
+      "ifcview_warm_s": 0.0658986400012509,
+      "ifcview_stats": "Clearance   broad: 149864 \u2192 2657   mid: 2657 \u2192 2657   narrow: 2657 \u2192 1953   (1.164 s)",
+      "ifcview_diagnostics": [
+        "760 of 810 boxes from the .ifcview"
+      ],
+      "ifcview_same_pairs": true
+    },
+    {
+      "rule": "Collision",
+      "params": {
+        "allow_touching": false
+      },
+      "results": 491,
+      "python_s": 1.198178257996915,
+      "cpp_cold_s": 1.3037606880025123,
+      "cpp_warm_s": 0.02365978499437915,
+      "cpp_stats": "Collision   broad: 149864 \u2192 1600   mid: 1600 \u2192 1590   narrow: 1590 \u2192 491   (1.138 s)",
+      "cpp_same_pairs": true,
+      "ifcview_cold_s": 1.2421143649989972,
+      "ifcview_warm_s": 0.023892645003797952,
+      "ifcview_stats": "Collision   broad: 149864 \u2192 1981   mid: 1981 \u2192 1981   narrow: 1981 \u2192 491   (1.076 s)",
+      "ifcview_diagnostics": [
+        "760 of 810 boxes from the .ifcview"
+      ],
+      "ifcview_same_pairs": true
+    }
+  ]
+}

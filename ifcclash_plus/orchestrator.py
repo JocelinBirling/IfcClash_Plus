@@ -18,10 +18,12 @@ signature of the compute, the in-memory counterpart of
 registry.compute_from_config.
 """
 
-import inspect
+import os
+import warnings
 
 from pipeline import ResultPipeline  # noqa: F401 — re-exported for convenience
-from registry import engine_params
+from registry import implementation
+from engine.backends import cpp_backend, python_backend
 
 
 def run_rule(rule, state=None):
@@ -85,21 +87,44 @@ def _prepare_selections(rule):
     return sources, targets, context
 
 
+def backend_of(rule_type):
+    """The backend that computes a rule (SPEC_OptimisationInCPP): the
+    "implementation" field of its catalogue entry, unless the
+    IFCCLASH_ENGINE environment variable forces "python" or "cpp"."""
+    forced = os.environ.get("IFCCLASH_ENGINE", "").strip().lower()
+    if forced in ("python", "cpp"):
+        return forced
+    return implementation(rule_type)
+
+
 def compute_rule(rule, sources, targets=None, context=None):
-    """The named compute call of one rule, driven by the catalogue and
-    the signature of its compute: the engine parameters are read off
-    the rule instance (engine_params names == instance attributes), the
-    entity lists follow the signature (a one-object rule takes no
-    target list, a complex rule takes the context list of its
-    contract)."""
-    parameters = inspect.signature(rule.compute).parameters
-    call = {
-        name: getattr(rule, name)
-        for name in engine_params(type(rule).__name__)
-    }
-    call["liste_objet_source"] = sources
-    if "liste_objet_target" in parameters:
-        call["liste_objet_target"] = targets
-    if "liste_objet_contexte" in parameters:
-        call["liste_objet_contexte"] = context
-    return rule.compute(**call)
+    """The compute of one rule, on the backend chosen by the catalogue.
+
+    The C++ backend falls back on the Python one when it cannot take the
+    call (module not built for this interpreter, rule not ported, files
+    without path): the results are the same by the parity contract, only
+    the time changes."""
+    if backend_of(type(rule).__name__) == "cpp":
+        try:
+            return cpp_backend.compute(rule, sources, targets, context)
+        except cpp_backend.Unsupported as reason:
+            if os.environ.get("IFCCLASH_ENGINE", "").strip().lower() == "cpp":
+                # Forced C++ (the tests of tests/cpp_port): no silent
+                # fallback, the Python engine must not answer instead.
+                raise
+            _warn_fallback(type(rule).__name__, reason)
+    return python_backend.compute(rule, sources, targets, context)
+
+
+def close_sessions():
+    """Releases the C++ engine sessions (end of a RuleFile run)."""
+    cpp_backend.close_sessions()
+
+
+_warned = set()
+
+
+def _warn_fallback(rule_type, reason):
+    if rule_type not in _warned:
+        _warned.add(rule_type)
+        warnings.warn(f"{rule_type}: C++ engine unavailable ({reason}), Python engine used")

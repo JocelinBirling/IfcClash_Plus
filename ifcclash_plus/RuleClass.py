@@ -172,16 +172,21 @@ class RuleFile:
         for rulecheck_or_folder in self.contains:
             distribute_files(rulecheck_or_folder, self.list_ifc_path, self.list_ifc_file)
 
-        for rulecheck_or_folder in self.contains:
-            if isinstance(rulecheck_or_folder, RuleFolder) or isinstance(
-                rulecheck_or_folder, Select
-            ):
-                # The folders keep their activation flow; a Select
-                # node (a SelectRule drives its own rule through the
-                # orchestration, a SelectFacet run is a no-op here).
-                rulecheck_or_folder.run()
-            else:
-                orchestrator.run_rule(rulecheck_or_folder)
+        try:
+            for rulecheck_or_folder in self.contains:
+                if isinstance(rulecheck_or_folder, RuleFolder) or isinstance(
+                    rulecheck_or_folder, Select
+                ):
+                    # The folders keep their activation flow; a Select
+                    # node (a SelectRule drives its own rule through the
+                    # orchestration, a SelectFacet run is a no-op here).
+                    rulecheck_or_folder.run()
+                else:
+                    orchestrator.run_rule(rulecheck_or_folder)
+        finally:
+            # The C++ engine sessions live for one RuleFile (parsed
+            # files, geometry cache): released here.
+            orchestrator.close_sessions()
 
     def load_file(self):
         # @todo improve the load_file()

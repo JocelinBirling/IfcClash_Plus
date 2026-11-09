@@ -61,3 +61,7 @@ Rapport.md
 specification_BCF_Link.mdtest_serialization_simple.py
 /.vscode
 IfcOpenShellTo09.md
+
+# C++ engine build (engine/CMakeLists.txt)
+build/engine/
+ifcclash_plus/engine/_ifcclash_engine*.so

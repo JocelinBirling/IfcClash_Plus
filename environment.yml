@@ -3,17 +3,26 @@
 # Creation :   conda env create -f environment.yml
 # Activation : conda activate ifcclash_plus
 # Paquet :     pip install -e .
-# Tests :      pytest tests
+# Moteur C++ : cmake -S engine -B build/engine -G Ninja && cmake --build build/engine
+# Tests :      pytest tests/<un_fichier>.py  (un fichier à la fois)
+#
+# Une seule version d'OCCT dans le processus (SPEC_OptimisationInCPP) :
+# pythonocc-core, ifcopenshell et libifcclash_engine partagent occt 8.0.1.
+# ifcopenshell 0.9.0post1 de conda-forge n'existe qu'avec OCCT 8.0.x.
+# ifctester / ifcclash viennent de PyPI SANS leurs dépendances (sinon pip
+# installe un second ifcopenshell, avec son propre OCCT) : voir la fin.
+# Sur cette machine, lancer Python avec PYTHONNOUSERSITE=1 : un vieil
+# ifcopenshell traîne dans ~/.local.
 name: ifcclash_plus
 channels:
   - conda-forge
   - nodefaults
 dependencies:
   - python=3.12
+  - occt=8.0.1
   # pythonocc-core n'est distribue que par conda-forge
-  - pythonocc-core
-  - ifcopenshell
-  - ifctester
+  - pythonocc-core=8.0.1.2
+  - ifcopenshell=0.9.0post1
   - numpy
   - trimesh
   - shapely
@@ -23,5 +32,21 @@ dependencies:
   - requests
   - pytest
   - pip
-  - pip:
-      - ifcclash==0.8.4
+  # Moteur C++ (engine/)
+  - cmake
+  - ninja
+  - cxx-compiler
+  - eigen
+  - nlohmann_json
+  - pybind11
+  - catch2
+  # Dépendances PyPI de ifctester / bcf-client
+  - elementpath
+  - odfpy
+  - pystache
+  - xmlschema
+  - xsdata
+  - flask
+# Puis, une fois l'environnement activé (--no-deps n'est pas accepté dans
+# la section pip de ce fichier) :
+#   pip install --no-deps ifctester==0.9.0 ifcclash==0.9.0 bcf-client==0.8.4
