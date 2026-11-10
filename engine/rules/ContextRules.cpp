@@ -2,6 +2,7 @@
 // and FreeSpace (elements + context). The context is given once to the rule
 // (setup_context), which builds its read-only index of it.
 #include "AllRules.h"
+#include "ContextRules.h"
 
 #include "../geometry/Faces.h"
 #include "../geometry/Geos.h"
@@ -140,18 +141,7 @@ private:
 
 // ================================================================ DirectView
 
-struct DirectViewParams {
-    std::string ray_source = "Source";
-    int ray_count = 10;
-    double threshold = 100.0;  // %
-    std::optional<double> max_distance;
-};
 
-struct ViewMesh {
-    std::vector<Triangle3> triangles;
-    V3 centroid;
-    Bnd_Box box;
-};
 
 constexpr double kR2Alpha = 0.7548776662466927;
 constexpr double kR2Beta = 0.5698402909980532;
@@ -221,169 +211,169 @@ std::vector<int> plan_ray_counts(const std::vector<double>& areas, int ray_count
     return counts;
 }
 
-class DirectView final : public PairRule<DirectViewParams> {
-public:
-    Variant base_variant() const override { return Variant::MeshWorld; }
-    std::vector<Variant> narrow_variants() const override { return {}; }
-    bool needs_element_data() const override { return true; }
-    bool uses_context() const override { return true; }
-    // A pair is flagged by a hit ratio over the threshold: with no maximum
-    // distance (or a 0 % threshold) a far pair can be flagged.
-    BroadMode broad_mode() const override {
-        return params().max_distance && params().threshold > 0.0 ? BroadMode::Spatial : BroadMode::AllPairs;
-    }
+}  // namespace
 
-    void setup() override {
-        const auto& p = params();
-        if (p.ray_source != "Both" && p.ray_source != "Source" && p.ray_source != "Target")
-            throw ConfigError("ray_source must be 'Both', 'Source' or 'Target'");
-        if (p.ray_count < 1) throw ConfigError("ray_count must be an integer >= 1");
-        if (!(0.0 <= p.threshold && p.threshold <= 100.0)) throw ConfigError("threshold must be between 0% and 100%");
-        if (p.max_distance && *p.max_distance <= 0) throw ConfigError("max_distance must be None or a positive number");
-    }
+void DirectView::setup() {
+    const auto& p = params();
+    if (p.ray_source != "Both" && p.ray_source != "Source" && p.ray_source != "Target")
+        throw ConfigError("ray_source must be 'Both', 'Source' or 'Target'");
+    if (p.ray_count < 1) throw ConfigError("ray_count must be an integer >= 1");
+    if (!(0.0 <= p.threshold && p.threshold <= 100.0)) throw ConfigError("threshold must be between 0% and 100%");
+    if (p.max_distance && *p.max_distance <= 0) throw ConfigError("max_distance must be None or a positive number");
+}
 
-    void setup_context(const std::vector<ElementKey>& context, GeometryProvider& provider) override {
-        auto* service = provider.ray_trees();
-        if (!service) throw ConfigError("DirectView needs the IFC source (IfcOpenShell ray tree)");
-        tree_ = service->build_ray_tree(context);
-    }
 
-    std::shared_ptr<const void> element_data(const ElementGeometry& e, Role) const override {
-        const auto mesh = e.mesh(Variant::MeshWorld);
-        if (!mesh || mesh->faces.empty()) return nullptr;
-        auto data = std::make_shared<ViewMesh>();
-        const auto& v = mesh->local_verts;
-        for (size_t t = 0; t + 2 < mesh->faces.size(); t += 3) {
-            Triangle3 tr;
-            for (int k = 0; k < 3; ++k) {
-                const size_t i = 3 * static_cast<size_t>(mesh->faces[t + k]);
-                tr[k] = {v[i], v[i + 1], v[i + 2]};
-                data->box.Add(gp_Pnt(v[i], v[i + 1], v[i + 2]));
-            }
-            data->triangles.push_back(tr);
+void DirectView::setup_context(const std::vector<ElementKey>& context, GeometryProvider& provider) {
+    auto* service = provider.ray_trees();
+    if (!service) throw ConfigError("DirectView needs the IFC source (IfcOpenShell ray tree)");
+    tree_ = service->build_ray_tree(context);
+}
+
+
+std::shared_ptr<const void> DirectView::element_data(const ElementGeometry& e, Role) const {
+    const auto mesh = e.mesh(Variant::MeshWorld);
+    if (!mesh || mesh->faces.empty()) return nullptr;
+    auto data = std::make_shared<ViewMesh>();
+    const auto& v = mesh->local_verts;
+    for (size_t t = 0; t + 2 < mesh->faces.size(); t += 3) {
+        Triangle3 tr;
+        for (int k = 0; k < 3; ++k) {
+            const size_t i = 3 * static_cast<size_t>(mesh->faces[t + k]);
+            tr[k] = {v[i], v[i + 1], v[i + 2]};
+            data->box.Add(gp_Pnt(v[i], v[i + 1], v[i + 2]));
         }
-        V3 sum{0, 0, 0};
-        const size_t n = v.size() / 3;
-        for (size_t i = 0; i < n; ++i)
-            for (int k = 0; k < 3; ++k) sum[k] += v[3 * i + k];
-        data->centroid = {sum[0] / n, sum[1] / n, sum[2] / n};
-        return data;
+        data->triangles.push_back(tr);
     }
+    V3 sum{0, 0, 0};
+    const size_t n = v.size() / 3;
+    for (size_t i = 0; i < n; ++i)
+        for (int k = 0; k < 3; ++k) sum[k] += v[3 * i + k];
+    data->centroid = {sum[0] / n, sum[1] / n, sum[2] / n};
+    return data;
+}
 
-    Bnd_Box broad_volume(const ElementGeometry& e, Role role) const override {
-        const double reach = role == Role::Source ? params().max_distance.value_or(0.0) : 0.0;
-        return geometry::inflate(e.as<ViewMesh>().box, reach + 1e-6);
+
+Bnd_Box DirectView::broad_volume(const ElementGeometry& e, Role role) const {
+    const double reach = role == Role::Source ? params().max_distance.value_or(0.0) : 0.0;
+    return geometry::inflate(e.as<ViewMesh>().box, reach + 1e-6);
+}
+
+
+Verdict DirectView::narrow_test(const ElementGeometry& s, const ElementGeometry& t) const {
+    const auto& sm = s.as<ViewMesh>();
+    const auto& tm = t.as<ViewMesh>();
+    std::vector<std::pair<const ViewMesh*, const ViewMesh*>> emitters;
+    if (params().ray_source == "Both") emitters = {{&sm, &tm}, {&tm, &sm}};
+    else if (params().ray_source == "Source") emitters = {{&sm, &tm}};
+    else emitters = {{&tm, &sm}};
+    const int planned = params().ray_count * static_cast<int>(emitters.size());
+    const double threshold = params().threshold / 100.0;
+    int hits = 0, casts = 0;
+    RaycastBlock block;
+    bool decided = false;
+    for (const auto& [emitter, receiver] : emitters) {
+        if (decided) break;
+        for (const auto& [origin, aim] : pair_rays(*emitter, *receiver)) {
+            // clash_utils.direct_view_early_stop
+            const int remaining = planned - casts;
+            if (static_cast<double>(hits + remaining) / planned < threshold ||
+                static_cast<double>(hits) / planned >= threshold) {
+                decided = true;
+                break;
+            }
+            const bool touched = cast_ray(origin, aim);
+            casts += 1;
+            if (touched) {
+                hits += 1;
+                block.hit_segments.emplace_back(origin, aim);
+            } else {
+                block.blocked_segments.emplace_back(origin, aim);
+            }
+        }
     }
+    const double ratio = casts > 0 ? static_cast<double>(hits) / casts : 0.0;
+    Verdict v;
+    if (!(ratio >= threshold)) return v;
+    v.status = true;
+    v.measures.set(Measure::HitRatio, ratio);
+    block.planned = planned;
+    block.cast = casts;
+    block.hit = hits;
+    v.raycast = std::move(block);
+    return v;
+}
 
-    Verdict narrow_test(const ElementGeometry& s, const ElementGeometry& t) const override {
-        const auto& sm = s.as<ViewMesh>();
-        const auto& tm = t.as<ViewMesh>();
-        std::vector<std::pair<const ViewMesh*, const ViewMesh*>> emitters;
-        if (params().ray_source == "Both") emitters = {{&sm, &tm}, {&tm, &sm}};
-        else if (params().ray_source == "Source") emitters = {{&sm, &tm}};
-        else emitters = {{&tm, &sm}};
-        const int planned = params().ray_count * static_cast<int>(emitters.size());
-        const double threshold = params().threshold / 100.0;
-        int hits = 0, casts = 0;
-        RaycastBlock block;
-        bool decided = false;
-        for (const auto& [emitter, receiver] : emitters) {
-            if (decided) break;
-            for (const auto& [origin, aim] : pair_rays(*emitter, *receiver)) {
-                // clash_utils.direct_view_early_stop
-                const int remaining = planned - casts;
-                if (static_cast<double>(hits + remaining) / planned < threshold ||
-                    static_cast<double>(hits) / planned >= threshold) {
-                    decided = true;
+
+// DirectView._faces_toward
+std::vector<Triangle3> DirectView::faces_toward(const ViewMesh& mesh, const V3& other) {
+    std::vector<Triangle3> out;
+    for (const auto& t : mesh.triangles) {
+        const V3 n = np::cross(np::sub(t[1], t[0]), np::sub(t[2], t[0]));
+        const double m = np::row_norm(n);
+        if (!(m > 1e-12)) continue;
+        const V3 u{n[0] / m, n[1] / m, n[2] / m};
+        const V3 center{(t[0][0] + t[1][0] + t[2][0]) / 3.0, (t[0][1] + t[1][1] + t[2][1]) / 3.0,
+                        (t[0][2] + t[1][2] + t[2][2]) / 3.0};
+        if (np::einsum_rowdot(u, np::sub(other, center)) > 0.0) out.push_back(t);
+    }
+    return out;
+}
+
+
+std::vector<double> DirectView::areas_of(const std::vector<Triangle3>& faces) {
+    std::vector<double> out;
+    for (const auto& t : faces) out.push_back(0.5 * np::row_norm(np::cross(np::sub(t[1], t[0]), np::sub(t[2], t[0]))));
+    return out;
+}
+
+
+// DirectView._pair_rays
+std::vector<std::pair<DirectView::V3, DirectView::V3>> DirectView::pair_rays(const ViewMesh& emitter, const ViewMesh& receiver) const {
+    std::vector<std::pair<V3, V3>> rays;
+    const auto ef = faces_toward(emitter, receiver.centroid);
+    const auto rf = faces_toward(receiver, emitter.centroid);
+    if (ef.empty() || rf.empty()) return rays;
+    const auto counts = plan_ray_counts(areas_of(ef), params().ray_count);
+    const auto ra = areas_of(rf);
+    const double total = pairwise_sum(ra.data(), ra.size());
+    long index = 0;
+    for (size_t f = 0; f < ef.size(); ++f) {
+        for (int c = 0; c < counts[f]; ++c) {
+            const V3 origin = sample_point_in_triangle(ef[f], index);
+            const double u = r2_sequence(index).first * total;
+            double cumulative = 0.0;
+            const Triangle3* receiving = &rf.back();
+            for (size_t k = 0; k < rf.size(); ++k) {
+                cumulative += ra[k];
+                if (u <= cumulative) {
+                    receiving = &rf[k];
                     break;
                 }
-                const bool touched = cast_ray(origin, aim);
-                casts += 1;
-                if (touched) {
-                    hits += 1;
-                    block.hit_segments.emplace_back(origin, aim);
-                } else {
-                    block.blocked_segments.emplace_back(origin, aim);
-                }
             }
+            const V3 aim = sample_point_in_triangle(*receiving, index + 1000007);
+            index += 1;
+            rays.emplace_back(origin, aim);
         }
-        const double ratio = casts > 0 ? static_cast<double>(hits) / casts : 0.0;
-        Verdict v;
-        if (!(ratio >= threshold)) return v;
-        v.status = true;
-        v.measures.set(Measure::HitRatio, ratio);
-        block.planned = planned;
-        block.cast = casts;
-        block.hit = hits;
-        v.raycast = std::move(block);
-        return v;
     }
+    return rays;
+}
 
-private:
-    // DirectView._faces_toward
-    static std::vector<Triangle3> faces_toward(const ViewMesh& mesh, const V3& other) {
-        std::vector<Triangle3> out;
-        for (const auto& t : mesh.triangles) {
-            const V3 n = np::cross(np::sub(t[1], t[0]), np::sub(t[2], t[0]));
-            const double m = np::row_norm(n);
-            if (!(m > 1e-12)) continue;
-            const V3 u{n[0] / m, n[1] / m, n[2] / m};
-            const V3 center{(t[0][0] + t[1][0] + t[2][0]) / 3.0, (t[0][1] + t[1][1] + t[2][1]) / 3.0,
-                            (t[0][2] + t[1][2] + t[2][2]) / 3.0};
-            if (np::einsum_rowdot(u, np::sub(other, center)) > 0.0) out.push_back(t);
-        }
-        return out;
-    }
 
-    static std::vector<double> areas_of(const std::vector<Triangle3>& faces) {
-        std::vector<double> out;
-        for (const auto& t : faces) out.push_back(0.5 * np::row_norm(np::cross(np::sub(t[1], t[0]), np::sub(t[2], t[0]))));
-        return out;
-    }
+// DirectView._cast_ray
+bool DirectView::cast_ray(const V3& origin, const V3& aim) const {
+    const V3 vec = np::sub(aim, origin);
+    const double length = np::norm(vec);
+    if (length < 1e-9) return true;
+    if (params().max_distance && length > *params().max_distance) return false;
+    const V3 dir{vec[0] / length, vec[1] / length, vec[2] / length};
+    return !blocked(origin, dir, length);
+}
 
-    // DirectView._pair_rays
-    std::vector<std::pair<V3, V3>> pair_rays(const ViewMesh& emitter, const ViewMesh& receiver) const {
-        std::vector<std::pair<V3, V3>> rays;
-        const auto ef = faces_toward(emitter, receiver.centroid);
-        const auto rf = faces_toward(receiver, emitter.centroid);
-        if (ef.empty() || rf.empty()) return rays;
-        const auto counts = plan_ray_counts(areas_of(ef), params().ray_count);
-        const auto ra = areas_of(rf);
-        const double total = pairwise_sum(ra.data(), ra.size());
-        long index = 0;
-        for (size_t f = 0; f < ef.size(); ++f) {
-            for (int c = 0; c < counts[f]; ++c) {
-                const V3 origin = sample_point_in_triangle(ef[f], index);
-                const double u = r2_sequence(index).first * total;
-                double cumulative = 0.0;
-                const Triangle3* receiving = &rf.back();
-                for (size_t k = 0; k < rf.size(); ++k) {
-                    cumulative += ra[k];
-                    if (u <= cumulative) {
-                        receiving = &rf[k];
-                        break;
-                    }
-                }
-                const V3 aim = sample_point_in_triangle(*receiving, index + 1000007);
-                index += 1;
-                rays.emplace_back(origin, aim);
-            }
-        }
-        return rays;
-    }
+bool DirectView::blocked(const V3& origin, const V3& dir, double length) const {
+    return tree_->hits(origin, dir, length) != 0;
+}
 
-    // DirectView._cast_ray
-    bool cast_ray(const V3& origin, const V3& aim) const {
-        const V3 vec = np::sub(aim, origin);
-        const double length = np::norm(vec);
-        if (length < 1e-9) return true;
-        if (params().max_distance && length > *params().max_distance) return false;
-        const V3 dir{vec[0] / length, vec[1] / length, vec[2] / length};
-        return tree_->hits(origin, dir, length) == 0;
-    }
-
-    std::unique_ptr<RayTree> tree_;
-};
+namespace {
 
 // ================================================================ FreeSpace
 

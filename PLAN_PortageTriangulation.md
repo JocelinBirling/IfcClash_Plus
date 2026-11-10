@@ -10,6 +10,17 @@ Ce plan s'appuie sur l'existant :
   `Above_triang`, `OBB_Above_triang` ;
 - les bancs `doc/benchmark_engines.md` et `doc/benchmark_extreme_faces.md`.
 
+## Avancement (2026-11-10)
+
+| Étape | État |
+|---|---|
+| Phase 0, vagues 1 à 4 | faites : 26 règles `_triang` en C++, 0 écart inexpliqué sur Duplex (Mechanical, Plumbing, triangles IFC) et SampleCastle |
+| Vague 4 — ClearanceForDoors | **abandonnée** (décision du 2026-11-10) : la règle d'origine reste |
+| Vague 5 — Intersection2 | **abandonnée** (décision du 2026-11-10) : la règle d'origine reste |
+| Phase finale — rapport | fait : `Rapport_PortageTriangulation.md` |
+| Phase finale — registre Python et interface | reportée à la fin du projet ; en attendant, `IFCCLASH_TRIANG=1` (tests `tests/triang_port/`) |
+| Sémantique d'Above pour une cible qui traverse la source | gardée : signalée par le bord de sa sortie (`SphereA_NotAbove_SlabA`) |
+
 ---
 
 ## 1. Constat de départ

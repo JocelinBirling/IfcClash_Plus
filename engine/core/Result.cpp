@@ -195,6 +195,8 @@ Json to_json(const PhaseStats& stats) {
     return Json{{"rule", stats.rule},
                 {"phases", std::move(phases)},
                 {"total_seconds", stats.total_seconds},
+                {"triangles_from_view", stats.triangles_from_view},
+                {"triangles_from_ifc", stats.triangles_from_ifc},
                 {"summary", stats.summary()}};
 }
 

@@ -12,8 +12,9 @@
 #include "../api/Engine.h"
 #include "../geometry/Faces.h"
 #include "../geometry/MeshMeasures.h"
-#include "../triang/HeightMap.h"
-#include "../triang/TriangleTests.h"
+#include "../triang/surface/Visibility.h"
+#include "../triang/kernels/TriangleTests.h"
+#include "../triang/mesh/TriMesh.h"
 
 #include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
@@ -167,7 +168,7 @@ public:
     PySession(std::vector<std::filesystem::path> paths, const std::string& geometry_cache,
               std::optional<std::filesystem::path> cache_dir, bool write_cache, int iterator_threads,
               std::vector<std::filesystem::path> ifcview_paths, const std::string& ifcview_freshness,
-              double ifcview_linear_deflection, int rule_threads) {
+              double ifcview_linear_deflection, int rule_threads, const std::string& triangle_source) {
         SessionOptions options;
         options.geometry_cache = cache_policy_from_string(geometry_cache);
         options.cache_dir = std::move(cache_dir);
@@ -177,6 +178,7 @@ public:
         options.write_cache = write_cache;
         options.iterator_threads = iterator_threads;
         options.rule_threads = rule_threads;
+        options.triangle_source = triangle_source;
         py::gil_scoped_release release;
         session_ = std::make_unique<Session>(std::move(paths), options);
     }
@@ -262,6 +264,25 @@ void bind_bench(py::module_& m) {
         "triang::visible_triangles_auto (sampled under from_triangles triangles, height map from it): "
         "(triangle indices, seconds per call).");
     b.def(
+        "tri_mesh",
+        [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
+           py::array_t<int, py::array::c_style | py::array::forcecast> f) {
+            const triang::TriMesh m(flat_vertices(v), flat_faces(f));
+            py::array_t<double> verts({py::ssize_t(m.vertex_count()), py::ssize_t(3)});
+            std::copy(m.verts().begin(), m.verts().end(), verts.mutable_data());
+            py::array_t<int32_t> faces({py::ssize_t(m.triangle_count()), py::ssize_t(3)});
+            std::copy(m.faces().begin(), m.faces().end(), faces.mutable_data());
+            py::dict d;
+            d["verts"] = verts;
+            d["faces"] = faces;
+            d["closed"] = m.closed();
+            d["components"] = m.components();
+            d["volume"] = m.volume();
+            d["area"] = m.total_area();
+            return d;
+        },
+        py::arg("vertices"), py::arg("faces"), "triang::TriMesh of a mesh: welded, repaired faces and facts.");
+    b.def(
         "extreme_faces",
         [](py::array_t<double, py::array::c_style | py::array::forcecast> v,
            py::array_t<int, py::array::c_style | py::array::forcecast> f, std::array<double, 3> direction,
@@ -319,17 +340,31 @@ PYBIND11_MODULE(_ifcclash_engine, m) {
 
     py::class_<PySession>(m, "Session")
         .def(py::init<std::vector<std::filesystem::path>, const std::string&, std::optional<std::filesystem::path>,
-                      bool, int, std::vector<std::filesystem::path>, const std::string&, double, int>(),
+                      bool, int, std::vector<std::filesystem::path>, const std::string&, double, int,
+                      const std::string&>(),
              py::kw_only(), py::arg("ifc_paths"), py::arg("geometry_cache") = "auto",
              py::arg("cache_dir") = py::none(), py::arg("write_cache") = false, py::arg("iterator_threads") = 0,
              py::arg("ifcview_paths") = std::vector<std::filesystem::path>{},
              py::arg("ifcview_freshness") = "mtime", py::arg("ifcview_linear_deflection") = 0.01,
-             py::arg("rule_threads") = 0)
+             py::arg("rule_threads") = 0, py::arg("triangle_source") = "auto")
         .def_property_readonly("diagnostics",
                                [](PySession& self) { return to_py(to_json(self.session().diagnostics())); })
         .def("__enter__", [](PySession& self) -> PySession& { return self; }, py::return_value_policy::reference)
         .def("__exit__", [](PySession& self, py::args) { self.close(); })
         .def("close", &PySession::close)
+        .def(
+            "triangles",
+            [](PySession& self, uint32_t file_index, int entity_id) {
+                auto [verts, faces] = self.session().triangles(file_index, entity_id);
+                py::array_t<double> v({py::ssize_t(verts.size() / 3), py::ssize_t(3)});
+                std::copy(verts.begin(), verts.end(), v.mutable_data());
+                py::array_t<int32_t> f({py::ssize_t(faces.size() / 3), py::ssize_t(3)});
+                std::copy(faces.begin(), faces.end(), f.mutable_data());
+                return py::make_tuple(v, f);
+            },
+            py::arg("file_index"), py::arg("entity_id"),
+            "Diagnostics: the world triangles of an element as the _triang rules read them (vertices (n, 3), "
+            "faces (m, 3)).")
         .def_property_readonly("closed", &PySession::closed)
         .def_property_readonly("file_count", [](PySession& self) { return self.session().file_count(); })
         .def(

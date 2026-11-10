@@ -72,10 +72,25 @@ add_library(ifcclash_engine STATIC
   rules/ContextRules.cpp
   rules/Alignement.cpp
   # The _triang rules: the .ifcview triangles only (engine/triang/README.md)
-  triang/ViewTriangles.cpp
-  triang/TriangleTests.cpp
-  triang/HeightMap.cpp
-  triang/TriangRules.cpp
+  triang/mesh/ViewTriangles.cpp
+  triang/mesh/Obb.cpp
+  triang/mesh/TriMesh.cpp
+  triang/derived/ElementData.cpp
+  triang/kernels/TriangleTests.cpp
+  triang/kernels/Distance.cpp
+  triang/kernels/Slices.cpp
+  triang/spatial/Proximity.cpp
+  triang/spatial/BoxTree.cpp
+  triang/surface/HeightMap.cpp
+  triang/surface/Visibility.cpp
+  triang/rules/TriangRules.cpp
+  triang/rules/TreeTriang.cpp
+  triang/rules/DirectionalTriang.cpp
+  triang/rules/ObbTriang.cpp
+  triang/rules/SurfaceTriang.cpp
+  triang/rules/SkinTriang.cpp
+  triang/rules/ContextTriang.cpp
+  triang/rules/FaceTriang.cpp
   geometry/Triangles.cpp
   geometry/Faces.cpp
   geometry/Geos.cpp

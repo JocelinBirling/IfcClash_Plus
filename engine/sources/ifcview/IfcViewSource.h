@@ -15,7 +15,7 @@
 
 #include "../GeometrySource.h"
 #include "../../core/Result.h"
-#include "../../triang/ViewTriangles.h"
+#include "../../triang/mesh/ViewTriangles.h"
 
 #include <filesystem>
 #include <memory>
@@ -66,7 +66,7 @@ public:
     std::optional<ElementBoxes> boxes(const ElementKey& key) override;
     std::shared_ptr<const Mesh> mesh(const ElementKey&) override { return nullptr; }
 
-    // Variant::ViewMesh (engine/triang): the world triangles of the
+    // Variant::Triangles (engine/triang): the world triangles of the
     // .ifcview, decoded on demand.
     bool accepts_file(uint32_t file_index) const override { return files_.count(file_index) != 0; }
     std::vector<std::shared_ptr<const Mesh>> stored_meshes(const std::vector<ElementKey>& keys,

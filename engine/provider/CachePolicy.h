@@ -20,4 +20,20 @@ inline CachePolicy cache_policy_from_string(const std::string& s) {
     throw ConfigError("unknown geometry_cache '" + s + "' (expected off, auto or require)");
 }
 
+// Where the _triang rules (engine/triang) read their triangles
+// (Variant::Triangles).
+enum class TriangleSource {
+    Auto,     // the .ifcview when it holds the element, else the IFC triangulation
+    IfcView,  // the .ifcview only: a file without accepted .ifcview is an error,
+              // an element missing from it is skipped (diagnostic not_in_ifcview)
+    Ifc,      // the IFC triangulation (world coordinates) only
+};
+
+inline TriangleSource triangle_source_from_string(const std::string& s) {
+    if (s == "auto") return TriangleSource::Auto;
+    if (s == "ifcview") return TriangleSource::IfcView;
+    if (s == "ifc") return TriangleSource::Ifc;
+    throw ConfigError("unknown triangle_source '" + s + "' (expected auto, ifcview or ifc)");
+}
+
 }  // namespace ifcclash

@@ -1,7 +1,5 @@
 #include "HeightMap.h"
 
-#include "TriangleTests.h"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -206,12 +204,6 @@ std::vector<int> visible_triangles_raster(const std::vector<double>& verts, cons
         if (seen) out.push_back(t.index);
     }
     return out;
-}
-
-std::vector<int> visible_triangles_auto(const std::vector<double>& verts, const std::vector<int>& faces,
-                                        double side, size_t from_triangles, const HeightMapOptions& options) {
-    if (faces.size() / 3 < from_triangles) return visible_triangles(verts, faces, side);
-    return visible_triangles_raster(verts, faces, side, options);
 }
 
 }  // namespace ifcclash::triang

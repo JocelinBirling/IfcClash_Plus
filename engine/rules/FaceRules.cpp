@@ -2,6 +2,7 @@
 // (distance, intersection, orientation) between selected triangles; one
 // verdict per face pair per failed check.
 #include "AllRules.h"
+#include "FaceRules.h"
 
 #include "../geometry/Triangles.h"
 #include "../sources/IfcQueries.h"
@@ -50,153 +51,123 @@ void validate_checks(const char* rule, bool distance, std::optional<double> min_
 
 // ================================================================ OneObjectFace
 
-struct OneFaceParams {
-    Json face_a_selection = Json::object();
-    Json face_b_selection = Json::object();
-    bool distance = false;
-    std::optional<double> min_distance, max_distance;
-    bool skip_adjacent = true;
-    bool intersection = false;
-    std::optional<double> intersection_tolerance;
-    bool orientation = false;
-    std::optional<double> angle, angle_tolerance;
-};
 
-class OneObjectFace final : public ElementRule<OneFaceParams> {
-public:
-    Level narrow_level() const override { return Level::Mesh; }
-    Variant base_variant() const override { return Variant::MeshWorld; }
-    std::vector<Variant> narrow_variants() const override { return {Variant::MeshWorld}; }
-    bool multi_verdicts() const override { return true; }
+}  // namespace
 
-    void setup() override {
-        const auto& p = params();
-        a_ = FaceSelection::parse(p.face_a_selection);
-        b_ = FaceSelection::parse(p.face_b_selection);
-        validate_checks("OneObjectFace", p.distance, p.min_distance, p.max_distance, p.intersection,
-                        p.intersection_tolerance, p.orientation, p.angle, p.angle_tolerance);
-        checks_.distance = p.distance;
-        checks_.min_distance = p.min_distance;
-        checks_.max_distance = p.max_distance;
-        checks_.skip_adjacent = p.distance ? p.skip_adjacent : true;
-        checks_.intersection = p.intersection;
-        checks_.intersection_tolerance = p.intersection ? p.intersection_tolerance.value_or(0.0) : 0.0;
-        checks_.orientation = p.orientation;
-        checks_.angle = p.angle;
-        checks_.angle_tolerance = p.angle_tolerance.value_or(0.0);
-    }
+void OneObjectFace::setup() {
+    const auto& p = params();
+    a_ = FaceSelection::parse(p.face_a_selection);
+    b_ = FaceSelection::parse(p.face_b_selection);
+    validate_checks("OneObjectFace", p.distance, p.min_distance, p.max_distance, p.intersection,
+                    p.intersection_tolerance, p.orientation, p.angle, p.angle_tolerance);
+    checks_.distance = p.distance;
+    checks_.min_distance = p.min_distance;
+    checks_.max_distance = p.max_distance;
+    checks_.skip_adjacent = p.distance ? p.skip_adjacent : true;
+    checks_.intersection = p.intersection;
+    checks_.intersection_tolerance = p.intersection ? p.intersection_tolerance.value_or(0.0) : 0.0;
+    checks_.orientation = p.orientation;
+    checks_.angle = p.angle;
+    checks_.angle_tolerance = p.angle_tolerance.value_or(0.0);
+}
 
-    Verdict narrow_test(const ElementGeometry& e) const override {
-        auto all = narrow_multi(e);
-        return all.empty() ? Verdict{} : all.front();
-    }
 
-    std::vector<Verdict> narrow_multi(const ElementGeometry& e) const override {
-        std::vector<Verdict> out;
-        const auto mesh = e.mesh(Variant::MeshWorld);
-        if (!mesh || mesh->faces.empty()) return out;
-        const auto materials = materials_of(e);
-        const auto group_a = geometry::select_faces(mesh->local_verts, mesh->faces, a_, materials);
-        const auto group_b = geometry::select_faces(mesh->local_verts, mesh->faces, b_, materials);
-        std::set<std::pair<std::array<geometry::V3, 3>, std::array<geometry::V3, 3>>> seen;
-        for (const auto& ta : group_a) {
-            const auto ka = geometry::triangle_key(ta);
-            for (const auto& tb : group_b) {
-                const auto kb = geometry::triangle_key(tb);
-                if (ka == kb) continue;  // a face paired with itself
-                if (!seen.insert(ka <= kb ? std::make_pair(ka, kb) : std::make_pair(kb, ka)).second) continue;
-                for (const auto& f : geometry::run_face_checks(ta, tb, checks_)) out.push_back(failure_verdict(f, ta, tb));
-            }
+Verdict OneObjectFace::narrow_test(const ElementGeometry& e) const {
+    auto all = narrow_multi(e);
+    return all.empty() ? Verdict{} : all.front();
+}
+
+
+std::vector<Verdict> OneObjectFace::narrow_multi(const ElementGeometry& e) const {
+    std::vector<Verdict> out;
+    const auto mesh = face_mesh(e);
+    if (!mesh || mesh->faces.empty()) return out;
+    const auto materials = materials_of(e);
+    const auto group_a = geometry::select_faces(mesh->local_verts, mesh->faces, a_, materials);
+    const auto group_b = geometry::select_faces(mesh->local_verts, mesh->faces, b_, materials);
+    std::set<std::pair<std::array<geometry::V3, 3>, std::array<geometry::V3, 3>>> seen;
+    for (const auto& ta : group_a) {
+        const auto ka = geometry::triangle_key(ta);
+        for (const auto& tb : group_b) {
+            const auto kb = geometry::triangle_key(tb);
+            if (ka == kb) continue;  // a face paired with itself
+            if (!seen.insert(ka <= kb ? std::make_pair(ka, kb) : std::make_pair(kb, ka)).second) continue;
+            for (const auto& f : geometry::run_face_checks(ta, tb, checks_)) out.push_back(failure_verdict(f, ta, tb));
         }
-        return out;
     }
+    return out;
+}
 
-private:
-    FaceSelection a_, b_;
-    FaceChecks checks_;
-};
+std::shared_ptr<const Mesh> OneObjectFace::face_mesh(const ElementGeometry& e) const {
+    return e.mesh(Variant::MeshWorld);
+}
+
+namespace {
 
 // ================================================================ TwoObjectsFace
 
-struct TwoFaceParams {
-    Json source_face_selection = Json::object();
-    Json target_face_selection = Json::object();
-    bool distance = false;
-    std::optional<double> min_distance, max_distance;
-    bool intersection = false;
-    std::optional<double> intersection_tolerance;
-    bool orientation = false;
-    std::optional<double> angle, angle_tolerance;
-};
 
-struct SelectedFaces {
-    std::vector<Triangle3> triangles;
-    Bnd_Box box;
-};
 
-class TwoObjectsFace final : public PairRule<TwoFaceParams> {
-public:
-    Level narrow_level() const override { return Level::Mesh; }
-    Variant base_variant() const override { return Variant::MeshWorld; }
-    std::vector<Variant> narrow_variants() const override { return {}; }
-    bool needs_element_data() const override { return true; }
-    bool multi_verdicts() const override { return true; }
-    // A failed orientation has no spatial locality: every pair is checked.
-    BroadMode broad_mode() const override { return checks_.orientation ? BroadMode::AllPairs : BroadMode::Spatial; }
+}  // namespace
 
-    void setup() override {
-        const auto& p = params();
-        source_ = FaceSelection::parse(p.source_face_selection);
-        target_ = FaceSelection::parse(p.target_face_selection);
-        validate_checks("TwoObjectsFace", p.distance, p.min_distance, p.max_distance, p.intersection,
-                        p.intersection_tolerance, p.orientation, p.angle, p.angle_tolerance);
-        checks_.two_objects = true;
-        checks_.distance = p.distance;
-        checks_.min_distance = p.min_distance;
-        checks_.max_distance = p.max_distance;
-        checks_.intersection = p.intersection;
-        checks_.intersection_tolerance = p.intersection ? p.intersection_tolerance.value_or(0.0) : 0.0;
-        checks_.orientation = p.orientation;
-        checks_.angle = p.angle;
-        checks_.angle_tolerance = p.angle_tolerance.value_or(0.0);
-    }
+void TwoObjectsFace::setup() {
+    const auto& p = params();
+    source_ = FaceSelection::parse(p.source_face_selection);
+    target_ = FaceSelection::parse(p.target_face_selection);
+    validate_checks("TwoObjectsFace", p.distance, p.min_distance, p.max_distance, p.intersection,
+                    p.intersection_tolerance, p.orientation, p.angle, p.angle_tolerance);
+    checks_.two_objects = true;
+    checks_.distance = p.distance;
+    checks_.min_distance = p.min_distance;
+    checks_.max_distance = p.max_distance;
+    checks_.intersection = p.intersection;
+    checks_.intersection_tolerance = p.intersection ? p.intersection_tolerance.value_or(0.0) : 0.0;
+    checks_.orientation = p.orientation;
+    checks_.angle = p.angle;
+    checks_.angle_tolerance = p.angle_tolerance.value_or(0.0);
+}
 
-    std::shared_ptr<const void> element_data(const ElementGeometry& e, Role role) const override {
-        const auto mesh = e.mesh(Variant::MeshWorld);
-        if (!mesh || mesh->faces.empty()) return nullptr;
-        auto data = std::make_shared<SelectedFaces>();
-        data->triangles =
-            geometry::select_faces(mesh->local_verts, mesh->faces, role == Role::Source ? source_ : target_, materials_of(e));
-        if (data->triangles.empty()) return nullptr;  // Python: elements without selected faces are skipped
-        const auto [lo, hi] = geometry::triangles_bounds(data->triangles);
-        data->box.Update(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
-        return data;
-    }
 
-    // A distance failure needs a bbox distance below min_distance; an
-    // intersection needs crossing triangles.
-    Bnd_Box broad_volume(const ElementGeometry& e, Role role) const override {
-        const double reach = (role == Role::Source && checks_.distance && checks_.min_distance) ? *checks_.min_distance : 0.0;
-        return geometry::inflate(e.as<SelectedFaces>().box, reach + 1e-7);
-    }
+std::shared_ptr<const void> TwoObjectsFace::element_data(const ElementGeometry& e, Role role) const {
+    const auto mesh = face_mesh(e);
+    if (!mesh || mesh->faces.empty()) return nullptr;
+    auto data = std::make_shared<SelectedFaces>();
+    data->triangles =
+        geometry::select_faces(mesh->local_verts, mesh->faces, role == Role::Source ? source_ : target_, materials_of(e));
+    if (data->triangles.empty()) return nullptr;  // Python: elements without selected faces are skipped
+    const auto [lo, hi] = geometry::triangles_bounds(data->triangles);
+    data->box.Update(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+    return data;
+}
 
-    Verdict narrow_test(const ElementGeometry& s, const ElementGeometry& t) const override {
-        auto all = narrow_multi(s, t);
-        return all.empty() ? Verdict{} : all.front();
-    }
 
-    std::vector<Verdict> narrow_multi(const ElementGeometry& s, const ElementGeometry& t) const override {
-        std::vector<Verdict> out;
-        for (const auto& ta : s.as<SelectedFaces>().triangles)
-            for (const auto& tb : t.as<SelectedFaces>().triangles)
-                for (const auto& f : geometry::run_face_checks(ta, tb, checks_)) out.push_back(failure_verdict(f, ta, tb));
-        return out;
-    }
+// A distance failure needs a bbox distance below min_distance; an
+// intersection needs crossing triangles.
+Bnd_Box TwoObjectsFace::broad_volume(const ElementGeometry& e, Role role) const {
+    const double reach = (role == Role::Source && checks_.distance && checks_.min_distance) ? *checks_.min_distance : 0.0;
+    return geometry::inflate(e.as<SelectedFaces>().box, reach + 1e-7);
+}
 
-private:
-    FaceSelection source_, target_;
-    FaceChecks checks_;
-};
+
+Verdict TwoObjectsFace::narrow_test(const ElementGeometry& s, const ElementGeometry& t) const {
+    auto all = narrow_multi(s, t);
+    return all.empty() ? Verdict{} : all.front();
+}
+
+
+std::vector<Verdict> TwoObjectsFace::narrow_multi(const ElementGeometry& s, const ElementGeometry& t) const {
+    std::vector<Verdict> out;
+    for (const auto& ta : s.as<SelectedFaces>().triangles)
+        for (const auto& tb : t.as<SelectedFaces>().triangles)
+            for (const auto& f : geometry::run_face_checks(ta, tb, checks_)) out.push_back(failure_verdict(f, ta, tb));
+    return out;
+}
+
+std::shared_ptr<const Mesh> TwoObjectsFace::face_mesh(const ElementGeometry& e) const {
+    return e.mesh(Variant::MeshWorld);
+}
+
+namespace {
 
 }  // namespace
 

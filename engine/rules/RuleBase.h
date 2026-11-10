@@ -174,6 +174,13 @@ public:
     // depends on the other pairs (ClearanceAxisToAxis: the nearest target
     // of each source, one result per unordered pair).
     virtual bool narrow_whole_run() const { return false; }
+    // true: the candidate pairs are spread over the Session threads, each
+    // pair through narrow_test (or narrow_multi), narrow_batch is not called.
+    // Only for rules whose narrow_test reads nothing but immutable element
+    // data and geometry (no IfcOpenShell tree, no IfcParse query). The
+    // verdicts are emitted in candidate order: the results do not depend on
+    // it. Ignored with narrow_whole_run.
+    virtual bool parallel_narrow() const { return false; }
 
     // Several verdicts for one pair (one per detection zone: OBB_Front_And_Back,
     // OBB_Custom), in their order. Default: narrow_test alone.

@@ -1,7 +1,7 @@
 #include "ViewTriangles.h"
 
-#include "../core/Errors.h"
-#include "../sources/ifcview/third_party/IfcViewReader.h"
+#include "../../core/Errors.h"
+#include "../../sources/ifcview/third_party/IfcViewReader.h"
 
 #include <algorithm>
 #include <atomic>

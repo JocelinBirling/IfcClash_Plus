@@ -1,173 +1,277 @@
-# Règles `_triang` : les triangles du `.ifcview`, rien d'autre
+# Règles `_triang` : les règles du moteur calculées sur des triangles
 
-Trois règles complémentaires, calculées **uniquement** sur les triangles du
-`.ifcview` déjà produit par BonsaiViewer :
+Les règles `_triang` reprennent les règles du registre en ne lisant que des
+**triangles** (`Variant::Triangles`), jamais de B-Rep. Le plan de
+déploiement est dans `PLAN_PortageTriangulation.md` (racine du dépôt).
 
-- `Intersection_triang` ;
-- `Above_triang` ;
-- `OBB_Above_triang`.
+**Source des triangles** (`SessionOptions::triangle_source`, paramètre
+`triangle_source` de `Session` en Python) :
 
-Aucune géométrie IFC n'est convertie. L'IFC n'est ouvert que pour résoudre
-les sélections, et le test C++ vérifie `Session::ifc_conversions() == 0`. Le
-but : être les règles les plus rapides, avec des résultats proches des règles
-d'origine à l'approximation du `.ifcview` près.
+| Valeur | Triangles | Élément absent du `.ifcview` |
+|---|---|---|
+| `auto` (défaut) | ceux du `.ifcview` quand il contient l'élément, sinon la triangulation IFC | triangulation IFC |
+| `ifcview` | ceux du `.ifcview` seulement ; pas de `.ifcview` accepté : `ConfigError` | ignoré, diagnostic `not_in_ifcview` |
+| `ifc` | la triangulation IFC (coordonnées monde) seulement | — |
 
-Moteur C++ seulement (API `Session`, bindings `_ifcclash_engine`). Ces
-règles ne sont pas dans le registre Python ni dans l'interface.
+Avec `ifcview`, aucune géométrie IFC n'est convertie : l'IFC n'est ouvert que
+pour résoudre les sélections, et le test C++ vérifie
+`Session::ifc_conversions() == 0`. Les statistiques de chaque exécution
+comptent les éléments servis par chaque source (`triangles_from_view`,
+`triangles_from_ifc`).
 
-## Fichiers
+Moteur C++ seulement pour l'instant (API `Session`, bindings
+`_ifcclash_engine`). Côté Python, `IFCCLASH_TRIANG=1` fait tourner chaque
+règle sous sa jumelle `_triang` (`cpp_backend.engine_rule_type`), pour les
+tests `tests/triang_port/`.
 
-| Fichier | Rôle |
-|---|---|
-| `ViewTriangles.{h,cpp}` | Décodage des triangles du `.ifcview` : lecture des seuls chunks utiles, en parallèle ; positions déquantifiées ; sommets soudés ; instances placées. Un maillage monde par élément. |
-| `TriangleTests.{h,cpp}` | Tests géométriques : triangle / OBB (axes séparateurs), recouvrement en plan de deux triangles, BVH de boîtes, triangles vus du dessus ou du dessous, OBB optimale de sommets. |
-| `HeightMap.{h,cpp}` | Carte de hauteur rasterisée (z-buffer en plan avec le triangle gagnant de chaque maille) et triangles vus du dessus ou du dessous qu'on en déduit. Pas encore utilisée par les règles : voir « Carte de hauteur » plus bas. |
-| `TriangRules.cpp` | Les trois règles et leurs `RuleSpec`. |
-| `tests/test_triang.cpp` | Tests Catch2 `[triang]`. |
-| `compare_triang.py` | Comparaison avec les règles d'origine, à la marge du `.ifcview` près. |
-| `comparaison_*.md` | Résultats de cette comparaison sur trois maquettes. |
+## Règles disponibles
 
-Accroches dans le moteur existant, réduites au minimum :
+26 des 28 règles du registre ont leur version `_triang` (vagues du plan) ;
+ClearanceForDoors et Intersection2 ne sont pas portées (décision du
+2026-11-10) :
 
-- `Variant::ViewMesh` (`core/Geometry.h`) ;
-- `GeometrySource::stored_meshes` et `triangulation_native` ;
-- dans `GeometryProvider` : cache de session des maillages `.ifcview` et
-  second arbre de clash (`view_clash`) ;
-- `view_inputs` dans les pipelines : un élément absent du `.ifcview` est
-  ignoré avec le diagnostic `not_in_ifcview`. Un `.ifcview` manquant ou
-  rejeté lève `ConfigError` ;
-- `PairRuleBase::narrow_whole_run`, et le compteur
-  `Session::ifc_conversions()`.
+| Vague | Règle `_triang` | Méthode sur triangles |
+|---|---|---|
+| — | Intersection | arbre de clash IfcOpenShell, alimenté par les triangles |
+| 1 | Above, Below | triangles vus de chaque côté, écart vertical exact sur leur recouvrement en plan, point vu des deux côtés |
+| 1 | OBB_Above, OBB_Below, OBB_Front_And_Back, OBB_Custom | zones de l'original sur l'OBB des triangles ; triangle contre zone par axes séparateurs |
+| 1 | ObbHigh, ObbLength, Orientation, AngleBetween | OBB optimale des sommets |
+| 1 | Alignement | regroupement de l'original (`rules/Alignement.h`) sur l'OBB des sommets |
+| 2 | Clearance, Collision | arbre de clash IfcOpenShell, une seule requête par exécution |
+| 2 | Volume, Area | `TriMesh` (enroulement réparé) |
+| 2 | TopOrBottomSurface | faces de l'original (`extreme_faces` : tournées vers le haut / le bas, non couvertes par une face plus haute) sur les normales réparées |
+| 2 | LateralSurface, ProjectedSurface | normales réparées vers l'extérieur ; union des projections de tous les triangles |
+| 3 | ClearanceAxisToAxis, SurfaceRecover | logique de l'original (`rules/AxisRules.h`, `rules/SurfaceRecover.h`), distance peau à peau triangle à triangle par BVH |
+| 3 | Ray_Check, DirectView | rayons contre un BVH de tous les triangles du contexte (`TriangleSoup`) ; DirectView reprend l'original (`rules/ContextRules.h`) |
+| 4 | OneObjectFace, TwoObjectsFace | logique de l'original (`rules/FaceRules.h`) sur les triangles réparés |
+| 4 | FreeSpace | emprises des obstacles : triangles découpés à la bande de hauteur + sections aux limites de la bande |
+
+Mêmes paramètres et mêmes blocs de résultat que la règle d'origine. Les
+règles de contact ajoutent une tolérance (voir plus bas).
+
+## Organisation du code
+
+```
+engine/triang/
+  mesh/      ViewTriangles   décodage des triangles du .ifcview
+             TriMesh         maillage soudé, enroulement réparé (arêtes non
+                             manifold appariées par la topologie source, sinon
+                             par angle avec test de matière), test « fermé »,
+                             volume, données par triangle, BVH à la demande
+             Obb             OBB optimale des sommets
+  kernels/   TriangleTests   triangle / OBB (axes séparateurs), recouvrement en plan
+             Distance        point / triangle, segment / segment, segment /
+                             triangle (Möller-Trumbore avec marge), triangle / triangle
+             Slices          triangle découpé à une bande de hauteur, sections
+  spatial/   BoxTree         BVH de boîtes (OCCT BVH_BoxSet), requêtes boîte et segment
+             Proximity       distance maillage / maillage (branch and bound),
+                             TriangleSoup (BVH d'un contexte, segment bloqué)
+  surface/   Visibility      triangles vus (échantillonnage, auto), point couvert
+             HeightMap       carte de hauteur rasterisée
+  derived/   ElementData     données par élément gardées en session (tri_mesh,
+                             tri_obb, seen_triangles), étiquettes « tri_* »
+  rules/     Common.h        bases TriElementRule / TriPairRule
+             TriangRules     enregistrement de toutes les règles _triang
+             TreeTriang      Intersection, Clearance, Collision
+             DirectionalTriang  Above, Below, OBB_Above, OBB_Below,
+                             OBB_Front_And_Back, OBB_Custom
+             ObbTriang       ObbHigh, ObbLength, Orientation, AngleBetween, Alignement
+             SurfaceTriang   Volume, Area, TopOrBottomSurface, LateralSurface,
+                             ProjectedSurface
+             SkinTriang      ClearanceAxisToAxis, SurfaceRecover
+             ContextTriang   Ray_Check, DirectView, FreeSpace
+             FaceTriang      OneObjectFace, TwoObjectsFace
+  tests/     test_triang.cpp Catch2 [triang]
+  compare_triang.py          comparaison avec les règles d'origine
+```
+
+Accroches dans le moteur, réduites au minimum :
+
+- `Variant::Triangles` (`core/Geometry.h`) et `TriangleSource`
+  (`provider/CachePolicy.h`) ;
+- `GeometryProvider` : triangles par élément selon la source, cache de
+  session, second arbre de clash (`view_clash`) ;
+- `triangle_inputs` dans les pipelines : boîtes du `.ifcview`, ou calculées
+  sur les triangles IFC ;
+- `PairRuleBase::parallel_narrow()` : la phase fine des paires répartie sur
+  les threads de la session, pour les règles qui ne lisent que leurs données
+  (les règles `_triang` de paires). Les résultats ne dépendent pas du nombre
+  de threads (test `[triang]`) ;
+- les classes d'origine déplacées dans un en-tête, la géométrie en méthode
+  virtuelle, pour que la version `_triang` ne change que la géométrie :
+  `rules/Alignement.h` (`element_obb`), `rules/AxisRules.h` et
+  `rules/SurfaceRecover.h` (`skin_distance`), `rules/ContextRules.h`
+  (`DirectView::blocked`), `rules/FaceRules.h` (`face_mesh`).
+
+## Principes
+
+- **Une géométrie par élément et par session.** `tri_mesh`, `tri_obb`,
+  `seen_triangles` sont calculés une fois et partagés par toutes les règles
+  et toutes les exécutions de la session.
+- **Pas de confiance dans l'enroulement.** Beaucoup de maillages IFC sont
+  orientés vers l'intérieur et les normales stockées du `.ifcview` ne sont
+  pas fiables : `TriMesh` soude les sommets, rend l'enroulement cohérent par
+  propagation sur les arêtes, puis l'oriente vers l'extérieur ; les tests de
+  visibilité sont des tests de recouvrement.
+- **BVH partout** où l'on cherche des voisins (triangles d'un élément,
+  triangles vus de la cible).
 
 ## Ce que fait chaque règle
 
-Mêmes paramètres et mêmes blocs de résultat que la règle d'origine. Deux
-tolérances de contact sont ajoutées (voir plus bas).
-
 **Intersection_triang.** C'est l'arbre de clash d'IfcOpenShell, le même
-algorithme qu'Intersection, alimenté par les triangles du `.ifcview` :
-- un élément IfcOpenShell (`triangulation_element`) est construit à partir
-  des triangles du `.ifcview` et du produit IFC ;
-- il est ajouté à un arbre propre, distinct de celui des triangles IFC ;
-- le calcul est le même qu'Intersection : protrusion, sinon perçage, au-delà
-  de `tolerance`.
+algorithme qu'Intersection (protrusion, sinon perçage, au-delà de
+`tolerance`), alimenté par les triangles dans un arbre propre.
 
-**Above_triang.** La cible est au-dessus de la source quand il existe, en
-plan, une zone commune à deux triangles :
+**Above_triang, Below_triang.** La cible est au-dessus (au-dessous) de la
+source quand il existe, en plan, une zone commune à :
 - un triangle de la source vu de son côté (du dessus pour `Max`, du dessous
   pour `Min`) ;
 - un triangle de la cible vu de son côté ;
-- l'écart vertical cible − source sur cette zone atteint `[0, tolerance]`.
+- où l'écart vertical (cible − source pour Above, source − cible pour Below)
+  est dans `[0, tolerance]`.
 
-« Vu » se teste par recouvrement : centre ou point proche d'un coin non
-couvert par un autre triangle de l'objet. L'orientation des triangles n'est
-pas utilisée, car de nombreux maillages IFC (MEP Revit) sont orientés vers
-l'intérieur. Le préfiltre d'Above est repris : la bande extrudée au-dessus de
-l'OBB de la source doit toucher l'OBB de la cible.
+L'écart est linéaire sur le recouvrement de deux triangles : la région où il
+est dans l'intervalle est un polygone convexe, calculé exactement. Un
+triangle peut n'être vu qu'en partie : le point retenu doit être vu des deux
+côtés (`point_covered`), en commençant par le plus petit écart. Les
+triangles vus viennent de `visible_triangles_auto` (échantillonnage sous
+200 triangles, carte de hauteur au-delà). Le préfiltre d'Above est repris :
+la bande extrudée au-dessus (au-dessous) de l'OBB de la source doit toucher
+l'OBB de la cible.
 
-**OBB_Above_triang.** Un triangle de la cible touche la bande extrudée de
-`tolerance` au-dessus de l'OBB de la source. Le test est exact (axes
-séparateurs, 13 axes).
+**OBB_*_triang.** Un triangle de la cible touche une zone de détection de la
+source (axes séparateurs, 13 axes, exact) : un verdict par zone touchée. Les
+zones sont exactement celles des règles d'origine, construites sur l'OBB des
+triangles.
 
-**OBB.** Les OBB sont les boîtes optimales des sommets du `.ifcview`
-(`Bnd_OBB::ReBuild` optimal), comme OBB_Above sur son maillage à 0,01 m.
-Elles sont gardées en session.
+**ObbHigh, ObbLength, Orientation, AngleBetween, Alignement (_triang).** Les
+calculs des règles d'origine, sur l'OBB optimale des sommets
+(`Bnd_OBB::ReBuild` optimal, comme `BRepBndLib::AddOBB` sur le maillage à
+0,01 m de l'original). Le centre est celui de la boîte des triangles.
 
-**Paramètres ajoutés.** La géométrie du `.ifcview` est quantifiée à environ
-0,1 mm. Deux tolérances de contact sont donc exposées :
+**Paramètres ajoutés.** Les triangles sont une tessellation (le `.ifcview`
+est aussi quantifié à environ 0,1 mm) : un contact ne peut pas être un 0
+exact.
 
 | Règle | Paramètre | Défaut | Rôle |
 |---|---|---|---|
-| `Above_triang` | `plan_tolerance` | 1 mm | Deux faces distantes en plan de moins de cette valeur comptent comme superposées. Above aligne lui aussi ses points à 1 mm près. |
-| `OBB_Above_triang` | `contact_tolerance` | 1 mm | Un triangle à moins de cette distance de la bande la touche. |
+| `Above_triang`, `Below_triang` | `plan_tolerance` | 1 mm | Deux faces distantes en plan de moins de cette valeur comptent comme superposées. |
+| `OBB_*_triang` | `contact_tolerance` | 1 mm | Un triangle à moins de cette distance d'une zone la touche. |
 
-Ces tolérances sont aussi appliquées aux préfiltres. Une valeur négative
-impose au contraire une pénétration de cette profondeur : le script de
-comparaison s'en sert pour vérifier la robustesse.
+Ces tolérances s'appliquent aussi aux préfiltres. Une valeur négative impose
+au contraire une pénétration de cette profondeur : le comparateur s'en sert
+pour vérifier la robustesse.
 
 ## Vitesse et validation
 
 `compare_triang.py` compare chaque règle à son origine sur la même
-sélection :
-- **froid** : ouverture de session et première exécution ;
-- **chaud** : la même règle relancée dans la session.
+sélection et range chaque écart dans une **cause mesurée** ; un écart n'est
+« expliqué » que si la cause est vérifiée, sinon le script sort en erreur.
+Les règles sont lancées une par processus (`--rules`), l'une après l'autre ;
+les résultats des règles d'origine, qui ne changent pas, sont gardés sur
+disque (`build/engine/triang_original_cache`, `--no-original-cache` pour les
+relancer).
 
-Chaque écart est rangé dans une cause mesurée. Il n'est « expliqué » que si
-la cause est vérifiée ; sinon il est listé comme inexpliqué.
+**25 règles sur 4 jeux de données, 0 écart inexpliqué** (DirectView à part,
+0 aussi) :
 
-Duplex Architecture × Mechanical, 286 × 524 éléments
-([détail](comparaison_duplex.md)) :
-
-| Règle | Origine | _triang | Communs | Origine froid / chaud | _triang froid / chaud | Gain froid / chaud | Inexpliqués |
-|---|---|---|---|---|---|---|---|
-| Intersection_triang | 802 | 770 | 730 | 1,73 s / 0,35 s | 0,62 s / 0,34 s | ×2,8 / ×1,0 | 0 |
-| Above_triang | 1 359 | 1 420 | 1 296 | 46,4 s / 15,0 s | 0,35 s / 0,12 s | ×133 / ×122 | 0 |
-| OBB_Above_triang | 2 259 | 2 108 | 2 078 | 8,57 s / 3,72 s | 0,33 s / 0,05 s | ×26 / ×72 | 0 |
-
-Duplex Architecture × Plumbing ([détail](comparaison_duplex_plomberie.md)) :
-
-| Règle | Gain froid / chaud | Inexpliqués |
+| Données | Rapport | Gains à froid typiques |
 |---|---|---|
-| Intersection_triang | ×3,3 / ×1,1 | 0 |
-| Above_triang | ×71 / ×286 | 0 |
-| OBB_Above_triang | ×17,5 / ×96 | 0 |
+| Duplex Architecture × Mechanical, `.ifcview` | [comparaison_duplex.md](comparaison_duplex.md) | ×80–×195 (Above, Below, ClearanceAxisToAxis, SurfaceRecover), ×20–×37 (OBB, Alignement, Ray_Check), ×4–×13 (surfaces), ×1 (faces) |
+| Duplex Architecture × Plumbing, `.ifcview` | [comparaison_duplex_plomberie.md](comparaison_duplex_plomberie.md) | ×44–×104 (Above, Below, ClearanceAxisToAxis, SurfaceRecover), ×14–×35 (OBB, Alignement, Ray_Check) |
+| SampleCastle, 300 éléments, `.ifcview` | [comparaison_castle.md](comparaison_castle.md) | 14 règles d'origine échouent (`gp_Dir` de norme nulle, `Bnd_Box` vide) ; les `_triang` aboutissent en moins d'une seconde |
+| Duplex Architecture × Mechanical, triangles IFC | [comparaison_duplex_ifc.md](comparaison_duplex_ifc.md) | résultats quasi identiques à l'origine (ObbHigh 810 / 810, OBB_Custom 3 369 / 3 369) ; à froid la triangulation IFC domine (×0,3–×8 ; ×58 pour ClearanceAxisToAxis) |
+| DirectView, 25 × 25 paires, contexte 120 éléments | [comparaison_directview.md](comparaison_directview.md) | ×1 900 |
 
-SampleCastle, 300 éléments par côté ([détail](comparaison_castle.md)) :
-- **Intersection_triang** : 0 écart inexpliqué.
-- **Above et OBB_Above d'origine** : elles échouent (voir plus bas) ;
-  leurs versions `_triang` donnent 120 et 204 résultats en moins de 0,1 s.
+Les gains de TopOrBottomSurface (×1,3–×2,3) et des règles de faces (×1)
+sont faibles : ces versions reprennent la logique de l'original (sélection
+de faces en O(n²)) sur les triangles réparés ; seule la conversion IFC est
+économisée.
 
-**Pourquoi Intersection_triang gagne peu.** Les autres règles convertissent
-l'IFC en B-Rep, le maillent à 0,01 m et lancent 2 500 rayons par élément. Pour
-Intersection, l'essentiel du temps est le test de pénétration de l'arbre
-IfcOpenShell lui-même, identique des deux côtés. `_triang` n'économise que la
-triangulation IFC.
+**Causes des écarts vérifiées.**
 
-**Causes des écarts constatées.** Toutes ont été vérifiées sur les trois
-maquettes.
+- **Élément absent du `.ifcview`** (surtout des `IfcOpeningElement`) : ignoré,
+  avec un diagnostic.
+- **Au bord du seuil** : le verdict change quand le seuil bouge de la marge
+  (11 mm = flèche du `.ifcview` + flèche IFC ; un rayon pour DirectView).
+- **Maillage IFC ouvert, enroulé vers l'intérieur ou incohérent** : les
+  originaux lisent la parité ou les normales de la triangulation brute
+  (Intersection, surfaces, faces, DirectView).
+- **Géométries IFC au contact** (Intersection, Collision) : test de
+  pénétration instable sur faces confondues.
+- **OBB optimale non unique** (mêmes dimensions, axes tournés), **axe
+  principal ambigu** (deux dimensions égales à la marge près), **même axe,
+  sens opposé** : règles OBB, AngleBetween, Orientation, Alignement et
+  ClearanceAxisToAxis (une évacuation de toiture compacte : l'axe suit un
+  autre côté de la boîte, distance 0,149 contre 0,238 m).
+- **Propre au maillage `.ifcview`** : la même règle `_triang` sur les
+  triangles IFC de l'élément ou de la paire redonne la valeur ou le verdict
+  de l'original.
+- **Ensemble d'entrée différent, groupe recomposé** : l'original relancé sans
+  les éléments absents du `.ifcview` (ou sans ceux à l'axe ambigu) donne le
+  même verdict.
+- **Échantillonnage** (DirectView) : visibilité mesurée sur 200 rayons par
+  l'original et par `_triang`, d'accord à 10 points près ; seuls les 10
+  rayons tirés diffèrent.
+- **Géométrie sans épaisseur** (Volume) : les triangles IFC vont par paires
+  confondues (coudes, raccords) ; le maillage réparé n'enclôt rien, l'original
+  garde le volume signé de la surface doublée, qui dépend de l'origine.
+- **Contact marginal** (SurfaceRecover) : bande de contact de largeur
+  équivalente sous la marge.
+- **Défauts de l'original vérifiés indépendamment** (liste ci-dessous) :
+  verticale à travers les B-Rep IFC (Above, Below).
 
-- **Élément absent du `.ifcview`** (surtout des `IfcOpeningElement`) : il
-  est ignoré, avec un diagnostic.
-- **Au bord du seuil** : pénétration, écart vertical ou contact à moins de la
-  marge du seuil, soit 11 mm (flèche du `.ifcview` + flèche IFC). La paire
-  revient, ou disparaît, quand le seuil bouge de la marge.
-- **Maillage IFC ouvert** (Intersection). La triangulation IFC est souvent
-  non fermée : 32 éléments Mechanical sur 524 seulement sont fermés, contre
-  256 maillages `.ifcview` sur 286. Or l'arbre IfcOpenShell n'applique son
-  test de pénétration qu'aux maillages fermés ; sinon, il fait un test de
-  contact qui ignore les faces coplanaires. Exemple : deux copies d'un même
-  local dans deux maquettes. Intersection ne les voit pas (angle mort
-  « solides coïncidents ») ; Intersection_triang les voit.
-- **Faces coïncidentes** (Intersection). Le test de pénétration d'IfcOpenShell
-  est instable quand les deux objets ont des faces confondues : un sommet sur
-  une face est « dehors », un sommet 0,05 mm à l'intérieur donne toute la
-  profondeur. L'écart n'est expliqué que si les deux géométries IFC sont au
-  contact, ce qui est vérifié par une Clearance à la marge.
-- **OBB optimale non unique** (OBB_Above). Pour une section carrée ou ronde
-  (une main courante), l'OBB a les mêmes dimensions mais des axes tournés.
-  La bande « au-dessus » suit alors un autre axe.
+**Défauts des règles d'origine révélés par la comparaison** (reproduits par
+le portage C++, parité oblige, corrigés dans les versions `_triang`) :
 
-**Défauts des règles d'origine révélés par la comparaison.** Ils sont
-reproduits à l'identique par le portage C++, comme la parité l'exige.
+1. **Above ne voit pas les objets fins** : sa grille de 50 × 50 rayons
+   couvre la plus grande dimension de l'objet ; une section de 3 cm passe
+   entre deux rayons.
+2. **Above ne teste que les points les plus proches** des deux faces, puis
+   un rayon depuis ce point.
+3. **Le test « ray » d'Above coupe une droite infinie** (pas de `W ≥ 0`) :
+   il garde une cible située sous la source.
+4. **Le test « ray » garde la distance des points les plus proches** (Above,
+   Below), pas l'écart vertical au point du rayon. Exemples : une cloison et
+   un tuyau, 0,90 m rapporté pour 2,46 m réels ; Suzanne au-dessus de
+   Suzanne (modèle de test), 0,2125 m rapporté pour 0,3255 m au point du
+   rayon.
+5. **Règles OBB d'origine en échec sur un élément dégénéré** (SampleCastle :
+   `gp_Dir() - input vector has zero norm`, `Bnd_Box is void`).
+6. **Fausse alerte latente des règles d'arbre** (Intersection, Clearance,
+   Collision) : le narrow par lots de 4 096 paires lève un
+   `prefilter_lost_clash` pour une paire d'un autre lot (`narrow_whole_run`
+   dans les versions `_triang`).
+7. **Les surfaces et les faces lisent les normales de la triangulation
+   brute** : beaucoup de maillages IFC sont enroulés vers l'intérieur ou de
+   façon incohérente (première cause d'écart des vagues 2 à 4).
+8. **Volume signé sur maillage ouvert ou sans épaisseur** : la valeur dépend
+   de l'origine du repère.
 
-1. **Above ne voit pas les objets fins.** Sa grille de 50 × 50 rayons couvre
-   la plus grande dimension de l'objet, hauteur comprise. Pour une colonne
-   montante de 2,4 m, les rayons sont espacés de 4,9 cm ; une section de
-   3 cm passe entre eux. Le code le signale d'ailleurs lui-même (`@todo`).
-2. **Above ne teste que les points les plus proches.** Il ne regarde que la
-   paire de points la plus proche des deux faces, puis un rayon depuis ce
-   point. Si ce point tombe juste hors de la face source, Above conclut
-   « non », même si la cible surplombe la source ailleurs. Exemple : un tuyau
-   d'eaux usées en pente au-dessus d'une semelle. Ces paires sont confirmées
-   sur l'IFC par une verticale à travers les B-Rep source et cible.
-3. **Le test « ray » d'Above utilise une droite infinie.**
-   `BRepIntCurveSurface_Inter` est appelé sur une `gp_Lin` sans test de
-   `W ≥ 0` : il garde une cible située sous la source.
-4. **Above et OBB_Above plantent sur un élément dégénéré.** Sur
-   SampleCastle, un axe d'OBB de longueur nulle donne
-   `gp_Dir() - input vector has zero norm`.
+**Défaut du portage C++ trouvé** : `IfcSource::material_names` levait une
+exception sur une `IfcMaterialList` (pas d'attribut `Name`) là où Python
+(`getattr(material, "Name", None)`) rend une liste vide ; OneObjectFace et
+TwoObjectsFace échouaient sur la plomberie et SampleCastle. Corrigé, parité
+revérifiée.
 
-## Carte de hauteur (essai, non branchée sur les règles)
+**Tests de non-régression sur les modèles de test** (`IFC_Test_Model/`) :
+les quatre suites `tests/test_Rule_IFC_Test_Model*.py` sont copiées dans
+`tests/triang_port/`, chaque règle remplacée par sa jumelle `_triang`
+(`IFCCLASH_TRIANG=1`, triangles IFC). Les écarts avec les valeurs calibrées
+sont documentés dans les copies : défaut 4 de l'original (Suzanne), axe
+ambigu (cube), sens d'axe (0° / 180°), poutre au-dessus du cube trouvée,
+45Cuboid à exactement 45° (Alignement, échec attendu), sphère qui traverse
+une dalle (voir ci-dessous). Les 4 échecs `test_suzanne` de `_OneObject` sont
+ceux du moteur Python et du moteur C++ dans cet environnement
+(`Rapport_PortageCPP.md` §8.1).
+
+**Sémantique d'Above_triang et Below_triang** (décision du 2026-11-10) : une
+paire est signalée dès qu'il existe un point où la cible est au-dessus
+(au-dessous) de la source, dans la tolérance. Une cible qui traverse la source
+peut donc être signalée par le bord de sa sortie (`SphereA_NotAbove_SlabA` :
+0,5 mm au-dessus de la dalle là où la sphère en ressort).
+
+## Carte de hauteur
 
 `HeightMap.{h,cpp}` détermine les triangles vus du dessus (ou du dessous)
 avec un z-buffer en plan :
@@ -226,24 +330,31 @@ au-delà. Mesures du second passage (même banc) :
 - qualité : 0,013 % de surface manquée et 0,025 % en trop, entre les deux
   méthodes.
 
-L'atout propre de la carte reste à exploiter : elle donne directement la
+`Above_triang` et `Below_triang` utilisent la méthode hybride pour leurs
+triangles vus. L'atout propre de la carte reste à exploiter : elle donne directement la
 surface haute (ou basse) d'un objet, ce qui permettrait de comparer deux
 objets maille à maille pour Above sans chercher de faces.
 
 ## Lancer
 
 ```bash
-cmake --build build/engine
+cmake --build build/engine -j6
 ./build/engine/engine_tests "[triang]"
 PYTHONNOUSERSITE=1 python scripts/benchmark_extreme_faces.py --side top
-PYTHONNOUSERSITE=1 python engine/triang/compare_triang.py --output engine/triang/comparaison_duplex.md
+# une règle par processus, l'une après l'autre (mémoire : plafond conseillé de 4 Go)
+PYTHONNOUSERSITE=1 python engine/triang/compare_triang.py --threads 4 --rules Above_triang --output above.md
+PYTHONNOUSERSITE=1 python engine/triang/compare_triang.py --threads 4 --triangles ifc --rules Volume_triang \
+    --output volume_ifc.md
+# les modèles de test, un fichier à la fois
+PYTHONNOUSERSITE=1 python -m pytest tests/triang_port/test_triang_Rule_IFC_Test_Model.py
 ```
 
 Depuis Python :
 
 ```python
 from engine import _ifcclash_engine as native
-s = native.Session(ifc_paths=[ifc], geometry_cache="require", ifcview_paths=[ifcview])
+s = native.Session(ifc_paths=[ifc], geometry_cache="require", ifcview_paths=[ifcview],
+                   triangle_source="auto")  # "ifcview", "ifc"
 s.run(rule_type="Above_triang", params={"above_type": "Above_MaxToMin", "tolerance": 1.0}, selections=...)
 ```
 
@@ -253,5 +364,15 @@ s.run(rule_type="Above_triang", params={"above_type": "Above_MaxToMin", "toleran
   manifeste, il n'est accepté que s'il est plus récent que l'IFC.
 - **Précision.** Elle est celle du maillage de BonsaiViewer, sans contrôle
   de la flèche utilisée.
-- **Éléments non couverts.** Les éléments absents du `.ifcview` (ouvertures,
-  et certains espaces selon l'export) ne sont pas testés.
+- **Éléments non couverts.** Avec `triangle_source="ifcview"`, les éléments
+  absents du `.ifcview` (ouvertures, et certains espaces selon l'export) ne
+  sont pas testés ; `auto` les complète par la triangulation IFC.
+- **Mémoire.** OneObjectFace et TwoObjectsFace (origine et `_triang`, même
+  logique de faces) dépassent 4 Go sur toute la maquette de plomberie : la
+  comparaison y est faite sur 100 éléments par côté.
+- **Coût des règles reprises telles quelles.** TopOrBottomSurface (sélection
+  de faces de l'original) et les règles de faces gardent le coût de leur
+  logique d'origine.
+- **DirectView** garde l'échantillonnage de l'original (10 rayons) : une
+  paire proche du seuil reste instable, d'un côté comme de l'autre.
+- **Non portées** : ClearanceForDoors et Intersection2.

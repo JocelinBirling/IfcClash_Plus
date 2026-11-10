@@ -59,35 +59,45 @@ std::shared_ptr<const void> GeometryProvider::derived(const ElementKey& key, con
     return derived_[tag].emplace(key, std::move(value)).first->second;
 }
 
-// ---------------------------------------------------------------- Variant::ViewMesh
+// ---------------------------------------------------------------- Variant::Triangles
 
 void GeometryProvider::prepare_meshes(const std::vector<ElementKey>& keys, Variant variant) {
-    if (variant != Variant::ViewMesh) {
+    if (variant != Variant::Triangles) {
         primary_->prepare(keys, variant);
         return;
     }
-    if (!cache_) return;
-    std::vector<ElementKey> missing;
+    std::vector<ElementKey> from_view, from_ifc;
     {
         std::lock_guard<std::mutex> lock(view_mutex_);
         for (const auto& key : keys) {
-            if (!view_meshes_.count(key) && cache_->covers(key)) missing.push_back(key);
+            if (view_meshes_.count(key)) continue;
+            if (triangles_from_view(key)) from_view.push_back(key);
+            else if (triangle_source_ != TriangleSource::IfcView) from_ifc.push_back(key);
         }
     }
-    if (missing.empty()) return;
-    auto meshes = cache_->stored_meshes(missing, threads_);
+    std::vector<std::shared_ptr<const Mesh>> view;
+    if (!from_view.empty()) view = cache_->stored_meshes(from_view, threads_);
+    std::vector<std::shared_ptr<const Mesh>> ifc;
+    if (!from_ifc.empty()) {
+        primary_->prepare(from_ifc, Variant::MeshWorld);  // one conversion batch
+        for (const auto& key : from_ifc) {
+            auto m = primary_->mesh(key, Variant::MeshWorld);
+            ifc.push_back(m && !m->faces.empty() ? std::move(m) : nullptr);
+        }
+    }
     std::lock_guard<std::mutex> lock(view_mutex_);
-    for (size_t i = 0; i < missing.size(); ++i) view_meshes_.emplace(missing[i], std::move(meshes[i]));
+    for (size_t i = 0; i < from_view.size(); ++i) view_meshes_.emplace(from_view[i], std::move(view[i]));
+    for (size_t i = 0; i < from_ifc.size(); ++i) view_meshes_.emplace(from_ifc[i], std::move(ifc[i]));
 }
 
 std::shared_ptr<const Mesh> GeometryProvider::mesh(const ElementKey& key, Variant variant) {
-    if (variant != Variant::ViewMesh) return primary_->mesh(key, variant);
+    if (variant != Variant::Triangles) return primary_->mesh(key, variant);
     {
         std::lock_guard<std::mutex> lock(view_mutex_);
         auto it = view_meshes_.find(key);
         if (it != view_meshes_.end()) return it->second;
     }
-    prepare_meshes({key}, Variant::ViewMesh);  // not prepared in batch: alone
+    prepare_meshes({key}, Variant::Triangles);  // not prepared in batch: alone
     std::lock_guard<std::mutex> lock(view_mutex_);
     auto it = view_meshes_.find(key);
     return it != view_meshes_.end() ? it->second : nullptr;
@@ -106,7 +116,7 @@ std::shared_ptr<const Mesh> GeometryProvider::view_clash_mesh(const ElementKey& 
         if (it != view_clash_meshes_.end()) return it->second;
     }
     std::shared_ptr<Mesh> out;
-    if (auto world = mesh(key, Variant::ViewMesh)) {
+    if (auto world = mesh(key, Variant::Triangles)) {
         if (auto native = primary_->triangulation_native(key, *world)) {
             out = std::make_shared<Mesh>();
             out->native = std::move(native);

@@ -17,8 +17,8 @@
 // on top of the tessellation deflection of the producer.
 #pragma once
 
-#include "../core/Geometry.h"
-#include "../sources/ifcview/third_party/IfcViewFormat.h"
+#include "../../core/Geometry.h"
+#include "../../sources/ifcview/third_party/IfcViewFormat.h"
 
 #include <array>
 #include <cstddef>

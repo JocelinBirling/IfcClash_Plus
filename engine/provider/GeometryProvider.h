@@ -8,6 +8,7 @@
 
 #include "../core/Result.h"
 #include "../sources/GeometrySource.h"
+#include "CachePolicy.h"
 
 #include <functional>
 #include <map>
@@ -35,8 +36,9 @@ public:
     void prepare(const std::vector<ElementKey>& keys);
     // Before the narrow phase: the meshes / B-Reps of the elements that
     // survived the prefilters, converted in one batch.
-    // Variant::ViewMesh: the .ifcview triangles (engine/triang), from the
-    // cache source only.
+    // Variant::Triangles (engine/triang): the .ifcview triangles of the
+    // elements it holds, the IFC triangulation (MeshWorld) of the others,
+    // per triangle_source().
     void prepare_meshes(const std::vector<ElementKey>& keys, Variant variant = Variant::MeshLocal);
 
     bool has_cache() const { return cache_ != nullptr; }
@@ -61,16 +63,25 @@ public:
                                         const std::function<std::shared_ptr<const void>()>& compute);
     IfcQueries* ifc_queries() { return primary_->ifc_queries(); }
 
-    // ---- Variant::ViewMesh (engine/triang, the _triang rules)
+    // ---- Variant::Triangles (engine/triang, the _triang rules)
     // Whether the cache source accepted the .ifcview of a file / holds an
     // element.
     bool cache_accepts_file(uint32_t file_index) const { return cache_ && cache_->accepts_file(file_index); }
     bool cache_covers(const ElementKey& key) const { return cache_ && cache_->covers(key); }
-    // The IfcOpenShell clash tree of the .ifcview triangles (a second tree,
-    // apart from the one of the IFC triangles), created on first use, and
-    // the mesh to hand it for an element: it carries only the IfcOpenShell
-    // element built from the .ifcview triangles. nullptr when no .ifcview
-    // triangle exists for the key.
+    // Where the triangles come from (SessionOptions::triangle_source).
+    void set_triangle_source(TriangleSource source) { triangle_source_ = source; }
+    TriangleSource triangle_source() const { return triangle_source_; }
+    // Whether the triangles of an element are those of the .ifcview (else
+    // the IFC triangulation). Under TriangleSource::IfcView an element the
+    // .ifcview does not hold has no triangles.
+    bool triangles_from_view(const ElementKey& key) const {
+        return triangle_source_ != TriangleSource::Ifc && cache_accepts_file(key.file_index) && cache_covers(key);
+    }
+    // The IfcOpenShell clash tree of the _triang triangles (a second tree,
+    // apart from the one of the IFC triangles of Intersection), created on
+    // first use, and the mesh to hand it for an element: it carries only the
+    // IfcOpenShell element built from the triangles. nullptr when the
+    // element has no triangle.
     TriangleClashService* view_clash();
     TriangleClashService* view_clash_if_any() { return view_clash_.get(); }
     std::shared_ptr<const Mesh> view_clash_mesh(const ElementKey& key);
@@ -84,6 +95,7 @@ private:
     size_t cache_hits_ = 0;
     size_t box_requests_ = 0;
     unsigned threads_ = 1;
+    TriangleSource triangle_source_ = TriangleSource::Auto;
     std::mutex view_mutex_;
     std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> view_meshes_;
     std::unordered_map<ElementKey, std::shared_ptr<const Mesh>, ElementKeyHash> view_clash_meshes_;

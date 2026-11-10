@@ -52,7 +52,7 @@ public:
     // provides them.
     virtual TriangleClashService* triangle_clash() { return nullptr; }
 
-    // ---- Variant::ViewMesh (engine/triang): a source that stores its own
+    // ---- Variant::Triangles (engine/triang): a source that stores its own
     // tessellation (the .ifcview) gives the world triangles of the elements
     // it covers, decoded on `threads` threads; one mesh per key (nullptr:
     // not covered or no triangle).

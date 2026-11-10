@@ -81,6 +81,7 @@ Session::Session(std::vector<std::filesystem::path> ifc_paths, SessionOptions op
     ifc_ = source.get();
     provider_ = std::make_unique<GeometryProvider>(std::move(source), std::move(cache));
     provider_->set_threads(rule_threads(options_));
+    provider_->set_triangle_source(triangle_source_from_string(options_.triangle_source));
 }
 
 Session::Session(std::unique_ptr<GeometrySource> source, SessionOptions options) : options_(std::move(options)) {
@@ -88,6 +89,7 @@ Session::Session(std::unique_ptr<GeometrySource> source, SessionOptions options)
     ifc_ = dynamic_cast<IfcSource*>(source.get());
     provider_ = std::make_unique<GeometryProvider>(std::move(source));
     provider_->set_threads(rule_threads(options_));
+    provider_->set_triangle_source(triangle_source_from_string(options_.triangle_source));
 }
 
 Session::~Session() = default;
@@ -95,6 +97,19 @@ Session::~Session() = default;
 size_t Session::file_count() const { return ifc_ ? ifc_->file_count() : 0; }
 
 size_t Session::ifc_conversions() const { return ifc_ ? ifc_->converted_elements() : 0; }
+
+std::pair<std::vector<double>, std::vector<int>> Session::triangles(uint32_t file_index, int entity_id) {
+    Diagnostics ignored;
+    ElementKey partial;
+    partial.file_index = file_index;
+    partial.entity_id = entity_id;
+    const auto key = resolve_key(partial, ignored);
+    if (!key) return {};
+    provider_->prepare_meshes({*key}, Variant::Triangles);
+    const auto mesh = provider_->mesh(*key, Variant::Triangles);
+    if (!mesh) return {};
+    return {mesh->world_verts, mesh->faces};
+}
 
 std::vector<ElementKey> Session::resolve(const std::vector<FileSelection>& selection, Diagnostics& diagnostics) {
     if (!ifc_) throw ConfigError("selection resolution needs an IFC source");

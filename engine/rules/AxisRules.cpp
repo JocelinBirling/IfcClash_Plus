@@ -1,5 +1,6 @@
 // AngleBetween, ClearanceAxisToAxis and Intersection2 of Rules.py.
 #include "AllRules.h"
+#include "AxisRules.h"
 
 #include "../geometry/Faces.h"
 #include "../geometry/Numpy.h"
@@ -95,28 +96,8 @@ public:
 
 // ================================================================ ClearanceAxisToAxis
 
-struct AxisToAxisParams {
-    std::string mode = "Perpendicular";
-    std::optional<double> min_distance;
-    std::optional<double> max_distance;
-    double tolerance = 0.0;
-    double linearity_ratio = 10.0;
-    std::string on_non_linear = "Skip";
-    double parallel_tolerance = 1.0;
-    std::optional<double> search_radius;  // m; beyond it a pair is not a neighbour
-};
-
-struct LongAxis {
-    TopoDS_Shape shape;
-    Bnd_Box box;
-    V3 center;
-    V3 direction;
-    double half_length = 0.0;
-    double linearity = 0.0;
-};
-
 // clash_utils.obb_long_axis
-void long_axis(const Bnd_OBB& obb, LongAxis& out) {
+void long_axis_impl(const Bnd_OBB& obb, LongAxis& out) {
     const gp_XYZ c = obb.Center();
     out.center = {c.X(), c.Y(), c.Z()};
     struct Cand {
@@ -205,157 +186,149 @@ ifcclash::AxisData support_axis(const LongAxis& a, const char* label) {
     return {start, a.direction, 2.0 * a.half_length, std::string(label)};
 }
 
-struct AxisMeasure {
-    double distance = 0.0;
-    double angle = 0.0;
-    std::optional<V3> source_point, target_point;
-    std::string mode;
-    bool degraded = false;
-};
+}  // namespace
 
-class ClearanceAxisToAxis final : public PairRule<AxisToAxisParams> {
-public:
-    Variant base_variant() const override { return Variant::BrepWorld; }
-    std::vector<Variant> narrow_variants() const override { return {}; }
-    // A distance OUTSIDE the interval is flagged: a far pair can be a
-    // result (max_distance), so no spatial prefilter.
-    BroadMode broad_mode() const override { return BroadMode::AllPairs; }
-    bool needs_element_data() const override { return true; }
-    bool parallel_safe() const override { return true; }  // element_data: B-Rep geometry only
-    // The nearest target of each source and the unordered pairs: a verdict
-    // depends on the other pairs of the run.
-    bool narrow_whole_run() const override { return true; }
+void long_axis(const Bnd_OBB& obb, LongAxis& out) { long_axis_impl(obb, out); }
 
-    void setup() override {
-        const auto& p = params();
-        if (p.min_distance && *p.min_distance < 0) throw ConfigError("min_distance must be None or a positive number (m)");
-        if (p.max_distance && *p.max_distance < 0) throw ConfigError("max_distance must be None or a positive number (m)");
-        if (!p.min_distance && !p.max_distance) throw ConfigError("at least one of min_distance or max_distance must be set");
-        if (p.min_distance && p.max_distance && *p.min_distance > *p.max_distance)
-            throw ConfigError("min_distance must not exceed max_distance");
-        if (p.tolerance < 0) throw ConfigError("tolerance must be a positive number (m)");
-        if (p.linearity_ratio < 1.0) throw ConfigError("linearity_ratio must be a number >= 1");
-        if (!(p.parallel_tolerance > 0.0 && p.parallel_tolerance <= 90.0))
-            throw ConfigError("parallel_tolerance must be in (0, 90] degrees");
-        if (p.search_radius && *p.search_radius < 0)
-            throw ConfigError("search_radius must be None or a positive number (m)");
+void ClearanceAxisToAxis::setup() {
+    const auto& p = params();
+    if (p.min_distance && *p.min_distance < 0) throw ConfigError("min_distance must be None or a positive number (m)");
+    if (p.max_distance && *p.max_distance < 0) throw ConfigError("max_distance must be None or a positive number (m)");
+    if (!p.min_distance && !p.max_distance) throw ConfigError("at least one of min_distance or max_distance must be set");
+    if (p.min_distance && p.max_distance && *p.min_distance > *p.max_distance)
+        throw ConfigError("min_distance must not exceed max_distance");
+    if (p.tolerance < 0) throw ConfigError("tolerance must be a positive number (m)");
+    if (p.linearity_ratio < 1.0) throw ConfigError("linearity_ratio must be a number >= 1");
+    if (!(p.parallel_tolerance > 0.0 && p.parallel_tolerance <= 90.0))
+        throw ConfigError("parallel_tolerance must be in (0, 90] degrees");
+    if (p.search_radius && *p.search_radius < 0)
+        throw ConfigError("search_radius must be None or a positive number (m)");
+}
+
+
+std::shared_ptr<const void> ClearanceAxisToAxis::element_data(const ElementGeometry& e, Role) const {
+    const auto brep = e.meshed_brep();
+    if (!brep) return nullptr;
+    auto data = std::make_shared<LongAxis>();
+    data->shape = brep->shape;
+    long_axis(brep->obb, *data);
+    BRepBndLib::Add(data->shape, data->box);  // bounds the skin (Fallback radius test)
+    return data;
+}
+
+
+Verdict ClearanceAxisToAxis::narrow_test(const ElementGeometry& source, const ElementGeometry& target) const {
+    const auto m = measure(source.as<LongAxis>(), target.as<LongAxis>());
+    if (!m) return {};
+    return verdict(*m, source.as<LongAxis>(), target.as<LongAxis>(), true);
+}
+
+
+// Rules.ClearanceAxisToAxis.compute: 1. the measure of every concerned
+// pair; 2. the nearest target of each source (ties within 1e-9 m: the
+// first in candidate order); 3. "too close" on every pair, "too far" on
+// the nearest one, each unordered pair once (its first orientation).
+std::vector<Verdict> ClearanceAxisToAxis::narrow_batch(const std::vector<GeometryPair>& pairs) const {
+    std::vector<std::optional<AxisMeasure>> measures(pairs.size());
+    for (size_t i = 0; i < pairs.size(); ++i) {
+        measures[i] = measure(pairs[i].first->as<LongAxis>(), pairs[i].second->as<LongAxis>());
     }
-
-    std::shared_ptr<const void> element_data(const ElementGeometry& e, Role) const override {
-        const auto brep = e.meshed_brep();
-        if (!brep) return nullptr;
-        auto data = std::make_shared<LongAxis>();
-        data->shape = brep->shape;
-        long_axis(brep->obb, *data);
-        BRepBndLib::Add(data->shape, data->box);  // bounds the skin (Fallback radius test)
-        return data;
+    std::unordered_map<ElementKey, double, ElementKeyHash> best;
+    for (size_t i = 0; i < pairs.size(); ++i) {
+        if (!measures[i]) continue;
+        auto [it, fresh] = best.emplace(pairs[i].first->key, measures[i]->distance);
+        if (!fresh) it->second = std::min(it->second, measures[i]->distance);
     }
-
-    // One pair alone (exceptions): it is its source's only, so nearest, pair.
-    Verdict narrow_test(const ElementGeometry& source, const ElementGeometry& target) const override {
-        const auto m = measure(source.as<LongAxis>(), target.as<LongAxis>());
-        if (!m) return {};
-        return verdict(*m, source.as<LongAxis>(), target.as<LongAxis>(), true);
+    std::unordered_map<ElementKey, size_t, ElementKeyHash> nearest;
+    for (size_t i = 0; i < pairs.size(); ++i) {
+        if (!measures[i]) continue;
+        const ElementKey& s = pairs[i].first->key;
+        if (!nearest.count(s) && measures[i]->distance <= best.at(s) + 1e-9) nearest.emplace(s, i);
     }
-
-    // Rules.ClearanceAxisToAxis.compute: 1. the measure of every concerned
-    // pair; 2. the nearest target of each source (ties within 1e-9 m: the
-    // first in candidate order); 3. "too close" on every pair, "too far" on
-    // the nearest one, each unordered pair once (its first orientation).
-    std::vector<Verdict> narrow_batch(const std::vector<GeometryPair>& pairs) const override {
-        std::vector<std::optional<AxisMeasure>> measures(pairs.size());
-        for (size_t i = 0; i < pairs.size(); ++i) {
-            measures[i] = measure(pairs[i].first->as<LongAxis>(), pairs[i].second->as<LongAxis>());
-        }
-        std::unordered_map<ElementKey, double, ElementKeyHash> best;
-        for (size_t i = 0; i < pairs.size(); ++i) {
-            if (!measures[i]) continue;
-            auto [it, fresh] = best.emplace(pairs[i].first->key, measures[i]->distance);
-            if (!fresh) it->second = std::min(it->second, measures[i]->distance);
-        }
-        std::unordered_map<ElementKey, size_t, ElementKeyHash> nearest;
-        for (size_t i = 0; i < pairs.size(); ++i) {
-            if (!measures[i]) continue;
-            const ElementKey& s = pairs[i].first->key;
-            if (!nearest.count(s) && measures[i]->distance <= best.at(s) + 1e-9) nearest.emplace(s, i);
-        }
-        std::vector<Verdict> out(pairs.size());
-        std::set<std::pair<ElementKey, ElementKey>> reported;
-        for (size_t i = 0; i < pairs.size(); ++i) {
-            if (!measures[i]) continue;
-            const ElementKey& s = pairs[i].first->key;
-            const ElementKey& t = pairs[i].second->key;
-            Verdict v = verdict(*measures[i], pairs[i].first->as<LongAxis>(), pairs[i].second->as<LongAxis>(),
-                                nearest.at(s) == i);
-            if (!v.status) continue;
-            if (!reported.insert(t < s ? std::make_pair(t, s) : std::make_pair(s, t)).second) continue;
-            out[i] = std::move(v);
-        }
-        return out;
+    std::vector<Verdict> out(pairs.size());
+    std::set<std::pair<ElementKey, ElementKey>> reported;
+    for (size_t i = 0; i < pairs.size(); ++i) {
+        if (!measures[i]) continue;
+        const ElementKey& s = pairs[i].first->key;
+        const ElementKey& t = pairs[i].second->key;
+        Verdict v = verdict(*measures[i], pairs[i].first->as<LongAxis>(), pairs[i].second->as<LongAxis>(),
+                            nearest.at(s) == i);
+        if (!v.status) continue;
+        if (!reported.insert(t < s ? std::make_pair(t, s) : std::make_pair(s, t)).second) continue;
+        out[i] = std::move(v);
     }
+    return out;
+}
 
-private:
-    // Rules.ClearanceAxisToAxis._measure: nullopt = the pair is not concerned.
-    std::optional<AxisMeasure> measure(const LongAxis& s, const LongAxis& t) const {
-        const auto& p = params();
-        const bool linear = s.linearity >= p.linearity_ratio && t.linearity >= p.linearity_ratio;
-        AxisMeasure m;
-        m.angle = axis_angle(s.direction, t.direction);
-        if (linear) {
-            Closest c;
-            if (p.mode == "Perpendicular" && m.angle <= p.parallel_tolerance) {
-                if (axial_overlap(s.center, s.direction, s.half_length, t.center, t.direction, t.half_length) <= 1e-6)
-                    return std::nullopt;  // not side by side
-                c = parallel_line_offset_closest(s.center, s.direction, t.center, t.direction);
-                m.mode = "Perpendicular";
-            } else {
-                c = segment_segment_closest(v_sub(s.center, v_mul(s.direction, s.half_length)),
-                                            v_add(s.center, v_mul(s.direction, s.half_length)),
-                                            v_sub(t.center, v_mul(t.direction, t.half_length)),
-                                            v_add(t.center, v_mul(t.direction, t.half_length)));
-                m.mode = "MinDistance";
-            }
-            m.distance = c.distance;
-            m.source_point = c.p1;
-            m.target_point = c.p2;
-            m.degraded = false;
-        } else if (p.on_non_linear == "Skip") {
-            return std::nullopt;
+
+// Rules.ClearanceAxisToAxis._measure: nullopt = the pair is not concerned.
+std::optional<AxisMeasure> ClearanceAxisToAxis::measure(const LongAxis& s, const LongAxis& t) const {
+    const auto& p = params();
+    const bool linear = s.linearity >= p.linearity_ratio && t.linearity >= p.linearity_ratio;
+    AxisMeasure m;
+    m.angle = axis_angle(s.direction, t.direction);
+    if (linear) {
+        Closest c;
+        if (p.mode == "Perpendicular" && m.angle <= p.parallel_tolerance) {
+            if (axial_overlap(s.center, s.direction, s.half_length, t.center, t.direction, t.half_length) <= 1e-6)
+                return std::nullopt;  // not side by side
+            c = parallel_line_offset_closest(s.center, s.direction, t.center, t.direction);
+            m.mode = "Perpendicular";
         } else {
-            // The boxes bound the skins: beyond the radius, the exact
-            // (costly) distance cannot come back inside it.
-            if (p.search_radius && s.box.Distance(t.box) > *p.search_radius) return std::nullopt;
-            BRepExtrema_DistShapeShape tool(s.shape, t.shape);
-            tool.Perform();
-            m.distance = tool.Value();
-            if (tool.IsDone() && tool.NbSolution() >= 1) {
-                const gp_Pnt a = tool.PointOnShape1(1), b = tool.PointOnShape2(1);
-                m.source_point = V3{a.X(), a.Y(), a.Z()};
-                m.target_point = V3{b.X(), b.Y(), b.Z()};
-            }
-            m.mode = "Fallback";
-            m.degraded = true;
+            c = segment_segment_closest(v_sub(s.center, v_mul(s.direction, s.half_length)),
+                                        v_add(s.center, v_mul(s.direction, s.half_length)),
+                                        v_sub(t.center, v_mul(t.direction, t.half_length)),
+                                        v_add(t.center, v_mul(t.direction, t.half_length)));
+            m.mode = "MinDistance";
         }
-        if (p.search_radius && m.distance > *p.search_radius) return std::nullopt;
-        return m;
+        m.distance = c.distance;
+        m.source_point = c.p1;
+        m.target_point = c.p2;
+        m.degraded = false;
+    } else if (p.on_non_linear == "Skip") {
+        return std::nullopt;
+    } else {
+        // The boxes bound the skins: beyond the radius, the exact
+        // (costly) distance cannot come back inside it.
+        if (p.search_radius && s.box.Distance(t.box) > *p.search_radius) return std::nullopt;
+        m.distance = skin_distance(s, t, m.source_point, m.target_point);
+        m.mode = "Fallback";
+        m.degraded = true;
     }
+    if (p.search_radius && m.distance > *p.search_radius) return std::nullopt;
+    return m;
+}
 
-    Verdict verdict(const AxisMeasure& m, const LongAxis& s, const LongAxis& t, bool is_nearest) const {
-        const auto& p = params();
-        const bool too_close = p.min_distance && m.distance < *p.min_distance - p.tolerance;
-        const bool too_far = p.max_distance && is_nearest && m.distance > *p.max_distance + p.tolerance;
-        Verdict v;
-        v.status = too_close || too_far;
-        if (!v.status) return v;
-        v.measures.set(Measure::Distance, m.distance);
-        v.measures.set(Measure::Angle, m.angle);
-        if (m.source_point && m.target_point) v.points.push_back({*m.source_point, *m.target_point, std::nullopt});
-        v.axis = AxisBlock{m.mode, m.degraded};
-        v.axes.push_back(support_axis(s, "source"));
-        v.axes.push_back(support_axis(t, "target"));
-        return v;
+
+double ClearanceAxisToAxis::skin_distance(const LongAxis& s, const LongAxis& t, std::optional<V3>& ps,
+                                          std::optional<V3>& pt) const {
+    BRepExtrema_DistShapeShape tool(s.shape, t.shape);
+    tool.Perform();
+    if (tool.IsDone() && tool.NbSolution() >= 1) {
+        const gp_Pnt a = tool.PointOnShape1(1), b = tool.PointOnShape2(1);
+        ps = V3{a.X(), a.Y(), a.Z()};
+        pt = V3{b.X(), b.Y(), b.Z()};
     }
-};
+    return tool.Value();
+}
+
+Verdict ClearanceAxisToAxis::verdict(const AxisMeasure& m, const LongAxis& s, const LongAxis& t, bool is_nearest) const {
+    const auto& p = params();
+    const bool too_close = p.min_distance && m.distance < *p.min_distance - p.tolerance;
+    const bool too_far = p.max_distance && is_nearest && m.distance > *p.max_distance + p.tolerance;
+    Verdict v;
+    v.status = too_close || too_far;
+    if (!v.status) return v;
+    v.measures.set(Measure::Distance, m.distance);
+    v.measures.set(Measure::Angle, m.angle);
+    if (m.source_point && m.target_point) v.points.push_back({*m.source_point, *m.target_point, std::nullopt});
+    v.axis = AxisBlock{m.mode, m.degraded};
+    v.axes.push_back(support_axis(s, "source"));
+    v.axes.push_back(support_axis(t, "target"));
+    return v;
+}
+
+namespace {
 
 // ================================================================ Intersection2
 

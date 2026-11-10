@@ -17,12 +17,13 @@ enum class Variant {
     MeshLocal = 0,  // triangulation in the element frame (no flag)
     MeshWorld = 1,  // triangulation, USE_WORLD_COORDS
     BrepWorld = 2,  // OCC B-Rep, USE_PYTHON_OPENCASCADE (= SERIALIZED + world coords)
-    // The triangles stored in the .ifcview (engine/triang, the _triang
-    // rules): world coordinates, no IFC conversion. Served by the cache
-    // source only, never by the IFC source.
-    ViewMesh = 3,
+    // The triangles of the _triang rules (engine/triang), world
+    // coordinates: the .ifcview triangles (no IFC conversion) or the IFC
+    // triangulation (MeshWorld), per SessionOptions::triangle_source. Served
+    // by the GeometryProvider, never asked to a source directly.
+    Triangles = 3,
 };
-// The variants an IFC source converts (ViewMesh excluded).
+// The variants an IFC source converts (Triangles excluded).
 inline constexpr int kVariantCount = 3;
 
 // The raw bounding volumes of one element, computed once per Session.

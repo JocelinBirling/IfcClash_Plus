@@ -175,6 +175,10 @@ struct PhaseStats {
     std::string rule;
     std::vector<PhaseStat> phases;
     double total_seconds = 0.0;
+    // Variant::Triangles rules (engine/triang): input elements whose
+    // triangles came from the .ifcview / from the IFC triangulation.
+    size_t triangles_from_view = 0;
+    size_t triangles_from_ifc = 0;
     // "Clearance  broad: 48210 → 1342   mid: 1342 → 187   narrow: 187 → 12   (2.4 s)"
     std::string summary() const;
 };

@@ -2,6 +2,7 @@
 // faces of two elements (a coating, a slab on a beam), against a covering
 // interval. The 2D polygon work goes through GEOS, as shapely does.
 #include "AllRules.h"
+#include "SurfaceRecover.h"
 
 #include "../geometry/Faces.h"
 #include "../geometry/Geos.h"
@@ -190,10 +191,6 @@ double obb_min_distance(const Bnd_OBB& a, const Bnd_OBB& b) {
     return std::max(0.0, best);
 }
 
-struct Covering {
-    bool relative = false;
-    double value = 0.0;
-};
 
 std::optional<Covering> parse_covering(const Json& v, const char* name) {
     if (v.is_null()) return std::nullopt;
@@ -215,163 +212,145 @@ std::optional<Covering> parse_covering(const Json& v, const char* name) {
     throw ConfigError(std::string(name) + " must be a number (m2) or a string ending with '%'");
 }
 
-struct SurfaceRecoverParams {
-    Json direction = "Auto";  // "Auto" | "Top" | "Bottom" | a 3D vector
-    std::string reference = "Source";
-    double tolerance = 0.001;
-    Json min_covering = nullptr;
-    Json max_covering = nullptr;
-};
-
-struct RecoverData {
-    TopoDS_Shape occ;
-    Bnd_OBB obb;
-    Bnd_Box box;
-    std::vector<double> verts;
-    std::vector<int> faces;
-    V3 centroid;
-};
-
-class SurfaceRecover final : public PairRule<SurfaceRecoverParams> {
-public:
-    Variant base_variant() const override { return Variant::BrepWorld; }
-    std::vector<Variant> narrow_variants() const override { return {}; }
-    bool needs_element_data() const override { return true; }
-    bool parallel_safe() const override { return true; }  // element_data: B-Rep and mesh only
-    bool skip_self() const override { return false; }  // Python: no self check
-    std::vector<Variant> data_variants() const override { return {Variant::MeshWorld}; }
-
-    void setup() override {
-        const auto& d = params().direction;
-        if (d.is_string() && d.get<std::string>() == "Auto") {
-            auto_ = true;
-        } else if (d.is_string() && d.get<std::string>() == "Top") {
-            direction_ = {0.0, 0.0, 1.0};
-        } else if (d.is_string() && d.get<std::string>() == "Bottom") {
-            direction_ = {0.0, 0.0, -1.0};
-        } else if (d.is_array() && d.size() == 3 && d[0].is_number() && d[1].is_number() && d[2].is_number()) {
-            V3 v{d[0].get<double>(), d[1].get<double>(), d[2].get<double>()};
-            const double n = norm(v);
-            if (!(n > 1e-12)) throw ConfigError("direction must be 'Auto', 'Top', 'Bottom' or a 3D vector");
-            // The Python rule normalizes once (its attribute, already unit
-            // when it comes from it).
-            direction_ = std::abs(n - 1.0) > 1e-12 ? V3{v[0] / n, v[1] / n, v[2] / n} : v;
-        } else {
-            throw ConfigError("direction must be 'Auto', 'Top', 'Bottom' or a 3D vector");
-        }
-        if (params().reference != "Source" && params().reference != "Target")
-            throw ConfigError("reference must be 'Source' or 'Target'");
-        if (params().tolerance < 0) throw ConfigError("tolerance must be a positive number");
-        min_ = parse_covering(params().min_covering, "min_covering");
-        max_ = parse_covering(params().max_covering, "max_covering");
-    }
-
-    std::shared_ptr<const void> element_data(const ElementGeometry& e, Role) const override {
-        const auto brep = e.meshed_brep();
-        const auto mesh = e.mesh(Variant::MeshWorld);
-        if (!brep || !mesh || mesh->faces.empty()) return nullptr;
-        auto data = std::make_shared<RecoverData>();
-        data->occ = brep->shape;
-        data->obb = brep->obb;
-        data->box = geometry::obb_aabb(data->obb);
-        data->verts = mesh->local_verts;
-        data->faces = mesh->faces;
-        V3 sum{0, 0, 0};
-        const size_t n = data->verts.size() / 3;
-        for (size_t i = 0; i < n; ++i)
-            for (int k = 0; k < 3; ++k) sum[k] += data->verts[3 * i + k];
-        data->centroid = {sum[0] / n, sum[1] / n, sum[2] / n};
-        return data;
-    }
-
-    // The OBB contains the meshed B-Rep; the exact shape stays within the
-    // 0.01 mesh deflection of it: the tolerance plus that margin keeps every
-    // pair the Python prefilters keep.
-    Bnd_Box broad_volume(const ElementGeometry& e, Role role) const override {
-        return geometry::inflate(e.as<RecoverData>().box, (role == Role::Source ? params().tolerance : 0.0) + 0.02);
-    }
-
-    Verdict narrow_test(const ElementGeometry& source, const ElementGeometry& target) const override {
-        const auto& s = source.as<RecoverData>();
-        const auto& t = target.as<RecoverData>();
-        const double tolerance = params().tolerance;
-        Verdict verdict;
-        if (obb_min_distance(s.obb, t.obb) > tolerance) return verdict;
-        BRepExtrema_DistShapeShape dist;
-        dist.LoadS1(s.occ);
-        dist.LoadS2(t.occ);
-        dist.Perform();
-        const double distance = dist.Value();
-        if (distance > tolerance) return verdict;
-
-        std::optional<V3> pair_direction;
-        if (auto_) {
-            if (dist.NbSolution() >= 1) {
-                const gp_Pnt a = dist.PointOnShape1(1), b = dist.PointOnShape2(1);
-                const V3 vec{b.X() - a.X(), b.Y() - a.Y(), b.Z() - a.Z()};
-                const double n = norm(vec);
-                if (!(n < 1e-9)) pair_direction = V3{vec[0] / n, vec[1] / n, vec[2] / n};
-            }
-            if (!pair_direction) {
-                const V3 vec = sub(t.centroid, s.centroid);
-                const double n = norm(vec);
-                if (!(n < 1e-9)) pair_direction = V3{vec[0] / n, vec[1] / n, vec[2] / n};
-            }
-            if (!pair_direction) return verdict;
-        } else {
-            pair_direction = direction_;
-        }
-        const V3 dir = *pair_direction;
-        const auto st = extreme_triangles(s.verts, s.faces, dir, tolerance, kAlignedCosine);
-        const auto tt = extreme_triangles(t.verts, t.faces, neg(dir), tolerance, kAlignedCosine);
-        if (st.empty() || tt.empty()) return verdict;
-        double smax = -std::numeric_limits<double>::infinity(), tmin = std::numeric_limits<double>::infinity();
-        for (const auto& tr : st) smax = std::max(smax, geometry::np::matvec(mean3(tr), dir));
-        for (const auto& tr : tt) tmin = std::min(tmin, geometry::np::matvec(mean3(tr), dir));
-        if (std::abs(smax - tmin) > tolerance) return verdict;
-
-        geometry::Geos geos;
-        const auto [contact_area, contact] = contact_polygons(st, tt, dir, tolerance, kPairingCosine, geos);
-        const double reference_area = projected_area(params().reference == "Source" ? st : tt, dir);
-        std::optional<double> ratio;
-        if (reference_area > 1e-12) ratio = 100.0 * contact_area / reference_area;
-
-        // clash_utils.covering_out_of_bounds
-        bool out = false;
-        for (const auto& [bound, lower] : {std::make_pair(min_, true), std::make_pair(max_, false)}) {
-            if (!bound || out) continue;
-            if (bound->relative && !ratio) {
-                out = true;
-                continue;
-            }
-            const double value = bound->relative ? *ratio : contact_area;
-            if (lower && value < bound->value) out = true;
-            if (!lower && value > bound->value) out = true;
-        }
-        if (!out) return verdict;
-
-        verdict.status = true;
-        verdict.measures.set(Measure::ContactArea, contact_area);
-        if (ratio) verdict.measures.set(Measure::Ratio, *ratio / 100.0);
-        verdict.measures.set(Measure::Distance, distance);
-        FaceData fs, ft;
-        fs.normal = dir;
-        fs.area = projected_area(st, dir);
-        fs.triangles = contact;
-        ft.normal = neg(dir);
-        ft.area = projected_area(tt, neg(dir));
-        ft.triangles = contact;
-        verdict.faces.push_back({fs, ft});
-        return verdict;
-    }
-
-private:
-    bool auto_ = false;
-    V3 direction_{0.0, 0.0, 1.0};
-    std::optional<Covering> min_, max_;
-};
-
 }  // namespace
+
+void SurfaceRecover::setup() {
+    const auto& d = params().direction;
+    if (d.is_string() && d.get<std::string>() == "Auto") {
+        auto_ = true;
+    } else if (d.is_string() && d.get<std::string>() == "Top") {
+        direction_ = {0.0, 0.0, 1.0};
+    } else if (d.is_string() && d.get<std::string>() == "Bottom") {
+        direction_ = {0.0, 0.0, -1.0};
+    } else if (d.is_array() && d.size() == 3 && d[0].is_number() && d[1].is_number() && d[2].is_number()) {
+        V3 v{d[0].get<double>(), d[1].get<double>(), d[2].get<double>()};
+        const double n = norm(v);
+        if (!(n > 1e-12)) throw ConfigError("direction must be 'Auto', 'Top', 'Bottom' or a 3D vector");
+        // The Python rule normalizes once (its attribute, already unit
+        // when it comes from it).
+        direction_ = std::abs(n - 1.0) > 1e-12 ? V3{v[0] / n, v[1] / n, v[2] / n} : v;
+    } else {
+        throw ConfigError("direction must be 'Auto', 'Top', 'Bottom' or a 3D vector");
+    }
+    if (params().reference != "Source" && params().reference != "Target")
+        throw ConfigError("reference must be 'Source' or 'Target'");
+    if (params().tolerance < 0) throw ConfigError("tolerance must be a positive number");
+    min_ = parse_covering(params().min_covering, "min_covering");
+    max_ = parse_covering(params().max_covering, "max_covering");
+}
+
+
+std::shared_ptr<const void> SurfaceRecover::element_data(const ElementGeometry& e, Role) const {
+    const auto brep = e.meshed_brep();
+    const auto mesh = e.mesh(Variant::MeshWorld);
+    if (!brep || !mesh || mesh->faces.empty()) return nullptr;
+    auto data = std::make_shared<RecoverData>();
+    data->occ = brep->shape;
+    data->obb = brep->obb;
+    data->box = geometry::obb_aabb(data->obb);
+    data->verts = mesh->local_verts;
+    data->faces = mesh->faces;
+    V3 sum{0, 0, 0};
+    const size_t n = data->verts.size() / 3;
+    for (size_t i = 0; i < n; ++i)
+        for (int k = 0; k < 3; ++k) sum[k] += data->verts[3 * i + k];
+    data->centroid = {sum[0] / n, sum[1] / n, sum[2] / n};
+    return data;
+}
+
+
+// The OBB contains the meshed B-Rep; the exact shape stays within the
+// 0.01 mesh deflection of it: the tolerance plus that margin keeps every
+// pair the Python prefilters keep.
+Bnd_Box SurfaceRecover::broad_volume(const ElementGeometry& e, Role role) const {
+    return geometry::inflate(e.as<RecoverData>().box, (role == Role::Source ? params().tolerance : 0.0) + 0.02);
+}
+
+
+Verdict SurfaceRecover::narrow_test(const ElementGeometry& source, const ElementGeometry& target) const {
+    const auto& s = source.as<RecoverData>();
+    const auto& t = target.as<RecoverData>();
+    const double tolerance = params().tolerance;
+    Verdict verdict;
+    if (obb_min_distance(s.obb, t.obb) > tolerance) return verdict;
+    std::optional<V3> ps, pt;
+    const double distance = skin_distance(s, t, ps, pt);
+    if (distance > tolerance) return verdict;
+
+    std::optional<V3> pair_direction;
+    if (auto_) {
+        if (ps && pt) {
+            const V3 vec{(*pt)[0] - (*ps)[0], (*pt)[1] - (*ps)[1], (*pt)[2] - (*ps)[2]};
+            const double n = norm(vec);
+            if (!(n < 1e-9)) pair_direction = V3{vec[0] / n, vec[1] / n, vec[2] / n};
+        }
+        if (!pair_direction) {
+            const V3 vec = sub(t.centroid, s.centroid);
+            const double n = norm(vec);
+            if (!(n < 1e-9)) pair_direction = V3{vec[0] / n, vec[1] / n, vec[2] / n};
+        }
+        if (!pair_direction) return verdict;
+    } else {
+        pair_direction = direction_;
+    }
+    const V3 dir = *pair_direction;
+    const auto st = extreme_triangles(s.verts, s.faces, dir, tolerance, kAlignedCosine);
+    const auto tt = extreme_triangles(t.verts, t.faces, neg(dir), tolerance, kAlignedCosine);
+    if (st.empty() || tt.empty()) return verdict;
+    double smax = -std::numeric_limits<double>::infinity(), tmin = std::numeric_limits<double>::infinity();
+    for (const auto& tr : st) smax = std::max(smax, geometry::np::matvec(mean3(tr), dir));
+    for (const auto& tr : tt) tmin = std::min(tmin, geometry::np::matvec(mean3(tr), dir));
+    if (std::abs(smax - tmin) > tolerance) return verdict;
+
+    geometry::Geos geos;
+    const auto [contact_area, contact] = contact_polygons(st, tt, dir, tolerance, kPairingCosine, geos);
+    const double reference_area = projected_area(params().reference == "Source" ? st : tt, dir);
+    std::optional<double> ratio;
+    if (reference_area > 1e-12) ratio = 100.0 * contact_area / reference_area;
+
+    // clash_utils.covering_out_of_bounds
+    bool out = false;
+    for (const auto& [bound, lower] : {std::make_pair(min_, true), std::make_pair(max_, false)}) {
+        if (!bound || out) continue;
+        if (bound->relative && !ratio) {
+            out = true;
+            continue;
+        }
+        const double value = bound->relative ? *ratio : contact_area;
+        if (lower && value < bound->value) out = true;
+        if (!lower && value > bound->value) out = true;
+    }
+    if (!out) return verdict;
+
+    verdict.status = true;
+    verdict.measures.set(Measure::ContactArea, contact_area);
+    if (ratio) verdict.measures.set(Measure::Ratio, *ratio / 100.0);
+    verdict.measures.set(Measure::Distance, distance);
+    FaceData fs, ft;
+    fs.normal = dir;
+    fs.area = projected_area(st, dir);
+    fs.triangles = contact;
+    ft.normal = neg(dir);
+    ft.area = projected_area(tt, neg(dir));
+    ft.triangles = contact;
+    verdict.faces.push_back({fs, ft});
+    return verdict;
+}
+
+double SurfaceRecover::skin_distance(const RecoverData& s, const RecoverData& t, std::optional<V3>& ps,
+                                    std::optional<V3>& pt) const {
+    BRepExtrema_DistShapeShape dist;
+    dist.LoadS1(s.occ);
+    dist.LoadS2(t.occ);
+    dist.Perform();
+    if (dist.NbSolution() >= 1) {
+        const gp_Pnt a = dist.PointOnShape1(1), b = dist.PointOnShape2(1);
+        ps = V3{a.X(), a.Y(), a.Z()};
+        pt = V3{b.X(), b.Y(), b.Z()};
+    }
+    return dist.Value();
+}
+
 
 RuleSpec spec_surface_recover() {
     return RuleSpec::pair<SurfaceRecover>(

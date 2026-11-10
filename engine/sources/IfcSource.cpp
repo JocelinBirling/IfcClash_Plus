@@ -495,8 +495,13 @@ std::vector<std::string> IfcSource::material_names(const ElementKey& key) {
         }
         return names;
     }
+    // getattr(material, "Name", None): an entity without a Name attribute
+    // (IfcMaterialList, IfcMaterialProfileSet...) has no name, not an error.
     if (material) {
-        if (auto n = string_attribute(material, "Name")) names.push_back(*n);
+        try {
+            if (auto n = string_attribute(material, "Name")) names.push_back(*n);
+        } catch (const std::exception&) {
+        }
     }
     return names;
 }

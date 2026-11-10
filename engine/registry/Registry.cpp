@@ -1,6 +1,7 @@
 #include "Registry.h"
 
 #include "../rules/AllRules.h"
+#include "../triang/rules/TriangRules.h"
 
 #include <stdexcept>
 
@@ -55,10 +56,8 @@ void register_all_rules(Registry& registry) {
     registry.add(spec_direct_view());
     registry.add(spec_free_space());
     registry.add(spec_alignement());
-    // engine/triang: complementary rules on the .ifcview triangles only.
-    registry.add(spec_intersection_triang());
-    registry.add(spec_above_triang());
-    registry.add(spec_obb_above_triang());
+    // engine/triang: the _triang rules, on triangles only.
+    triang::register_triang_rules(registry);
 }
 
 const Registry& default_registry() {

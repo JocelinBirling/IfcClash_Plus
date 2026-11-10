@@ -39,6 +39,22 @@ _MEASURES = (
 
 _sessions = {}
 
+# IFCCLASH_TRIANG=1 runs every rule as its _triang twin (the rule computed
+# on triangles only: engine/triang), on the triangles of
+# IFCCLASH_TRIANGLE_SOURCE ("auto" by default: the .ifcview when it holds
+# the element, else the IFC triangulation; "ifcview"; "ifc"). Same
+# parameters and result blocks as the original rule.
+TRIANG = os.environ.get("IFCCLASH_TRIANG", "") not in ("", "0")
+TRIANGLE_SOURCE = os.environ.get("IFCCLASH_TRIANGLE_SOURCE", "auto")
+
+
+def engine_rule_type(rule_type):
+    """The rule the engine runs for a rule type: its _triang twin when
+    IFCCLASH_TRIANG is set (and the twin exists)."""
+    if TRIANG and rule_type + "_triang" in implemented_rules():
+        return rule_type + "_triang"
+    return rule_type
+
 
 class Unsupported(Exception):
     """The call cannot go through the C++ engine (module missing, rule
@@ -67,10 +83,10 @@ def session_for(paths):
     key = tuple(os.path.abspath(p) for p in paths)
     session = _sessions.get(key)
     if session is None or session.closed:
-        session = _native.Session(
-            ifc_paths=list(key),
-            geometry_cache=os.environ.get("IFCCLASH_GEOMETRY_CACHE", "off"),
-        )
+        options = {"geometry_cache": os.environ.get("IFCCLASH_GEOMETRY_CACHE", "off")}
+        if TRIANG:
+            options["triangle_source"] = TRIANGLE_SOURCE
+        session = _native.Session(ifc_paths=list(key), **options)
         _sessions[key] = session
     return session
 
@@ -116,7 +132,7 @@ def run(rule_type, params, files_paths, files, sources, targets=None, prefilter=
         selections["context"] = _slot(context, files)
     session = session_for(files_paths)
     return session.run(
-        rule_type=rule_type,
+        rule_type=engine_rule_type(rule_type),
         params=params,
         selections=selections,
         mode="verdicts",

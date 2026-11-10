@@ -41,6 +41,10 @@ struct SessionOptions {
     // object measures): 0 = hardware concurrency, 1 = sequential. The
     // results do not depend on it.
     int rule_threads = 0;
+    // Where the _triang rules (engine/triang) read their triangles: "auto"
+    // (the .ifcview when it holds the element, else the IFC triangulation),
+    // "ifcview" (the .ifcview only) or "ifc" (the IFC triangulation only).
+    std::string triangle_source = "auto";
 };
 
 // The elements of one file picked by a slot (from the IDS selection in
@@ -83,6 +87,10 @@ public:
     size_t file_count() const;
     // IFC elements converted (triangulated) by the session since its opening.
     size_t ifc_conversions() const;
+    // Diagnostics of the _triang rules (engine/triang): the world triangles of
+    // an element (Variant::Triangles, per triangle_source), flat x, y, z and 3
+    // indices per triangle; empty when it has none.
+    std::pair<std::vector<double>, std::vector<int>> triangles(uint32_t file_index, int entity_id);
     // Session-level diagnostics (cache policy...), repeated in every run.
     const Diagnostics& diagnostics() const { return session_diagnostics_; }
 

@@ -7,6 +7,7 @@
 // IfcOpenShell iterator yields them, which changes from one run to the next
 // (and the grouping seeds depend on it). The C++ engine takes them in the
 // selection order: deterministic.
+#include "Alignement.h"
 #include "AllRules.h"
 
 #include "../geometry/Obb.h"
@@ -273,135 +274,128 @@ struct AxisObject {
     Vec largest_axis;
 };
 
-struct AlignementParams {
-    std::optional<std::string> axis;  // None / "" = auto, "Vertical", "Horizontal"
-    std::string alignment_type = "Plane";
-    std::optional<double> tolerance;
-    int min_group = 3;
-};
+// Alignement._collect_axis_data
+AxisObject axis_object(const Bnd_OBB& obb) {
+    const gp_XYZ c = obb.Center();
+    const gp_XYZ d[3] = {obb.XDirection(), obb.YDirection(), obb.ZDirection()};
+    const Vec dirs[3] = {{d[0].X(), d[0].Y(), d[0].Z()}, {d[1].X(), d[1].Y(), d[1].Z()}, {d[2].X(), d[2].Y(), d[2].Z()}};
+    const double half[3] = {obb.XHSize(), obb.YHSize(), obb.ZHSize()};
+    std::vector<int> horizontal;
+    for (int i = 0; i < 3; ++i)
+        if (std::abs(dirs[i][2]) < kVerticalCosine) horizontal.push_back(i);
+    std::stable_sort(horizontal.begin(), horizontal.end(), [&](int a, int b) { return half[a] > half[b]; });
+    int largest = 0;
+    for (int i = 1; i < 3; ++i)
+        if (half[i] > half[largest]) largest = i;
+    const int main = horizontal.size() >= 2 && half[horizontal[0]] >= kFootprintElongation * half[horizontal[1]]
+                         ? horizontal[0]
+                         : largest;
+    return {{c.X(), c.Y(), c.Z()}, dirs[main], half[main], dirs[largest]};
+}
 
-class Alignement final : public SetRule<AlignementParams> {
-public:
-    Variant base_variant() const override { return Variant::BrepWorld; }
-    std::vector<Variant> narrow_variants() const override { return {}; }
-
-    void setup() override {
-        const auto& p = params();
-        if (p.axis && !p.axis->empty() && *p.axis != "Vertical" && *p.axis != "Horizontal")
-            throw ConfigError("axis must be None, 'Vertical' or 'Horizontal'");
-        if (p.alignment_type != "Line" && p.alignment_type != "Plane")
-            throw ConfigError("alignment_type must be 'Line' or 'Plane'");
-        if (!p.tolerance) throw ConfigError("tolerance is mandatory and must be a number (in meter)");
-        if (*p.tolerance < 0) throw ConfigError("tolerance must be positive");
-        if (p.min_group < 1) throw ConfigError("min_group must be an integer >= 1");
-    }
-
-    std::vector<Verdict> narrow_set(const std::vector<ElementGeometry>& elements) const override {
-        std::vector<Verdict> out(elements.size());
-        std::vector<AxisObject> objects;
-        std::vector<size_t> where;
-        for (size_t e = 0; e < elements.size(); ++e) {
-            const auto brep = elements[e].meshed_brep();  // OBB kept in the Session
-            if (!brep) continue;
-            objects.push_back(axis_object(brep->obb));
-            where.push_back(e);
-        }
-        if (objects.empty()) return out;
-        const double tol = *params().tolerance;
-
-        // _compute_offsets
-        std::string orientation = params().axis && !params().axis->empty() ? *params().axis : detect(objects);
-        std::vector<double> offsets;
-        std::vector<Segment> segments;
-        for (const auto& o : objects)
-            segments.push_back({sub(o.center, mul(o.main_axis, o.half_main)), add(o.center, mul(o.main_axis, o.half_main))});
-        if (orientation == "Vertical") {
-            std::vector<Vec> plan;
-            for (const auto& o : objects) plan.push_back({o.center[0], o.center[1]});
-            const auto [origin, direction] = least_squares_line(plan);
-            for (const auto& p : plan) offsets.push_back(point_line_distance(p, origin, direction));
-        } else {
-            std::vector<Vec> endpoints;
-            for (const auto& s : segments) {
-                endpoints.push_back(s.first);
-                endpoints.push_back(s.second);
-            }
-            if (params().alignment_type == "Plane") {
-                const auto [origin, normal] = least_squares_plane(endpoints);
-                for (const auto& s : segments)
-                    offsets.push_back(std::max(point_plane_distance(s.first, origin, normal),
-                                               point_plane_distance(s.second, origin, normal)));
-            } else {
-                const auto [origin, direction] = least_squares_line(endpoints);
-                for (const auto& s : segments) offsets.push_back(segment_max_line_distance(s, origin, direction));
-            }
-        }
-
-        // _compute_groups
-        std::set<Group> groups;
-        if (orientation == "Vertical") {
-            std::vector<Vec> pts;
-            std::vector<std::optional<Vec>> dirs;
-            for (const auto& o : objects) {
-                pts.push_back({o.center[0], o.center[1]});
-                if (std::abs(o.main_axis[2]) >= kVerticalCosine) {
-                    dirs.push_back(std::nullopt);
-                } else {
-                    const Vec plan{o.main_axis[0], o.main_axis[1]};
-                    dirs.push_back(div(plan, norm(plan)));
-                }
-            }
-            groups = plan_groups(pts, dirs, tol);
-        } else {
-            std::vector<Vec> dirs;
-            for (const auto& o : objects) dirs.push_back(o.main_axis);
-            groups = params().alignment_type == "Plane" ? coplanar_groups(segments, dirs, tol)
-                                                        : collinear_groups(segments, dirs, tol);
-        }
-
-        // _clash_flags
-        if (params().min_group <= 1) return out;
-        std::set<int> passing;
-        for (const auto& g : groups)
-            if (static_cast<int>(g.size()) >= params().min_group) passing.insert(g.begin(), g.end());
-        for (size_t i = 0; i < objects.size(); ++i) {
-            if (passing.count(static_cast<int>(i))) continue;
-            Verdict& v = out[where[i]];
-            v.status = true;
-            v.measures.set(Measure::Offset, offsets[i]);
-        }
-        return out;
-    }
-
-private:
-    // Alignement._collect_axis_data
-    static AxisObject axis_object(const Bnd_OBB& obb) {
-        const gp_XYZ c = obb.Center();
-        const gp_XYZ d[3] = {obb.XDirection(), obb.YDirection(), obb.ZDirection()};
-        const Vec dirs[3] = {{d[0].X(), d[0].Y(), d[0].Z()}, {d[1].X(), d[1].Y(), d[1].Z()}, {d[2].X(), d[2].Y(), d[2].Z()}};
-        const double half[3] = {obb.XHSize(), obb.YHSize(), obb.ZHSize()};
-        std::vector<int> horizontal;
-        for (int i = 0; i < 3; ++i)
-            if (std::abs(dirs[i][2]) < kVerticalCosine) horizontal.push_back(i);
-        std::stable_sort(horizontal.begin(), horizontal.end(), [&](int a, int b) { return half[a] > half[b]; });
-        int largest = 0;
-        for (int i = 1; i < 3; ++i)
-            if (half[i] > half[largest]) largest = i;
-        const int main = horizontal.size() >= 2 && half[horizontal[0]] >= kFootprintElongation * half[horizontal[1]]
-                             ? horizontal[0]
-                             : largest;
-        return {{c.X(), c.Y(), c.Z()}, dirs[main], half[main], dirs[largest]};
-    }
-
-    static std::string detect(const std::vector<AxisObject>& objects) {
-        int votes = 0;
-        for (const auto& o : objects)
-            if (std::abs(o.largest_axis[2]) >= kVerticalCosine) ++votes;
-        return votes >= static_cast<int>(objects.size()) - votes ? "Vertical" : "Horizontal";
-    }
-};
+std::string detect(const std::vector<AxisObject>& objects) {
+    int votes = 0;
+    for (const auto& o : objects)
+        if (std::abs(o.largest_axis[2]) >= kVerticalCosine) ++votes;
+    return votes >= static_cast<int>(objects.size()) - votes ? "Vertical" : "Horizontal";
+}
 
 }  // namespace
+
+void Alignement::setup() {
+    const auto& p = params();
+    if (p.axis && !p.axis->empty() && *p.axis != "Vertical" && *p.axis != "Horizontal")
+        throw ConfigError("axis must be None, 'Vertical' or 'Horizontal'");
+    if (p.alignment_type != "Line" && p.alignment_type != "Plane")
+        throw ConfigError("alignment_type must be 'Line' or 'Plane'");
+    if (!p.tolerance) throw ConfigError("tolerance is mandatory and must be a number (in meter)");
+    if (*p.tolerance < 0) throw ConfigError("tolerance must be positive");
+    if (p.min_group < 1) throw ConfigError("min_group must be an integer >= 1");
+}
+
+std::optional<Bnd_OBB> Alignement::element_obb(const ElementGeometry& e) const {
+    const auto brep = e.meshed_brep();
+    if (!brep) return std::nullopt;
+    return brep->obb;
+}
+
+std::vector<Verdict> Alignement::narrow_set(const std::vector<ElementGeometry>& elements) const {
+    std::vector<Verdict> out(elements.size());
+    std::vector<AxisObject> objects;
+    std::vector<size_t> where;
+    for (size_t e = 0; e < elements.size(); ++e) {
+        const auto obb = element_obb(elements[e]);  // kept in the Session
+        if (!obb) continue;
+        objects.push_back(axis_object(*obb));
+        where.push_back(e);
+    }
+    if (objects.empty()) return out;
+    const double tol = *params().tolerance;
+
+    // _compute_offsets
+    std::string orientation = params().axis && !params().axis->empty() ? *params().axis : detect(objects);
+    std::vector<double> offsets;
+    std::vector<Segment> segments;
+    for (const auto& o : objects)
+        segments.push_back({sub(o.center, mul(o.main_axis, o.half_main)), add(o.center, mul(o.main_axis, o.half_main))});
+    if (orientation == "Vertical") {
+        std::vector<Vec> plan;
+        for (const auto& o : objects) plan.push_back({o.center[0], o.center[1]});
+        const auto [origin, direction] = least_squares_line(plan);
+        for (const auto& p : plan) offsets.push_back(point_line_distance(p, origin, direction));
+    } else {
+        std::vector<Vec> endpoints;
+        for (const auto& s : segments) {
+            endpoints.push_back(s.first);
+            endpoints.push_back(s.second);
+        }
+        if (params().alignment_type == "Plane") {
+            const auto [origin, normal] = least_squares_plane(endpoints);
+            for (const auto& s : segments)
+                offsets.push_back(std::max(point_plane_distance(s.first, origin, normal),
+                                           point_plane_distance(s.second, origin, normal)));
+        } else {
+            const auto [origin, direction] = least_squares_line(endpoints);
+            for (const auto& s : segments) offsets.push_back(segment_max_line_distance(s, origin, direction));
+        }
+    }
+
+    // _compute_groups
+    std::set<Group> groups;
+    if (orientation == "Vertical") {
+        std::vector<Vec> pts;
+        std::vector<std::optional<Vec>> dirs;
+        for (const auto& o : objects) {
+            pts.push_back({o.center[0], o.center[1]});
+            if (std::abs(o.main_axis[2]) >= kVerticalCosine) {
+                dirs.push_back(std::nullopt);
+            } else {
+                const Vec plan{o.main_axis[0], o.main_axis[1]};
+                dirs.push_back(div(plan, norm(plan)));
+            }
+        }
+        groups = plan_groups(pts, dirs, tol);
+    } else {
+        std::vector<Vec> dirs;
+        for (const auto& o : objects) dirs.push_back(o.main_axis);
+        groups = params().alignment_type == "Plane" ? coplanar_groups(segments, dirs, tol)
+                                                    : collinear_groups(segments, dirs, tol);
+    }
+
+    // _clash_flags
+    if (params().min_group <= 1) return out;
+    std::set<int> passing;
+    for (const auto& g : groups)
+        if (static_cast<int>(g.size()) >= params().min_group) passing.insert(g.begin(), g.end());
+    for (size_t i = 0; i < objects.size(); ++i) {
+        if (passing.count(static_cast<int>(i))) continue;
+        Verdict& v = out[where[i]];
+        v.status = true;
+        v.measures.set(Measure::Offset, offsets[i]);
+    }
+    return out;
+}
+
 
 RuleSpec spec_alignement() {
     return RuleSpec::set<Alignement>(

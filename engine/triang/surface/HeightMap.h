@@ -47,18 +47,4 @@ HeightMap height_map(const std::vector<double>& verts, const std::vector<int>& f
 std::vector<int> visible_triangles_raster(const std::vector<double>& verts, const std::vector<int>& faces,
                                           double side, const HeightMapOptions& options = {});
 
-// Mesh size from which visible_triangles_auto switches to the height map:
-// below it the sampled test is cheaper (its cost follows the triangles, the
-// height map's the cells). Measured on the Duplex Architecture +
-// Mechanical (doc/benchmark_extreme_faces.md): the total time is flat
-// between 120 and 300 triangles, minimal around 200.
-constexpr size_t kHeightMapFromTriangles = 200;
-
-// The triangles seen from `side`: visible_triangles (4 sampled points per
-// triangle) under `from_triangles` triangles, visible_triangles_raster
-// (height map) from it on. Indices of triangles, ascending.
-std::vector<int> visible_triangles_auto(const std::vector<double>& verts, const std::vector<int>& faces,
-                                        double side, size_t from_triangles = kHeightMapFromTriangles,
-                                        const HeightMapOptions& options = {});
-
 }  // namespace ifcclash::triang
